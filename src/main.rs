@@ -3270,8 +3270,7 @@ enum Instruction {
     /// stored type, value, address
     Store(LlvmType, LlvmValue, LlvmValue),
     Call(Call),
-    Ret(LlvmTypedValue),
-    RetVoid,
+    Ret(LlvmType, Option<LlvmValue>),
     Br(Branch),
 }
 
@@ -3500,13 +3499,13 @@ fn llvmParser_parse_instruction(parser: &mut LlvmParser) -> Instruction {
 
 fn llvmParser_parse_return(parser: &mut LlvmParser) -> Instruction {
     llvmParser_expect_token(parser, &LlvmToken::Ret);
-    if llvmParser_try_consume(parser, &LlvmToken::Void) {
-        Instruction::RetVoid
+    let returned_type: LlvmType = llvmParser_parse_type(parser);
+    let return_value: Option<LlvmValue> = if llvmType_eq(&returned_type, &LlvmType::Void) {
+        Option::None
     } else {
-        let returned_type: LlvmType = llvmParser_parse_type(parser);
-        let returned_value: LlvmValue = llvmParser_parse_value(parser);
-        Instruction::Ret(LlvmTypedValue::Pair(returned_type, returned_value))
-    }
+        Option::Some(llvmParser_parse_value(parser))
+    };
+    Instruction::Ret(returned_type, return_value)
 }
 
 fn llvmParser_parse_branch(parser: &mut LlvmParser) -> Instruction {
@@ -3993,13 +3992,15 @@ fn llvmulator_execute_instructions(
                     llvmulator_execute_call(emulator, ast, registers, call_type, callee, arguments);
             }
 
-            Instruction::Ret(LlvmTypedValue::Pair(return_type, value)) => {
+            Instruction::Ret(return_type, return_value) => {
                 let global_values: &StringMap<usize> = llvmulator_globals(emulator);
-                let return_value: usize = llvm_eval_value(global_values, registers, value);
-                return LlvmExecFlow::Return(llvm_overflow_value(return_value, return_type));
-            }
-            Instruction::RetVoid => {
-                return LlvmExecFlow::Return(0);
+                return LlvmExecFlow::Return(match return_value {
+                    Option::Some(value) => {
+                        let value: usize = llvm_eval_value(global_values, registers, value);
+                        llvm_overflow_value(value, &return_type)
+                    }
+                    Option::None => 0,
+                });
             }
 
             Instruction::Br(branch) => {
