@@ -68,4 +68,8 @@ array      -> "[" [ type literal { "," type literal } ] "]"
 number     -> [ "-" ] digit { digit }
 
 identifier -> ( letter | "_" | "." ) { letter | digit | "_" | "." }
+
+letter     -> "a" | ... | "z" | "A" | ... | "Z"
+
+digit      -> "0" | ... | "9"
 ```
