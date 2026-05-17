@@ -3257,12 +3257,23 @@ fn instructionBlock_fetch_instructions(
     panic!("unknown LLVM block label");
 }
 
-/// Represents an instruction inside an instruction block
+/// Represents an instruction inside an instruction block.
+///
+/// Assignment: Assigns the value of an instruction to a virtual register.
+/// Store: Stores a value at the given ptr value.
+/// Call: Call a function to perform side-effects, discarding the result.
+/// Terminator: Control flow to jump to another block (br) or return (ret).
 enum Instruction {
     Assignment(AssignInstruction),
     /// stored type, value, address
     Store(LlvmType, LlvmValue, LlvmValue),
+    Call(Call),
     Terminator(TerminatorInstruction),
+}
+
+enum Call {
+    /// return type, callee, arguments
+    Call(LlvmType, String, Vec<LlvmTypedValue>),
 }
 
 /// Represents an instruction which terminates an instruction block.
@@ -3298,8 +3309,7 @@ enum AssignOp {
     Alloca(LlvmType, usize),
     /// loaded type, address
     Load(LlvmType, LlvmValue),
-    /// return type, callee, arguments
-    Call(LlvmType, String, Vec<LlvmTypedValue>),
+    Call(Call),
     /// type, pointer, indexes
     Gep(LlvmType, LlvmValue, Vec<LlvmTypedValue>),
 }
@@ -3333,7 +3343,7 @@ fn assignOp_get_type(operation: &AssignOp) -> LlvmType {
     match operation {
         AssignOp::Binary(_, ty, _, _) => llvmType_clone(ty),
         AssignOp::Icmp(_, _, _, _) => LlvmType::I1,
-        AssignOp::Call(ty, _, _) => llvmType_clone(ty),
+        AssignOp::Call(Call::Call(ty, _, _)) => llvmType_clone(ty),
         AssignOp::Cast(_, ty, _) => llvmType_clone(ty),
         AssignOp::Alloca(_, _) => LlvmType::Ptr,
         AssignOp::Load(ty, _) => llvmType_clone(ty),
@@ -3484,6 +3494,10 @@ fn llvmParser_parse_instruction(parser: &mut LlvmParser) -> Instruction {
         LlvmToken::Br => Instruction::Terminator(llvmParser_parse_branch(parser)),
         LlvmToken::Percent => Instruction::Assignment(llvmParser_parse_assignment(parser)),
         LlvmToken::Store => llvmParser_parse_store(parser),
+        LlvmToken::Call => {
+            llvmParser_next_token(parser);
+            Instruction::Call(llvmParser_parse_call(parser))
+        }
         _ => llvmParser_error(parser, "expected LLVM instruction"),
     }
 }
@@ -3586,30 +3600,14 @@ fn llvmParser_parse_icmp_assign(parser: &mut LlvmParser) -> AssignOp {
 }
 
 fn llvmParser_parse_call_assign(parser: &mut LlvmParser) -> AssignOp {
-    let return_type: LlvmType = llvmParser_parse_type(parser);
-    let callee: String = llvmParser_parse_global_name(parser);
-    let mut arguments: Vec<LlvmTypedValue> = vec_new::<LlvmTypedValue>();
+    let call: Call = llvmParser_parse_call(parser);
 
-    llvmParser_expect_token(parser, &LlvmToken::LParen);
-    if not(llvmParser_current_token_eq(parser, &LlvmToken::RParen)) {
-        let arg_type: LlvmType = llvmParser_parse_type(parser);
-        let arg_value: LlvmValue = llvmParser_parse_value(parser);
-        llvmParser_expect_value_type(parser, &arg_value, &arg_type);
-        let argument: LlvmTypedValue = LlvmTypedValue::Pair(arg_type, arg_value);
-        vec_push::<LlvmTypedValue>(&mut arguments, argument);
-
-        while llvmParser_current_token_eq(parser, &LlvmToken::Comma) {
-            llvmParser_next_token(parser);
-            let arg_type: LlvmType = llvmParser_parse_type(parser);
-            let arg_value: LlvmValue = llvmParser_parse_value(parser);
-            llvmParser_expect_value_type(parser, &arg_value, &arg_type);
-            let argument: LlvmTypedValue = LlvmTypedValue::Pair(arg_type, arg_value);
-            vec_push::<LlvmTypedValue>(&mut arguments, argument);
-        }
+    let Call::Call(return_type, _, _): &Call = &call;
+    if llvmType_eq(return_type, &LlvmType::Void) {
+        llvmParser_error(parser, "cannot assign void to a register");
     }
-    llvmParser_expect_token(parser, &LlvmToken::RParen);
 
-    AssignOp::Call(return_type, callee, arguments)
+    AssignOp::Call(call)
 }
 
 fn llvmParser_parse_cast_assign(parser: &mut LlvmParser, operator: CastOp) -> AssignOp {
@@ -3704,6 +3702,32 @@ fn llvmParser_parse_store(parser: &mut LlvmParser) -> Instruction {
     llvmParser_expect_value_type(parser, &address, &LlvmType::Ptr);
 
     Instruction::Store(store_type, value, address)
+}
+
+fn llvmParser_parse_call(parser: &mut LlvmParser) -> Call {
+    let return_type: LlvmType = llvmParser_parse_type(parser);
+    let callee: String = llvmParser_parse_global_name(parser);
+
+    llvmParser_expect_token(parser, &LlvmToken::LParen);
+    let mut arguments: Vec<LlvmTypedValue> = vec_new::<LlvmTypedValue>();
+    if not(llvmParser_current_token_eq(parser, &LlvmToken::RParen)) {
+        let arg_type: LlvmType = llvmParser_parse_type(parser);
+        let arg_value: LlvmValue = llvmParser_parse_value(parser);
+        llvmParser_expect_value_type(parser, &arg_value, &arg_type);
+        vec_push::<LlvmTypedValue>(&mut arguments, LlvmTypedValue::Pair(arg_type, arg_value));
+
+        while llvmParser_current_token_eq(parser, &LlvmToken::Comma) {
+            llvmParser_next_token(parser);
+
+            let arg_type: LlvmType = llvmParser_parse_type(parser);
+            let arg_value: LlvmValue = llvmParser_parse_value(parser);
+            llvmParser_expect_value_type(parser, &arg_value, &arg_type);
+            vec_push::<LlvmTypedValue>(&mut arguments, LlvmTypedValue::Pair(arg_type, arg_value));
+        }
+    }
+    llvmParser_expect_token(parser, &LlvmToken::RParen);
+
+    Call::Call(return_type, callee, arguments)
 }
 
 fn llvmParser_parse_type(parser: &mut LlvmParser) -> LlvmType {
@@ -3968,6 +3992,10 @@ fn llvmulator_execute_instructions(
             Instruction::Store(ty, value, address) => {
                 llvmulator_execute_store(emulator, registers, ty, value, address);
             }
+            Instruction::Call(Call::Call(call_type, callee, arguments)) => {
+                let _ =
+                    llvmulator_execute_call(emulator, ast, registers, call_type, callee, arguments);
+            }
             Instruction::Terminator(terminator) => {
                 return llvmulator_execute_terminator(
                     llvmulator_globals(emulator),
@@ -4002,6 +4030,7 @@ fn llvmulator_evaluate_assign_op(
     operation: &AssignOp,
 ) -> usize {
     let global_values: &StringMap<usize> = llvmulator_globals(emulator);
+
     match operation {
         AssignOp::Binary(operator, result_type, left, right) => {
             let lhs: usize = llvm_eval_value(global_values, registers, left);
@@ -4058,23 +4087,8 @@ fn llvmulator_evaluate_assign_op(
             }
         }
 
-        AssignOp::Call(call_type, callee, arguments) => {
-            let mut arg_values: Vec<usize> = vec_new::<usize>();
-            let mut i: usize = 0;
-            while i < vec_len::<LlvmTypedValue>(arguments) {
-                let argument: &LlvmTypedValue = vec_at::<LlvmTypedValue>(arguments, i);
-                let LlvmTypedValue::Pair(ty, argument_value): &LlvmTypedValue = argument;
-
-                let value: usize = llvm_eval_value(global_values, registers, argument_value);
-                let wrapped_value: usize = llvm_overflow_value(value, ty);
-                vec_push::<usize>(&mut arg_values, wrapped_value);
-
-                i = i + 1;
-            }
-
-            let value: usize =
-                llvmulator_execute_function_named(emulator, ast, callee, &arg_values);
-            llvm_overflow_value(value, call_type)
+        AssignOp::Call(Call::Call(call_type, callee, arguments)) => {
+            llvmulator_execute_call(emulator, ast, registers, call_type, callee, arguments)
         }
 
         AssignOp::Gep(_, pointer, indexes) => {
@@ -4089,6 +4103,34 @@ fn llvmulator_evaluate_assign_op(
             address
         }
     }
+}
+
+/// Execute an LLVM call and return the raw result value.
+fn llvmulator_execute_call(
+    emulator: &mut Llvmulator,
+    ast: &LlvmAST,
+    registers: &StringMap<usize>,
+    call_type: &LlvmType,
+    callee: &String,
+    arguments: &Vec<LlvmTypedValue>,
+) -> usize {
+    let global_values: &StringMap<usize> = llvmulator_globals(emulator);
+
+    let mut arg_values: Vec<usize> = vec_new::<usize>();
+    let mut i: usize = 0;
+    while i < vec_len::<LlvmTypedValue>(arguments) {
+        let argument: &LlvmTypedValue = vec_at::<LlvmTypedValue>(arguments, i);
+        let LlvmTypedValue::Pair(ty, argument_value): &LlvmTypedValue = argument;
+
+        let value: usize = llvm_eval_value(global_values, registers, argument_value);
+        let wrapped_value: usize = llvm_overflow_value(value, ty);
+        vec_push::<usize>(&mut arg_values, wrapped_value);
+
+        i = i + 1;
+    }
+
+    let value: usize = llvmulator_execute_function_named(emulator, ast, callee, &arg_values);
+    llvm_overflow_value(value, call_type)
 }
 
 /// Normalize a value so it wraps around according to the given type.
