@@ -73,7 +73,9 @@ pattern -> literal
 | identifier "::" identifier [ "(" pattern { "," pattern } [ "," ] ")" ] )
 | "_"
 
-call -> identifier "(" [ expression { "," expression } [ "," ] ] ")"
+call -> path "(" [ expression { "," expression } [ "," ] ] ")"
+
+path -> identifier { "::" identifier }
 ```
 
 ## Literals
