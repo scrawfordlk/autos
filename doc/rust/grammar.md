@@ -6,7 +6,7 @@
 language -> { function | enum }
 
 function -> [ "unsafe" ] "fn" identifier
-              "(" [ variable { "," variable } [ "," ] ] ")" [ "->" type ] block
+           "(" [ variable { "," variable } [ "," ] ] ")" [ "->" type ] block
 
 enum     -> "enum" identifier "{" variant "," { variant "," } "}"
 
@@ -18,16 +18,16 @@ block    -> "{" { ( binding | expression [ ";" ] ) } "}"
 ## Statement
 
 ```
-binding   -> "let" variable "=" expression ";"
+binding  -> "let" variable "=" expression ";"
 
-variable  -> pattern ":" type
+variable -> pattern ":" type
 
-type      -> "u8"
-           | "usize"
-           | "bool"
-           | "char"
-           | identifier
-           | ( "&" [ "mut" ] | "*" "mut" ) type
+type     -> "u8"
+          | "usize"
+          | "bool"
+          | "char"
+          | identifier
+          | ( "&" [ "mut" ] | "*" "mut" ) type
 ```
 
 ## Expression
@@ -35,66 +35,66 @@ type      -> "u8"
 ```
 expression -> [ "return" [ expression ] ] | assignment
 
-assignment -> comparison [ "=" assignment ]
+assignment -> comparison [ "=" comparison ] | comparison [ "*" "=" comparison ]
 
 comparison -> arithmetic [ ( "==" | "!=" | "<" | ">" | "<=" | ">=" ) arithmetic ]
 
 arithmetic -> term { ( "+" | "-" ) term }
 
-term -> cast { ( "*" | "/" | "%" ) cast }
+term       -> cast { ( "*" | "/" | "%" ) cast }
 
-cast -> unary { "as" type }
+cast       -> unary { "as" type }
 
-unary -> [ "*" | ( "&" [ "mut" ] ) ] unary | factor
+unary      -> [ "*" | ( "&" [ "mut" ] ) ] unary | factor
 
-factor -> ( literal
-| identifier
-| call
-| "(" expression ")"
-| [ "unsafe" ] block
-| if
-| while
-| match )
+factor     -> ( literal
+            | identifier
+            | call
+            | "(" expression ")"
+            | [ "unsafe" ] block
+            | if
+            | while
+            | match )
 ```
 
 ## Remaining Control Flow
 
 ```
-if -> "if" expression block [ "else" [ if | block ] ]
+if      -> "if" expression block [ "else" [ if | block ] ]
 
-while -> "while" expression block
+while   -> "while" expression block
 
-match -> "match" expression "{" { arm } "}"
+match   -> "match" expression "{" { arm } "}"
 
-arm -> pattern "=>" expression ","
+arm     -> pattern "=>" expression ","
 
 pattern -> literal
-| [ "mut" ] identifier
-| identifier "::" identifier [ "(" pattern { "," pattern } [ "," ] ")" ] )
-| "_"
+         | [ "mut" ] identifier
+         | identifier "::" identifier [ "(" pattern { "," pattern } [ "," ] ")" ] )
+         | "_"
 
-call -> path "(" [ expression { "," expression } [ "," ] ] ")"
+call    -> path "(" [ expression { "," expression } [ "," ] ] ")"
 
-path -> identifier { "::" identifier }
+path    -> identifier { "::" identifier }
 ```
 
 ## Literals
 
 ```
-literal -> integer | string | character | boolean
+literal    -> integer | string | character | boolean
 
-integer -> digit { digit }
+integer    -> digit { digit }
 
-string -> """ { printable_character } """
+string     -> """ { printable_character } """
 
-character -> "'" printable_character "'"
+character  -> "'" printable_character "'"
 
-boolean -> "true" | "false"
+boolean    -> "true" | "false"
 
-digit -> "0" | ... | "9"
+digit      -> "0" | ... | "9"
 
 identifier -> ( letter | "_" ) { letter | digit | "_" }
 
-letter -> "a" | ... | "z" | "A" | ... | "Z"
+letter     -> "a" | ... | "z" | "A" | ... | "Z"
 ```
 
