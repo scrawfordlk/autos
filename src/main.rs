@@ -3261,27 +3261,23 @@ fn instructionBlock_fetch_instructions(
 ///
 /// Assignment: Assigns the value of an instruction to a virtual register.
 /// Store: Stores a value at the given ptr value.
-/// Call: Call a function to perform side-effects, discarding the result.
-/// Terminator: Control flow to jump to another block (br) or return (ret).
+/// Call: Calls a function to perform side-effects, discarding the result.
+/// Ret: Return a value.
+/// RetVoid: Return without a value.
+/// Br: Branch (conditionally) to another basic block.
 enum Instruction {
     Assignment(AssignInstruction),
     /// stored type, value, address
     Store(LlvmType, LlvmValue, LlvmValue),
     Call(Call),
-    Terminator(TerminatorInstruction),
+    Ret(LlvmTypedValue),
+    RetVoid,
+    Br(Branch),
 }
 
 enum Call {
     /// return type, callee, arguments
     Call(LlvmType, String, Vec<LlvmTypedValue>),
-}
-
-/// Represents an instruction which terminates an instruction block.
-enum TerminatorInstruction {
-    RetVoid,
-    /// type, value
-    Ret(LlvmType, LlvmValue),
-    Br(Branch),
 }
 
 /// Represents "br", either a conditional or unconditional jump.
@@ -3490,8 +3486,8 @@ fn llvmParser_parse_register(parser: &mut LlvmParser) -> String {
 
 fn llvmParser_parse_instruction(parser: &mut LlvmParser) -> Instruction {
     match llvmParser_current_token(parser) {
-        LlvmToken::Ret => Instruction::Terminator(llvmParser_parse_return(parser)),
-        LlvmToken::Br => Instruction::Terminator(llvmParser_parse_branch(parser)),
+        LlvmToken::Ret => llvmParser_parse_return(parser),
+        LlvmToken::Br => llvmParser_parse_branch(parser),
         LlvmToken::Percent => Instruction::Assignment(llvmParser_parse_assignment(parser)),
         LlvmToken::Store => llvmParser_parse_store(parser),
         LlvmToken::Call => {
@@ -3502,18 +3498,18 @@ fn llvmParser_parse_instruction(parser: &mut LlvmParser) -> Instruction {
     }
 }
 
-fn llvmParser_parse_return(parser: &mut LlvmParser) -> TerminatorInstruction {
+fn llvmParser_parse_return(parser: &mut LlvmParser) -> Instruction {
     llvmParser_expect_token(parser, &LlvmToken::Ret);
     if llvmParser_try_consume(parser, &LlvmToken::Void) {
-        TerminatorInstruction::RetVoid
+        Instruction::RetVoid
     } else {
         let returned_type: LlvmType = llvmParser_parse_type(parser);
         let returned_value: LlvmValue = llvmParser_parse_value(parser);
-        TerminatorInstruction::Ret(returned_type, returned_value)
+        Instruction::Ret(LlvmTypedValue::Pair(returned_type, returned_value))
     }
 }
 
-fn llvmParser_parse_branch(parser: &mut LlvmParser) -> TerminatorInstruction {
+fn llvmParser_parse_branch(parser: &mut LlvmParser) -> Instruction {
     llvmParser_expect_token(parser, &LlvmToken::Br);
     let branch: Branch = if llvmParser_try_consume(parser, &LlvmToken::Label) {
         let target_label: String = llvmParser_parse_register(parser);
@@ -3532,7 +3528,7 @@ fn llvmParser_parse_branch(parser: &mut LlvmParser) -> TerminatorInstruction {
 
         Branch::Conditional(condition, then_label, else_label)
     };
-    TerminatorInstruction::Br(branch)
+    Instruction::Br(branch)
 }
 
 fn llvmParser_parse_assignment(parser: &mut LlvmParser) -> AssignInstruction {
@@ -3996,12 +3992,34 @@ fn llvmulator_execute_instructions(
                 let _ =
                     llvmulator_execute_call(emulator, ast, registers, call_type, callee, arguments);
             }
-            Instruction::Terminator(terminator) => {
-                return llvmulator_execute_terminator(
-                    llvmulator_globals(emulator),
-                    registers,
-                    terminator,
-                );
+
+            Instruction::Ret(LlvmTypedValue::Pair(return_type, value)) => {
+                let global_values: &StringMap<usize> = llvmulator_globals(emulator);
+                let return_value: usize = llvm_eval_value(global_values, registers, value);
+                return LlvmExecFlow::Return(llvm_overflow_value(return_value, return_type));
+            }
+            Instruction::RetVoid => {
+                return LlvmExecFlow::Return(0);
+            }
+
+            Instruction::Br(branch) => {
+                return match branch {
+                    Branch::Unconditional(target_label) => {
+                        LlvmExecFlow::Jump(string_clone(target_label))
+                    }
+                    Branch::Conditional(condition, then_label, else_label) => {
+                        let global_values: &StringMap<usize> = llvmulator_globals(emulator);
+
+                        let condition_value: usize =
+                            llvm_eval_value(global_values, registers, condition);
+
+                        if condition_value == 1 {
+                            LlvmExecFlow::Jump(string_clone(then_label))
+                        } else {
+                            LlvmExecFlow::Jump(string_clone(else_label))
+                        }
+                    }
+                };
             }
         }
 
@@ -4162,32 +4180,6 @@ fn llvmulator_execute_store(
         stored_value,
     )) {
         panic!("invalid LLVM store address");
-    }
-}
-
-/// Execute the given terminator instruction.
-fn llvmulator_execute_terminator(
-    global_values: &StringMap<usize>,
-    registers: &StringMap<usize>,
-    terminator: &TerminatorInstruction,
-) -> LlvmExecFlow {
-    match terminator {
-        TerminatorInstruction::RetVoid => LlvmExecFlow::Return(0),
-        TerminatorInstruction::Ret(ret_type, value) => {
-            let ret_value: usize = llvm_eval_value(global_values, registers, value);
-            LlvmExecFlow::Return(llvm_overflow_value(ret_value, ret_type))
-        }
-        TerminatorInstruction::Br(branch) => match branch {
-            Branch::Unconditional(target_label) => LlvmExecFlow::Jump(string_clone(target_label)),
-            Branch::Conditional(condition, then_label, else_label) => {
-                let condition_value: usize = llvm_eval_value(global_values, registers, condition);
-                if condition_value == 1 {
-                    LlvmExecFlow::Jump(string_clone(then_label))
-                } else {
-                    LlvmExecFlow::Jump(string_clone(else_label))
-                }
-            }
-        },
     }
 }
 
