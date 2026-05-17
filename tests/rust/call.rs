@@ -3,7 +3,7 @@ fn main() -> usize {
 }
 
 fn pow(base: usize, exp: usize) -> usize {
-    if exp == 0 {
+    while exp == 0 {
         return 1;
     }
 
