@@ -1,32 +1,30 @@
 # Grammar of LLVM-IR
 
+## Global
 ```
-llvm       -> { string | function }
+llvm     -> { string | function }
 
-string     -> global "=" "constant" array "c"" { printable_character } "\""
+string   -> global "=" "constant" array "c"" { printable_character } "\""
 
-function   -> "define" type global  parameters "{" blocks "}"
+function -> "define" type global
+            "(" [ type local { "," type local } ] ")"
+            "{" { block } "}"
 
-parameters -> "(" [ type register { "," type register } ] ")"
+global   -> "@" identifier
 
-global     -> "@" identifier
+block    -> identifier ":" { instruction }
 ```
 
+## Instructions
 ```
-blocks      -> { block }
-
-block       -> identifier ":" { instruction }
-
-register    -> "%" identifier
-
 instruction -> return | branch | assignment | store | call
 
 return      -> "ret" ( "void" | type value )
 
-branch      -> "br" "label" register
-             | "br" "i1" value "," "label" register "," "label" register
+branch      -> "br" "label" local
+             | "br" "i1" value "," "label" local "," "label" local
 
-assignment  -> register "=" operation
+assignment  -> local "=" operation
 
 operation   -> binary
              | icmp
@@ -51,18 +49,23 @@ alloca      -> "alloca" type "," "i64" number
 load        -> "load" type "," "ptr" value
 
 gep         -> "getelementptr" type "," "ptr" value "," type value { "," type value }
+```
 
-type        -> integer | "void" | "ptr" | "[" number "x" type "]"
+## Types, Literals & Identifiers
+```
+local      -> "%" identifier
 
-integer     -> "i64" | "i32" | "i8" | "i1"
+type       -> integer | "void" | "ptr" | "[" number "x" type "]"
 
-value       -> register | number | global
+integer    -> "i64" | "i32" | "i8" | "i1"
 
-literal     -> number | array
+value      -> local | number | global
 
-array       -> "[" [ type literal { "," type literal } ] "]"
+literal    -> number | array
 
-number      -> [ "-" ] digit { digit }
+array      -> "[" [ type literal { "," type literal } ] "]"
 
-identifier  -> ( letter | "_" | "." ) { letter | digit | "_" | "." }
+number     -> [ "-" ] digit { digit }
+
+identifier -> ( letter | "_" | "." ) { letter | digit | "_" | "." }
 ```
