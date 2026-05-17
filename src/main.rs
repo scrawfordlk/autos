@@ -751,7 +751,7 @@ fn rAstPath_to_string(path: &RAstPath) -> String {
         if i > 0 {
             string_push_str(&mut result, "::");
         }
-        let segment: &String = unwrap::<&String>(vec_get::<String>(segments, i));
+        let segment: &String = vec_at::<String>(segments, i);
         string_push_string(&mut result, segment);
         i = i + 1;
     }
@@ -1370,13 +1370,13 @@ fn codegen_collect_function_signatures(codegen: &mut Codegen, ast: &RAst) {
 
     let mut i: usize = 0;
     while i < vec_len::<RAstItem>(items) {
-        match unwrap::<&RAstItem>(vec_get::<RAstItem>(items, i)) {
+        match vec_at::<RAstItem>(items, i) {
             RAstItem::Function(RAstFunction::Function(_, name, params, return_type, _)) => {
                 let mut param_types: List<RAstType> = list_new::<RAstType>();
                 let mut param_index: usize = 0;
                 while param_index < vec_len::<RAstVariable>(params) {
                     let RAstVariable::Variable(_, parameter_type): &RAstVariable =
-                        unwrap::<&RAstVariable>(vec_get::<RAstVariable>(params, param_index));
+                        vec_at::<RAstVariable>(params, param_index);
                     list_append::<RAstType>(&mut param_types, rAstType_clone(parameter_type));
                     param_index = param_index + 1;
                 }
@@ -1681,7 +1681,7 @@ fn codegen_language(codegen: &mut Codegen, ast: &RAst) {
     let RAst::Language(items): &RAst = ast;
     let mut i: usize = 0;
     while i < vec_len::<RAstItem>(items) {
-        let item: &RAstItem = unwrap::<&RAstItem>(vec_get::<RAstItem>(items, i));
+        let item: &RAstItem = vec_at::<RAstItem>(items, i);
         match item {
             RAstItem::Enum(enum_item) => codegen_enum(codegen, enum_item),
             RAstItem::Function(function) => codegen_function(codegen, function),
@@ -1697,7 +1697,7 @@ fn codegen_enum(codegen: &mut Codegen, enum_item: &RAstEnum) {
     let mut lowered_variants: List<RAstType> = list_new::<RAstType>();
     let mut i: usize = 0;
     while i < vec_len::<RAstVariant>(variants) {
-        let variant: &RAstVariant = unwrap::<&RAstVariant>(vec_get::<RAstVariant>(variants, i));
+        let variant: &RAstVariant = vec_at::<RAstVariant>(variants, i);
         let RAstVariant::Variant(variant_name, _): &RAstVariant = variant;
         list_append::<RAstType>(
             &mut lowered_variants,
@@ -1725,8 +1725,7 @@ fn codegen_function(codegen: &mut Codegen, function: &RAstFunction) {
     let mut parameter_types: List<RAstType> = list_new::<RAstType>();
     let mut i: usize = 0;
     while i < vec_len::<RAstVariable>(parameters) {
-        let parameter: &RAstVariable =
-            unwrap::<&RAstVariable>(vec_get::<RAstVariable>(parameters, i));
+        let parameter: &RAstVariable = vec_at::<RAstVariable>(parameters, i);
         let RAstVariable::Variable(_, parameter_type): &RAstVariable = parameter;
         list_append::<RAstType>(&mut parameter_types, rAstType_clone(parameter_type));
         i = i + 1;
@@ -1746,7 +1745,7 @@ fn codegen_function(codegen: &mut Codegen, function: &RAstFunction) {
     let mut parameter_index: usize = 0;
     while parameter_index < vec_len::<RAstVariable>(parameters) {
         let RAstVariable::Variable(pattern, parameter_type): &RAstVariable =
-            unwrap::<&RAstVariable>(vec_get::<RAstVariable>(parameters, parameter_index));
+            vec_at::<RAstVariable>(parameters, parameter_index);
 
         match pattern {
             RAstPattern::Identifier(is_mutable, name) => {
@@ -1810,8 +1809,7 @@ fn codegen_block(codegen: &mut Codegen, block: &RAstBlock) -> STPair {
     let mut i: usize = 0;
     let mut block_type: RAstType = RAstType::Unit;
     while i < vec_len::<RAstStatement>(statements) {
-        let statement: &RAstStatement =
-            unwrap::<&RAstStatement>(vec_get::<RAstStatement>(statements, i));
+        let statement: &RAstStatement = vec_at::<RAstStatement>(statements, i);
         match statement {
             RAstStatement::Let(variable, value) => {
                 codegen_binding(codegen, variable, box_deref::<RAstExpr>(value));
@@ -2113,7 +2111,7 @@ fn codegen_call(codegen: &mut Codegen, callee: &RAstPath, arguments: &Vec<RAstEx
     let mut arg_values: Vec<String> = vec_new::<String>();
     let mut i: usize = 0;
     while i < vec_len::<RAstExpr>(arguments) {
-        let argument: &RAstExpr = unwrap::<&RAstExpr>(vec_get::<RAstExpr>(arguments, i));
+        let argument: &RAstExpr = vec_at::<RAstExpr>(arguments, i);
 
         let STPair::ST(arg_value, arg_type): STPair = codegen_expression(codegen, argument);
 
@@ -2217,7 +2215,7 @@ fn codegen_match(codegen: &mut Codegen, value: &RAstExpr, arms: &Vec<RAstMatchAr
     }
 
     let STPair::ST(_, matched_type): STPair = codegen_expression(codegen, value);
-    let first_arm: &RAstMatchArm = unwrap::<&RAstMatchArm>(vec_get::<RAstMatchArm>(arms, 0));
+    let first_arm: &RAstMatchArm = vec_at::<RAstMatchArm>(arms, 0);
     let RAstMatchArm::Arm(first_pattern, first_expression): &RAstMatchArm = first_arm;
     let first_pattern_type: RAstType =
         codegen_pattern_type_for_expression(first_pattern, &matched_type);
@@ -2226,7 +2224,7 @@ fn codegen_match(codegen: &mut Codegen, value: &RAstExpr, arms: &Vec<RAstMatchAr
 
     let mut i: usize = 1;
     while i < vec_len::<RAstMatchArm>(arms) {
-        let arm: &RAstMatchArm = unwrap::<&RAstMatchArm>(vec_get::<RAstMatchArm>(arms, i));
+        let arm: &RAstMatchArm = vec_at::<RAstMatchArm>(arms, i);
         let RAstMatchArm::Arm(pattern, expression): &RAstMatchArm = arm;
         let pattern_type: RAstType = codegen_pattern_type_for_expression(pattern, &matched_type);
         codegen_expect_same_type(&pattern_type, &matched_type);
@@ -2504,8 +2502,7 @@ fn codegen_emit_call_value(
                     string_push_str(code, ", ");
                 }
 
-                let argument_value: &String =
-                    unwrap::<&String>(vec_get::<String>(argument_values, i));
+                let argument_value: &String = vec_at::<String>(argument_values, i);
                 string_push_string(code, &rAstType_to_llvm_name(argument_type));
                 string_push(code, ' ');
                 string_push_string(code, argument_value);
@@ -2541,8 +2538,7 @@ fn codegen_emit_call_void(
                 if i > 0 {
                     string_push_str(code, ", ");
                 }
-                let argument_value: &String =
-                    unwrap::<&String>(vec_get::<String>(argument_values, i));
+                let argument_value: &String = vec_at::<String>(argument_values, i);
                 string_push_string(code, &rAstType_to_llvm_name(argument_type));
                 string_push(code, ' ');
                 string_push_string(code, argument_value);
@@ -2593,7 +2589,7 @@ fn codegen_emit_function_header(
         }
 
         let RAstVariable::Variable(pattern, parameter_type): &RAstVariable =
-            unwrap::<&RAstVariable>(vec_get::<RAstVariable>(parameters, i));
+            vec_at::<RAstVariable>(parameters, i);
 
         // TODO: what if wildcards are used? Duplicate register names?
         let parameter_name: String = match pattern {
@@ -3249,8 +3245,7 @@ fn instructionBlock_fetch_instructions(
 ) -> &Vec<Instruction> {
     let mut i: usize = 0;
     while i < vec_len::<InstructionBlock>(blocks) {
-        let block: &InstructionBlock =
-            unwrap::<&InstructionBlock>(vec_get::<InstructionBlock>(blocks, i));
+        let block: &InstructionBlock = vec_at::<InstructionBlock>(blocks, i);
 
         let other_label: &String = instructionBlock_label(block);
         if string_eq(other_label, &label) {
@@ -3924,19 +3919,17 @@ fn llvmulator_execute_function(
 
     let mut i: usize = 0;
     while i < vec_len::<LlvmParameter>(parameters) {
-        let parameter: &LlvmParameter =
-            unwrap::<&LlvmParameter>(vec_get::<LlvmParameter>(parameters, i));
-        let value: &usize = unwrap::<&usize>(vec_get::<usize>(arguments, i));
+        let parameter: &LlvmParameter = vec_at::<LlvmParameter>(parameters, i);
+        let value: &usize = vec_at::<usize>(arguments, i);
         let LlvmParameter::Parameter(name, _): &LlvmParameter = parameter;
         stringMap_insert::<usize>(&mut virtual_registers, string_clone(name), *value);
 
         i = i + 1;
     }
 
-    let mut current_label: String = match vec_get::<InstructionBlock>(blocks, 0) {
-        Option::Some(label) => string_clone(instructionBlock_label(label)),
-        _ => panic!("empty function body!"),
-    };
+    let mut current_label: String = string_clone(instructionBlock_label(
+        vec_at::<InstructionBlock>(blocks, 0),
+    ));
     while true {
         let instructions: &Vec<Instruction> =
             instructionBlock_fetch_instructions(blocks, string_clone(&current_label));
@@ -3966,8 +3959,7 @@ fn llvmulator_execute_instructions(
 ) -> LlvmExecFlow {
     let mut i: usize = 0;
     while i < vec_len::<Instruction>(instructions) {
-        let instruction: &Instruction =
-            unwrap::<&Instruction>(vec_get::<Instruction>(instructions, i));
+        let instruction: &Instruction = vec_at::<Instruction>(instructions, i);
 
         match instruction {
             Instruction::Assignment(assign_instruction) => {
@@ -4070,8 +4062,7 @@ fn llvmulator_evaluate_assign_op(
             let mut arg_values: Vec<usize> = vec_new::<usize>();
             let mut i: usize = 0;
             while i < vec_len::<LlvmTypedValue>(arguments) {
-                let argument: &LlvmTypedValue =
-                    unwrap::<&LlvmTypedValue>(vec_get::<LlvmTypedValue>(arguments, i));
+                let argument: &LlvmTypedValue = vec_at::<LlvmTypedValue>(arguments, i);
                 let LlvmTypedValue::Pair(ty, argument_value): &LlvmTypedValue = argument;
 
                 let value: usize = llvm_eval_value(global_values, registers, argument_value);
@@ -4090,8 +4081,7 @@ fn llvmulator_evaluate_assign_op(
             let mut address: usize = llvm_eval_value(global_values, registers, pointer);
             let mut i: usize = 0;
             while i < vec_len::<LlvmTypedValue>(indexes) {
-                let typed_value: &LlvmTypedValue =
-                    unwrap::<&LlvmTypedValue>(vec_get::<LlvmTypedValue>(indexes, i));
+                let typed_value: &LlvmTypedValue = vec_at::<LlvmTypedValue>(indexes, i);
                 let LlvmTypedValue::Pair(_, index_value): &LlvmTypedValue = typed_value;
                 address = address + llvm_eval_value(global_values, registers, index_value);
                 i = i + 1;
@@ -4545,6 +4535,12 @@ fn vec_get_mut<'a, T>(vec: &'a mut Vec<T>, index: usize) -> Option<&'a mut T> {
         let ptr: *mut T = ptr_add::<T>(vec_ptr::<T>(vec), index);
         unsafe { Option::Some(&mut *ptr) }
     }
+}
+
+/// Get an immutable reference to an element by index.
+/// Panics, if the index is out of bounds.
+fn vec_at<T>(vec: &Vec<T>, index: usize) -> &T {
+    unwrap::<&T>(vec_get::<T>(vec, index))
 }
 
 /// Set a value at the given index. Return false if the index is out of bounds.
