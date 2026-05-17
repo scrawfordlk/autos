@@ -558,6 +558,7 @@ fn skip_line_comment(lexer: &mut Lexer) {
 
 // -------------------------- Parser -------------------------------
 
+/// Compile source code into LLVM-IR.
 fn compile(source: &str) -> String {
     let mut lexer: Lexer = lexer_new(string_from_str(source));
     let ast: RAst = parse_language(&mut lexer);
@@ -3190,7 +3191,7 @@ fn llvmLocalSymTable_lookup_register_type<'a>(
 }
 
 enum LlvmFunction {
-    /// return type, parameters, instructions, local symbols
+    /// return type, parameters, basic blocks
     Function(LlvmType, Vec<LlvmParameter>, Vec<InstructionBlock>),
 }
 
@@ -3200,7 +3201,7 @@ enum LlvmParameter {
     Parameter(String, LlvmType),
 }
 
-/// Supported types of LLVM.
+/// Supported LLVM types in the subset.
 #[derive(Debug)]
 enum LlvmType {
     I1,
@@ -3261,19 +3262,20 @@ fn instructionBlock_fetch_instructions(
 ///
 /// Assignment: Assigns the value of an instruction to a virtual register.
 /// Store: Stores a value at the given ptr value.
-/// Call: Calls a function to perform side-effects, discarding the result.
-/// Ret: Return a value.
-/// RetVoid: Return without a value.
-/// Br: Branch (conditionally) to another basic block.
+/// Call: Calls a function for side effects, discarding the result.
+/// Ret: Returns from the current function with an optional return value.
+/// Br: Branches to another basic block.
 enum Instruction {
     Assignment(AssignInstruction),
     /// stored type, value, address
     Store(LlvmType, LlvmValue, LlvmValue),
     Call(Call),
+    /// return type, optional value
     Ret(LlvmType, Option<LlvmValue>),
     Br(Branch),
 }
 
+/// A `call` instruction.
 enum Call {
     /// return type, callee, arguments
     Call(LlvmType, String, Vec<LlvmTypedValue>),
@@ -3346,7 +3348,7 @@ fn assignOp_get_type(operation: &AssignOp) -> LlvmType {
     }
 }
 
-/// Represents a value in a register, global or as a literal.
+/// Represents an LLVM value operand.
 #[derive(Debug)]
 enum LlvmValue {
     /// identifier
