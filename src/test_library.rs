@@ -179,10 +179,6 @@ fn rAstTypeList_single(t: RAstType) -> List<RAstType> {
     List::Cons(t, box_new::<List<RAstType>>(List::Nil))
 }
 
-fn clone_rAstType_list(list: &List<RAstType>) -> List<RAstType> {
-    list_clone::<RAstType>(list, rAstType_clone)
-}
-
 // ------------------------- Bool ----------------------------
 
 #[test]
@@ -229,14 +225,14 @@ fn test_symtable_global_insert_and_lookup() {
     assert!(symTable_insert_function(
         &mut symtable,
         string_from_str("f"),
-        list_new::<RAstType>(),
+        vec_new::<RAstType>(),
         RAstType::Usize
     ));
     assert!(symTable_contains(&symtable, &string_from_str("f")));
 
     match symTable_lookup_function_signature(&symtable, &string_from_str("f")) {
         Option::Some(FnSignature::Fn(parameter_types, return_type)) => {
-            assert!(matches!(parameter_types, List::Nil));
+            assert!(vec_len::<RAstType>(&parameter_types) == 0);
             assert!(matches!(return_type, RAstType::Usize));
         }
         Option::Some(_) => assert!(false, "expected function signature"),
@@ -246,7 +242,7 @@ fn test_symtable_global_insert_and_lookup() {
     assert!(symTable_insert_enum(
         &mut symtable,
         string_from_str("State"),
-        list_new::<RAstType>()
+        vec_new::<RAstType>()
     ));
     assert!(symTable_contains(&symtable, &string_from_str("State")));
 }
@@ -308,20 +304,4 @@ fn test_type_clone() {
     let custom = RAstType::Custom(string_from_str("MyType"));
     let cloned = rAstType_clone(&custom);
     assert!(rAstType_match(&custom, &cloned));
-}
-
-#[test]
-fn test_type_list_clone() {
-    let types = rAstTypeList_single(RAstType::Custom(string_from_str("Node")));
-    let cloned = list_clone::<RAstType>(&types, rAstType_clone);
-    assert!(rAstTypeList_match(&types, &cloned));
-}
-
-#[test]
-fn test_type_list_box_new_deref_clone() {
-    let ptr = box_new::<List<RAstType>>(List::Nil);
-    assert!(matches!(box_deref::<List<RAstType>>(&ptr), List::Nil));
-
-    let cloned_ptr = box_clone::<List<RAstType>>(&ptr, clone_rAstType_list);
-    assert!(matches!(box_deref::<List<RAstType>>(&cloned_ptr), List::Nil));
 }

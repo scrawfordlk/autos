@@ -1373,12 +1373,12 @@ fn codegen_collect_function_signatures(codegen: &mut Codegen, ast: &RAst) {
     while i < vec_len::<RAstItem>(items) {
         match vec_at::<RAstItem>(items, i) {
             RAstItem::Function(RAstFunction::Function(_, name, params, return_type, _)) => {
-                let mut param_types: List<RAstType> = list_new::<RAstType>();
+                let mut param_types: Vec<RAstType> = vec_new::<RAstType>();
                 let mut param_index: usize = 0;
                 while param_index < vec_len::<RAstVariable>(params) {
                     let RAstVariable::Variable(_, parameter_type): &RAstVariable =
                         vec_at::<RAstVariable>(params, param_index);
-                    list_append::<RAstType>(&mut param_types, rAstType_clone(parameter_type));
+                    vec_push::<RAstType>(&mut param_types, rAstType_clone(parameter_type));
                     param_index = param_index + 1;
                 }
 
@@ -1532,7 +1532,7 @@ fn symTable_leave_scope(symtable: &mut SymTable) -> bool {
 fn symTable_insert_function(
     symtable: &mut SymTable,
     name: String,
-    parameter_types: List<RAstType>,
+    parameter_types: Vec<RAstType>,
     return_type: RAstType,
 ) -> bool {
     let SymTable::Table(global, _) = symtable;
@@ -1546,7 +1546,7 @@ fn symTable_insert_function(
 }
 
 /// Insert an enum into the global symbol table, returning false on duplicate name.
-fn symTable_insert_enum(symtable: &mut SymTable, name: String, variants: List<RAstType>) -> bool {
+fn symTable_insert_enum(symtable: &mut SymTable, name: String, variants: Vec<RAstType>) -> bool {
     let SymTable::Table(global, _) = symtable;
     if stringMap_contains::<SymTableGlobalEntry>(global, &name) {
         return false;
@@ -1576,7 +1576,7 @@ fn symTable_insert_variable(
 /// Global symbol table entries for functions and enums.
 enum SymTableGlobalEntry {
     Function(FnSignature),
-    Enum(List<RAstType>),
+    Enum(Vec<RAstType>),
 }
 
 /// Local variable entry.
@@ -1588,7 +1588,7 @@ enum Variable {
 /// A type that represents the (type) signature of a function.
 enum FnSignature {
     /// parameter types, return type
-    Fn(List<RAstType>, RAstType),
+    Fn(Vec<RAstType>, RAstType),
 }
 
 fn rAstType_is_numeric(ty: &RAstType) -> bool {
@@ -1695,12 +1695,12 @@ fn codegen_language(codegen: &mut Codegen, ast: &RAst) {
 fn codegen_enum(codegen: &mut Codegen, enum_item: &RAstEnum) {
     let RAstEnum::Enum(enum_name, variants): &RAstEnum = enum_item;
 
-    let mut lowered_variants: List<RAstType> = list_new::<RAstType>();
+    let mut lowered_variants: Vec<RAstType> = vec_new::<RAstType>();
     let mut i: usize = 0;
     while i < vec_len::<RAstVariant>(variants) {
         let variant: &RAstVariant = vec_at::<RAstVariant>(variants, i);
         let RAstVariant::Variant(variant_name, _): &RAstVariant = variant;
-        list_append::<RAstType>(
+        vec_push::<RAstType>(
             &mut lowered_variants,
             RAstType::Custom(string_clone(variant_name)),
         );
@@ -1723,12 +1723,12 @@ fn codegen_function(codegen: &mut Codegen, function: &RAstFunction) {
 
     codegen_set_current_fn_return_type(codegen, rAstType_clone(&return_type));
 
-    let mut parameter_types: List<RAstType> = list_new::<RAstType>();
+    let mut parameter_types: Vec<RAstType> = vec_new::<RAstType>();
     let mut i: usize = 0;
     while i < vec_len::<RAstVariable>(parameters) {
         let parameter: &RAstVariable = vec_at::<RAstVariable>(parameters, i);
         let RAstVariable::Variable(_, parameter_type): &RAstVariable = parameter;
-        list_append::<RAstType>(&mut parameter_types, rAstType_clone(parameter_type));
+        vec_push::<RAstType>(&mut parameter_types, rAstType_clone(parameter_type));
         i = i + 1;
     }
 
@@ -2108,7 +2108,7 @@ fn codegen_path_expression(codegen: &mut Codegen, path: &RAstPath) -> STPair {
 fn codegen_call(codegen: &mut Codegen, callee: &RAstPath, arguments: &Vec<RAstExpr>) -> STPair {
     let function_name: String = rAstPath_to_string(callee);
 
-    let mut arg_types: List<RAstType> = list_new::<RAstType>();
+    let mut arg_types: Vec<RAstType> = vec_new::<RAstType>();
     let mut arg_values: Vec<String> = vec_new::<String>();
     let mut i: usize = 0;
     while i < vec_len::<RAstExpr>(arguments) {
@@ -2116,14 +2116,14 @@ fn codegen_call(codegen: &mut Codegen, callee: &RAstPath, arguments: &Vec<RAstEx
 
         let STPair::ST(arg_value, arg_type): STPair = codegen_expression(codegen, argument);
 
-        list_append::<RAstType>(&mut arg_types, arg_type);
+        vec_push::<RAstType>(&mut arg_types, arg_type);
         vec_push::<String>(&mut arg_values, arg_value);
         i = i + 1;
     }
 
     match symTable_lookup_function_signature(codegen_symtable(codegen), &function_name) {
         Option::Some(FnSignature::Fn(parameter_types, _)) => {
-            if not(list_eq::<RAstType>(
+            if not(vec_eq::<RAstType>(
                 &parameter_types,
                 &arg_types,
                 rAstType_eq,
@@ -2481,7 +2481,7 @@ fn codegen_emit_call_value(
     codegen: &mut Codegen,
     function_name: &String,
     return_type: &RAstType,
-    argument_types: &List<RAstType>,
+    argument_types: &Vec<RAstType>,
     argument_values: &Vec<String>,
 ) -> String {
     let name: String = context_next_temporary(codegen_context_mut(codegen));
@@ -2494,36 +2494,30 @@ fn codegen_emit_call_value(
     string_push_string(code, function_name);
     string_push(code, '(');
 
-    let mut current_types: &List<RAstType> = argument_types;
     let mut i: usize = 0;
-    while true {
-        match current_types {
-            List::Cons(argument_type, tail) => {
-                if i > 0 {
-                    string_push_str(code, ", ");
-                }
+    let len: usize = vec_len::<RAstType>(argument_types);
+    while i < len {
+        let argument_type: &RAstType = vec_at::<RAstType>(argument_types, i);
+        let argument_value: &String = vec_at::<String>(argument_values, i);
+        string_push_string(code, &rAstType_to_llvm_name(argument_type));
+        string_push(code, ' ');
+        string_push_string(code, argument_value);
 
-                let argument_value: &String = vec_at::<String>(argument_values, i);
-                string_push_string(code, &rAstType_to_llvm_name(argument_type));
-                string_push(code, ' ');
-                string_push_string(code, argument_value);
-                current_types = box_deref::<List<RAstType>>(tail);
-                i = i + 1;
-            }
-            List::Nil => {
-                string_push_str(code, ")\n");
-                return name;
-            }
+        i = i + 1;
+        if i < len {
+            string_push_str(code, ", ");
         }
     }
-    string_new() // satisfy compiler
+
+    string_push_str(code, ")\n");
+    name
 }
 
 /// Emit a call instruction that returns void.
 fn codegen_emit_call_void(
     codegen: &mut Codegen,
     function_name: &String,
-    argument_types: &List<RAstType>,
+    argument_types: &Vec<RAstType>,
     argument_values: &Vec<String>,
 ) {
     let code: &mut String = codegen_llvm_mut(codegen);
@@ -2531,22 +2525,18 @@ fn codegen_emit_call_void(
     string_push_string(code, function_name);
     string_push(code, '(');
 
-    let mut current_types: &List<RAstType> = argument_types;
     let mut i: usize = 0;
-    while true {
-        match current_types {
-            List::Cons(argument_type, tail) => {
-                if i > 0 {
-                    string_push_str(code, ", ");
-                }
-                let argument_value: &String = vec_at::<String>(argument_values, i);
-                string_push_string(code, &rAstType_to_llvm_name(argument_type));
-                string_push(code, ' ');
-                string_push_string(code, argument_value);
-                current_types = box_deref::<List<RAstType>>(tail);
-                i = i + 1;
-            }
-            List::Nil => break,
+    let len: usize = vec_len::<RAstType>(argument_types);
+    while i < len {
+        let argument_type: &RAstType = vec_at::<RAstType>(argument_types, i);
+        let argument_value: &String = vec_at::<String>(argument_values, i);
+        string_push_string(code, &rAstType_to_llvm_name(argument_type));
+        string_push(code, ' ');
+        string_push_string(code, argument_value);
+
+        i = i + 1;
+        if i < len {
+            string_push_str(code, ", ");
         }
     }
 
@@ -4386,7 +4376,7 @@ fn unwrap<T>(opt: Option<T>) -> T {
 }
 
 // -----------------------------------------------------------------
-// -------------------------- Lists --------------------------------
+// -------------------------- List --------------------------------
 // -----------------------------------------------------------------
 
 /// Generic cons list.
@@ -4394,26 +4384,6 @@ enum List<T> {
     /// head, tail
     Cons(T, Box<List<T>>),
     Nil,
-}
-
-/// Create an empty list.
-fn list_new<T>() -> List<T> {
-    List::Nil
-}
-
-/// Append one value to a list.
-fn list_append<T>(list: &mut List<T>, value: T) {
-    let mut current: &mut List<T> = list;
-
-    while true {
-        match current {
-            List::Nil => {
-                *current = List::Cons(value, box_new::<List<T>>(List::Nil));
-                return;
-            }
-            List::Cons(_, tail) => current = box_deref_mut::<List<T>>(tail),
-        }
-    }
 }
 
 // ----------------------------------------------------------------
@@ -4599,6 +4569,27 @@ fn vec_extend<T>(vec: &mut Vec<T>, other: &Vec<T>) {
     let src: *mut T = vec_ptr::<T>(other);
     unsafe { memcopy::<T>(dest, src, other_len) };
     vec_set_len::<T>(vec, len + other_len);
+}
+
+/// Compare two vectors for equality using an element equality function.
+fn vec_eq<T>(left: &Vec<T>, right: &Vec<T>, item_eq: fn(&T, &T) -> bool) -> bool {
+    let left_len: usize = vec_len::<T>(left);
+    let right_len: usize = vec_len::<T>(right);
+    if left_len != right_len {
+        return false;
+    }
+
+    let mut i: usize = 0;
+    while i < left_len {
+        let l: &T = vec_at::<T>(left, i);
+        let r: &T = vec_at::<T>(right, i);
+        if not(item_eq(l, r)) {
+            return false;
+        }
+
+        i = i + 1;
+    }
+    true
 }
 
 // ----------------------------------------------------------------
@@ -5082,27 +5073,6 @@ fn rAstType_eq(a: &RAstType, b: &RAstType) -> bool {
     }
 }
 
-/// Compare two lists in order using an element equality function.
-fn list_eq<T>(left: &List<T>, right: &List<T>, item_eq: fn(&T, &T) -> bool) -> bool {
-    match left {
-        List::Nil => match right {
-            List::Nil => true,
-            _ => false,
-        },
-        List::Cons(lhead, ltail) => match right {
-            List::Cons(rhead, rtail) => and(
-                item_eq(lhead, rhead),
-                list_eq::<T>(
-                    box_deref::<List<T>>(ltail),
-                    box_deref::<List<T>>(rtail),
-                    item_eq,
-                ),
-            ),
-            _ => false,
-        },
-    }
-}
-
 /// Check two LLVM tokens for equality.
 fn llvmToken_eq(left: &LlvmToken, right: &LlvmToken) -> bool {
     match left {
@@ -5383,10 +5353,16 @@ fn literalToken_clone(literal: &Literal) -> Literal {
 /// Clone a function signature.
 fn fnSignature_clone(signature: &FnSignature) -> FnSignature {
     match signature {
-        FnSignature::Fn(parameter_types, return_type) => FnSignature::Fn(
-            list_clone::<RAstType>(parameter_types, rAstType_clone),
-            rAstType_clone(return_type),
-        ),
+        FnSignature::Fn(parameter_types, return_type) => {
+            let mut cloned_params: Vec<RAstType> = vec_new::<RAstType>();
+            let mut i: usize = 0;
+            while i < vec_len::<RAstType>(parameter_types) {
+                let param: &RAstType = vec_at::<RAstType>(parameter_types, i);
+                vec_push::<RAstType>(&mut cloned_params, rAstType_clone(param));
+                i = i + 1;
+            }
+            FnSignature::Fn(cloned_params, rAstType_clone(return_type))
+        }
     }
 }
 
@@ -5472,17 +5448,6 @@ fn llvmType_clone(ty: &LlvmType) -> LlvmType {
             box_new::<LlvmType>(llvmType_clone(box_deref::<LlvmType>(inner))),
         ),
         LlvmType::Void => LlvmType::Void,
-    }
-}
-
-/// Clone a list using an explicit element clone function.
-fn list_clone<T>(values: &List<T>, item_clone: fn(&T) -> T) -> List<T> {
-    match values {
-        List::Nil => List::Nil,
-        List::Cons(head, tail) => List::Cons(
-            item_clone(head),
-            box_new::<List<T>>(list_clone::<T>(box_deref::<List<T>>(tail), item_clone)),
-        ),
     }
 }
 
