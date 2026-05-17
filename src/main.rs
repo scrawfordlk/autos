@@ -282,6 +282,7 @@ fn lexer_expect_char(lexer: &mut Lexer, expected: char) {
 
 /// Consume and return the next token.
 fn lexer_next_token(lexer: &mut Lexer) -> Token {
+    skip_attributes(lexer);
     skip_whitespace(lexer);
 
     let token: Token = match lexer_peek_char(lexer) {
@@ -552,6 +553,33 @@ fn skip_line_comment(lexer: &mut Lexer) {
             Option::Some('\n') => return,
             Option::Some(_) => (),
             Option::None => return,
+        }
+    }
+}
+
+/// Skips attributes which are useful in Rust, but unsupported.
+fn skip_attributes(lexer: &mut Lexer) {
+    skip_whitespace(lexer);
+    while true {
+        match lexer_peek_char(lexer) {
+            Option::Some('#') => {
+                lexer_consume_char(lexer);
+                skip_whitespace(lexer);
+
+                match lexer_consume_char(lexer) {
+                    Option::Some('[') => {
+                        let mut skipping: bool = true;
+                        while skipping {
+                            match lexer_consume_char(lexer) {
+                                Option::Some(']') => skipping = false,
+                                _ => {}
+                            }
+                        }
+                    }
+                    _ => lexer_error(lexer, "expected '[' after '#'"),
+                }
+            }
+            _ => return,
         }
     }
 }
