@@ -64,7 +64,7 @@ fn main() {
         file.write_all(slice).expect("can write all code");
 
         if emulate_after {
-            let exit_code: usize = llvmulator_execute_llvm(code_clone);
+            let exit_code: usize = emu_execute_llvm(code_clone);
             std::process::exit((exit_code % 256) as i32);
         }
 
@@ -77,7 +77,7 @@ fn main() {
             std::process::exit(1);
         }
         let llvm_ir: StdString = std::fs::read_to_string(&args[2]).expect("no llvm file found");
-        let exit_code: usize = llvmulator_execute_llvm(string_from_str(&llvm_ir));
+        let exit_code: usize = emu_execute_llvm(string_from_str(&llvm_ir));
         std::process::exit((exit_code % 256) as i32);
     }
 
@@ -3779,8 +3779,8 @@ enum LlvmExecFlow {
 }
 
 /// Type that encapsulates the state of the LLVM emulator.
-enum Llvmulator {
-    Emulator(
+enum Emu {
+    Emu(
         /// map of global addresses
         StringMap<usize>,
         /// byte-addressed, double-word-aligned and big-endian memory (stack, heap, data)
@@ -3796,9 +3796,9 @@ enum Llvmulator {
 
 /// Create a new emulator state including `memory_size` bytes of main memory.
 /// The program heap boundary is at the address `global_pointer`.
-fn llvmulator_new(memory_size: usize, global_pointer: usize) -> Llvmulator {
+fn emu_new(memory_size: usize, global_pointer: usize) -> Emu {
     let stack_pointer: usize = memory_size;
-    Llvmulator::Emulator(
+    Emu::Emu(
         stringMap_new::<usize>(),
         vec_with_len::<u8>(memory_size),
         stack_pointer,
@@ -3808,58 +3808,58 @@ fn llvmulator_new(memory_size: usize, global_pointer: usize) -> Llvmulator {
 }
 
 /// Get a shared reference to the global values.
-fn llvmulator_globals(emulator: &Llvmulator) -> &StringMap<usize> {
-    let Llvmulator::Emulator(globals, _, _, _, _): &Llvmulator = emulator;
+fn emu_globals(emulator: &Emu) -> &StringMap<usize> {
+    let Emu::Emu(globals, _, _, _, _): &Emu = emulator;
     globals
 }
 
 /// Get the current value of the stack pointer.
-fn llvmulator_get_sp(emulator: &Llvmulator) -> usize {
-    let Llvmulator::Emulator(_, _, stack_pointer, _, _): &Llvmulator = emulator;
+fn emu_get_sp(emulator: &Emu) -> usize {
+    let Emu::Emu(_, _, stack_pointer, _, _): &Emu = emulator;
     *stack_pointer
 }
 
 /// Set the value of the stack pointer.
-fn llvmulator_set_sp(emulator: &mut Llvmulator, value: usize) {
-    let Llvmulator::Emulator(_, _, stack_pointer, _, _): &mut Llvmulator = emulator;
+fn emu_set_sp(emulator: &mut Emu, value: usize) {
+    let Emu::Emu(_, _, stack_pointer, _, _): &mut Emu = emulator;
     *stack_pointer = value;
 }
 
 /// Get the size of the active stack frame in bytes.
-fn llvmulator_get_frame_size(emulator: &Llvmulator) -> usize {
-    let Llvmulator::Emulator(_, _, _, frame_size, _): &Llvmulator = emulator;
+fn emu_get_frame_size(emulator: &Emu) -> usize {
+    let Emu::Emu(_, _, _, frame_size, _): &Emu = emulator;
     *frame_size
 }
 
 /// Set the size of the active stack frame.
-fn llvmulator_set_frame_size(emulator: &mut Llvmulator, value: usize) {
-    let Llvmulator::Emulator(_, _, _, frame_size, _): &mut Llvmulator = emulator;
+fn emu_set_frame_size(emulator: &mut Emu, value: usize) {
+    let Emu::Emu(_, _, _, frame_size, _): &mut Emu = emulator;
     *frame_size = value;
 }
 
 /// Allocate `size` many double words on the stack and return the address.
-fn llvmulator_allocate_stack(emulator: &mut Llvmulator, size: usize) -> Option<usize> {
+fn emu_allocate_stack(emulator: &mut Emu, size: usize) -> Option<usize> {
     let bytes: usize = size * size_of::<usize>();
-    let stack_pointer: usize = llvmulator_get_sp(emulator);
-    let frame_size: usize = llvmulator_get_frame_size(emulator);
+    let stack_pointer: usize = emu_get_sp(emulator);
+    let frame_size: usize = emu_get_frame_size(emulator);
 
     let new_sp: usize = stack_pointer - size * size_of::<usize>();
-    llvmulator_set_sp(emulator, new_sp);
-    llvmulator_set_frame_size(emulator, frame_size + bytes);
+    emu_set_sp(emulator, new_sp);
+    emu_set_frame_size(emulator, frame_size + bytes);
     Option::Some(new_sp)
 }
 
 /// Deallocates the top stack frame by resetting the frame size to 0 and moving the stack pointer up by the frame size.
-fn llvmulator_deallocate_stack_frame(emulator: &mut Llvmulator) {
-    let stack_pointer: usize = llvmulator_get_sp(emulator);
-    let frame_size: usize = llvmulator_get_frame_size(emulator);
-    llvmulator_set_sp(emulator, stack_pointer + frame_size);
-    llvmulator_set_frame_size(emulator, 0);
+fn emu_deallocate_stack_frame(emulator: &mut Emu) {
+    let stack_pointer: usize = emu_get_sp(emulator);
+    let frame_size: usize = emu_get_frame_size(emulator);
+    emu_set_sp(emulator, stack_pointer + frame_size);
+    emu_set_frame_size(emulator, 0);
 }
 
 /// Store one double word at `address`.
-fn llvmulator_store_double(emulator: &mut Llvmulator, address: usize, value: usize) -> bool {
-    let Llvmulator::Emulator(_, memory, _, _, _): &mut Llvmulator = emulator;
+fn emu_store_double(emulator: &mut Emu, address: usize, value: usize) -> bool {
+    let Emu::Emu(_, memory, _, _, _): &mut Emu = emulator;
     let bytes: usize = size_of::<usize>();
 
     let mut remaining: usize = value;
@@ -3878,8 +3878,8 @@ fn llvmulator_store_double(emulator: &mut Llvmulator, address: usize, value: usi
 }
 
 /// Load one double word from `address`.
-fn llvmulator_load_double(emulator: &mut Llvmulator, address: usize) -> Option<usize> {
-    let Llvmulator::Emulator(_, memory, _, _, _): &mut Llvmulator = emulator;
+fn emu_load_double(emulator: &mut Emu, address: usize) -> Option<usize> {
+    let Emu::Emu(_, memory, _, _, _): &mut Emu = emulator;
     let byte_size: usize = size_of::<usize>();
 
     let mut value: usize = 0;
@@ -3901,38 +3901,38 @@ fn llvmulator_load_double(emulator: &mut Llvmulator, address: usize) -> Option<u
 }
 
 /// Parse and emulate LLVM source and return the return value of @main.
-fn llvmulator_execute_llvm(source: String) -> usize {
+fn emu_execute_llvm(source: String) -> usize {
     let ast: LlvmAST = llvmParser_parse_to_ast(source);
 
     let main_name: String = string_from_str("main");
     let empty_args: Vec<usize> = vec_new::<usize>();
 
     // TODO: parameterise memory size, set correct global pointer after parsing
-    let mut emulator: Llvmulator = llvmulator_new(3000000, 0);
-    llvmulator_execute_function_named(&mut emulator, &ast, &main_name, &empty_args)
+    let mut emulator: Emu = emu_new(3000000, 0);
+    emu_execute_function_named(&mut emulator, &ast, &main_name, &empty_args)
 }
 
 /// Lookup a function by name and execute it.
-fn llvmulator_execute_function_named(
-    emulator: &mut Llvmulator,
+fn emu_execute_function_named(
+    emulator: &mut Emu,
     ast: &LlvmAST,
     function_name: &String,
     arguments: &Vec<usize>,
 ) -> usize {
     let function: &LlvmFunction = llvmAST_lookup_function(ast, string_clone(function_name));
-    llvmulator_execute_function(emulator, ast, function, arguments)
+    emu_execute_function(emulator, ast, function, arguments)
 }
 
 /// Execute the given function's body.
-fn llvmulator_execute_function(
-    emulator: &mut Llvmulator,
+fn emu_execute_function(
+    emulator: &mut Emu,
     ast: &LlvmAST,
     function: &LlvmFunction,
     arguments: &Vec<usize>,
 ) -> usize {
     let mut virtual_registers: StringMap<usize> = stringMap_new::<usize>();
-    let previous_frame_size: usize = llvmulator_get_frame_size(emulator);
-    llvmulator_set_frame_size(emulator, 0);
+    let previous_frame_size: usize = emu_get_frame_size(emulator);
+    emu_set_frame_size(emulator, 0);
 
     let LlvmFunction::Function(_, parameters, blocks): &LlvmFunction = function;
 
@@ -3954,14 +3954,14 @@ fn llvmulator_execute_function(
             instructionBlock_fetch_instructions(blocks, string_clone(&current_label));
 
         let flow: LlvmExecFlow =
-            llvmulator_execute_instructions(emulator, ast, &mut virtual_registers, instructions);
+            emu_execute_instructions(emulator, ast, &mut virtual_registers, instructions);
 
         match flow {
             LlvmExecFlow::Continue => panic!("LLVM block did not terminate"),
             LlvmExecFlow::Jump(next_label) => current_label = next_label,
             LlvmExecFlow::Return(value) => {
-                llvmulator_deallocate_stack_frame(emulator);
-                llvmulator_set_frame_size(emulator, previous_frame_size);
+                emu_deallocate_stack_frame(emulator);
+                emu_set_frame_size(emulator, previous_frame_size);
                 return value;
             }
         }
@@ -3970,8 +3970,8 @@ fn llvmulator_execute_function(
 }
 
 /// Execute a given list of instructions.
-fn llvmulator_execute_instructions(
-    emulator: &mut Llvmulator,
+fn emu_execute_instructions(
+    emulator: &mut Emu,
     ast: &LlvmAST,
     registers: &mut StringMap<usize>,
     instructions: &Vec<Instruction>,
@@ -3982,18 +3982,17 @@ fn llvmulator_execute_instructions(
 
         match instruction {
             Instruction::Assignment(assign_instruction) => {
-                llvmulator_execute_assignment(emulator, ast, registers, assign_instruction);
+                emu_execute_assignment(emulator, ast, registers, assign_instruction);
             }
             Instruction::Store(ty, value, address) => {
-                llvmulator_execute_store(emulator, registers, ty, value, address);
+                emu_execute_store(emulator, registers, ty, value, address);
             }
             Instruction::Call(Call::Call(call_type, callee, arguments)) => {
-                let _ =
-                    llvmulator_execute_call(emulator, ast, registers, call_type, callee, arguments);
+                let _ = emu_execute_call(emulator, ast, registers, call_type, callee, arguments);
             }
 
             Instruction::Ret(return_type, return_value) => {
-                let global_values: &StringMap<usize> = llvmulator_globals(emulator);
+                let global_values: &StringMap<usize> = emu_globals(emulator);
                 return LlvmExecFlow::Return(match return_value {
                     Option::Some(value) => {
                         let value: usize = llvm_eval_value(global_values, registers, value);
@@ -4009,7 +4008,7 @@ fn llvmulator_execute_instructions(
                         LlvmExecFlow::Jump(string_clone(target_label))
                     }
                     Branch::Conditional(condition, then_label, else_label) => {
-                        let global_values: &StringMap<usize> = llvmulator_globals(emulator);
+                        let global_values: &StringMap<usize> = emu_globals(emulator);
 
                         let condition_value: usize =
                             llvm_eval_value(global_values, registers, condition);
@@ -4030,30 +4029,30 @@ fn llvmulator_execute_instructions(
 }
 
 /// Execute the given assignment instruction.
-fn llvmulator_execute_assignment(
-    emulator: &mut Llvmulator,
+fn emu_execute_assignment(
+    emulator: &mut Emu,
     ast: &LlvmAST,
     registers: &mut StringMap<usize>,
     instruction: &AssignInstruction,
 ) {
     let AssignInstruction::Assign(target, operation): &AssignInstruction = instruction;
-    let value: usize = llvmulator_evaluate_assign_op(emulator, ast, registers, operation);
+    let value: usize = emu_evaluate_assign_op(emulator, ast, registers, operation);
     stringMap_insert::<usize>(registers, string_clone(target), value);
 }
 
 /// Evaluate the value of the assignment operation.
-fn llvmulator_evaluate_assign_op(
-    emulator: &mut Llvmulator,
+fn emu_evaluate_assign_op(
+    emulator: &mut Emu,
     ast: &LlvmAST,
     registers: &StringMap<usize>,
     operation: &AssignOp,
 ) -> usize {
-    let global_values: &StringMap<usize> = llvmulator_globals(emulator);
+    let global_values: &StringMap<usize> = emu_globals(emulator);
 
     match operation {
         AssignOp::Binary(operator, result_type, left, right) => {
             let lhs: usize = llvm_eval_value(global_values, registers, left);
-            let rhs: usize = llvm_eval_value(llvmulator_globals(emulator), registers, right);
+            let rhs: usize = llvm_eval_value(emu_globals(emulator), registers, right);
             let lhs: usize = llvm_overflow_value(lhs, result_type);
             let rhs: usize = llvm_overflow_value(rhs, result_type);
 
@@ -4068,7 +4067,7 @@ fn llvmulator_evaluate_assign_op(
 
         AssignOp::Icmp(predicate, operand_type, left, right) => {
             let mut lhs: usize = llvm_eval_value(global_values, registers, left);
-            let mut rhs: usize = llvm_eval_value(llvmulator_globals(emulator), registers, right);
+            let mut rhs: usize = llvm_eval_value(emu_globals(emulator), registers, right);
 
             // handle overflowing literals
             lhs = llvm_overflow_value(lhs, operand_type);
@@ -4092,22 +4091,22 @@ fn llvmulator_evaluate_assign_op(
 
         AssignOp::Alloca(_, num_elements) => {
             let space: usize = *num_elements * size_of::<usize>();
-            match llvmulator_allocate_stack(emulator, space) {
+            match emu_allocate_stack(emulator, space) {
                 Option::Some(address) => address,
-                Option::None => panic!("Stack overflow of LLVMulator"),
+                Option::None => panic!("Stack overflow of emu"),
             }
         }
 
         AssignOp::Load(loaded_type, address_value) => {
             let address: usize = llvm_eval_value(global_values, registers, address_value);
-            match llvmulator_load_double(emulator, address) {
+            match emu_load_double(emulator, address) {
                 Option::Some(value) => llvm_overflow_value(value, loaded_type),
                 Option::None => panic!("invalid LLVM load address"),
             }
         }
 
         AssignOp::Call(Call::Call(call_type, callee, arguments)) => {
-            llvmulator_execute_call(emulator, ast, registers, call_type, callee, arguments)
+            emu_execute_call(emulator, ast, registers, call_type, callee, arguments)
         }
 
         AssignOp::Gep(_, pointer, indexes) => {
@@ -4125,15 +4124,15 @@ fn llvmulator_evaluate_assign_op(
 }
 
 /// Execute an LLVM call and return the raw result value.
-fn llvmulator_execute_call(
-    emulator: &mut Llvmulator,
+fn emu_execute_call(
+    emulator: &mut Emu,
     ast: &LlvmAST,
     registers: &StringMap<usize>,
     call_type: &LlvmType,
     callee: &String,
     arguments: &Vec<LlvmTypedValue>,
 ) -> usize {
-    let global_values: &StringMap<usize> = llvmulator_globals(emulator);
+    let global_values: &StringMap<usize> = emu_globals(emulator);
 
     let mut arg_values: Vec<usize> = vec_new::<usize>();
     let mut i: usize = 0;
@@ -4148,7 +4147,7 @@ fn llvmulator_execute_call(
         i = i + 1;
     }
 
-    let value: usize = llvmulator_execute_function_named(emulator, ast, callee, &arg_values);
+    let value: usize = emu_execute_function_named(emulator, ast, callee, &arg_values);
     llvm_overflow_value(value, call_type)
 }
 
@@ -4162,24 +4161,20 @@ fn llvm_overflow_value(value: usize, ty: &LlvmType) -> usize {
 }
 
 /// Execute the given store instruction.
-fn llvmulator_execute_store(
-    emulator: &mut Llvmulator,
+fn emu_execute_store(
+    emulator: &mut Emu,
     registers: &StringMap<usize>,
     store_type: &LlvmType,
     value: &LlvmValue,
     address: &LlvmValue,
 ) {
-    let global_values: &StringMap<usize> = llvmulator_globals(emulator);
+    let global_values: &StringMap<usize> = emu_globals(emulator);
 
     let raw_value: usize = llvm_eval_value(global_values, registers, value);
     let stored_value: usize = llvm_overflow_value(raw_value, store_type);
     let target_address: usize = llvm_eval_value(global_values, registers, address);
 
-    if not(llvmulator_store_double(
-        emulator,
-        target_address,
-        stored_value,
-    )) {
+    if not(emu_store_double(emulator, target_address, stored_value)) {
         panic!("invalid LLVM store address");
     }
 }
