@@ -600,8 +600,8 @@ enum RAstItem {
 
 /// Function definition.
 enum RAstFunction {
-    /// unsafe, name, parameters, optional return type, body
-    Function(bool, String, Vec<RAstVariable>, Option<RAstType>, RAstBlock),
+    /// unsafe, name, parameters, return type, body
+    Function(bool, String, Vec<RAstVariable>, RAstType, RAstBlock),
 }
 
 /// Enum definition.
@@ -813,10 +813,10 @@ fn parse_function(lexer: &mut Lexer) -> RAstFunction {
     }
     expect_token(lexer, &Token::RParen);
 
-    let return_type: Option<RAstType> = if lexer_try_consume(lexer, &Token::TypeArrow) {
-        Option::Some(parse_type(lexer))
+    let return_type: RAstType = if lexer_try_consume(lexer, &Token::TypeArrow) {
+        parse_type(lexer)
     } else {
-        Option::None
+        RAstType::Unit
     };
 
     let body: RAstBlock = parse_block(lexer);
@@ -1265,8 +1265,15 @@ fn parse_literal(lexer: &mut Lexer) -> RAstLiteral {
 /// Type that encapsulates the state during LLVM-IR code generation from an AST.
 enum Codegen {
     /// llvm code, symbol table, current function return type, llvm context,
-    /// variable-register-mapping
-    Codegen(String, SymTable, RAstType, Context, StringMapStack<String>),
+    /// variable-register-mapping, function return types
+    Codegen(
+        String,
+        SymTable,
+        RAstType,
+        Context,
+        StringMapStack<String>,
+        StringMap<RAstType>,
+    ),
 }
 
 fn codegen_new() -> Codegen {
@@ -1276,68 +1283,122 @@ fn codegen_new() -> Codegen {
         RAstType::Unit,
         context_new(),
         stringMapStack_new::<String>(),
+        stringMap_new::<RAstType>(),
     )
 }
 
 fn codegen_into_llvm(codegen: Codegen) -> String {
-    let Codegen::Codegen(llvm, _, _, _, _): Codegen = codegen;
+    let Codegen::Codegen(llvm, _, _, _, _, _): Codegen = codegen;
     llvm
 }
 
 fn codegen_llvm_mut(codegen: &mut Codegen) -> &mut String {
-    let Codegen::Codegen(llvm, _, _, _, _): &mut Codegen = codegen;
+    let Codegen::Codegen(llvm, _, _, _, _, _): &mut Codegen = codegen;
     llvm
 }
 
 fn codegen_symtable(codegen: &Codegen) -> &SymTable {
-    let Codegen::Codegen(_, symtable, _, _, _): &Codegen = codegen;
+    let Codegen::Codegen(_, symtable, _, _, _, _): &Codegen = codegen;
     symtable
 }
 
 fn codegen_symtable_mut(codegen: &mut Codegen) -> &mut SymTable {
-    let Codegen::Codegen(_, symtable, _, _, _): &mut Codegen = codegen;
+    let Codegen::Codegen(_, symtable, _, _, _, _): &mut Codegen = codegen;
     symtable
 }
 
 fn codegen_current_fn_return_type(codegen: &Codegen) -> &RAstType {
-    let Codegen::Codegen(_, _, return_type, _, _): &Codegen = codegen;
+    let Codegen::Codegen(_, _, return_type, _, _, _): &Codegen = codegen;
     return_type
 }
 
 fn codegen_set_current_fn_return_type(codegen: &mut Codegen, ty: RAstType) {
-    let Codegen::Codegen(_, _, return_type, _, _): &mut Codegen = codegen;
+    let Codegen::Codegen(_, _, return_type, _, _, _): &mut Codegen = codegen;
     *return_type = ty;
 }
 
 fn codegen_context_mut(codegen: &mut Codegen) -> &mut Context {
-    let Codegen::Codegen(_, _, _, context, _): &mut Codegen = codegen;
+    let Codegen::Codegen(_, _, _, context, _, _): &mut Codegen = codegen;
     context
 }
 
 /// Push a new empty scope onto the stack.
 fn codegen_push_scope(codegen: &mut Codegen) {
-    let Codegen::Codegen(_, _, _, _, slots): &mut Codegen = codegen;
+    let Codegen::Codegen(_, _, _, _, slots, _): &mut Codegen = codegen;
     stringMapStack_push_empty::<String>(slots);
 }
 
 /// Pop the last pushed scope.
 fn codegen_pop_scope(codegen: &mut Codegen) -> bool {
-    let Codegen::Codegen(_, _, _, _, slots): &mut Codegen = codegen;
+    let Codegen::Codegen(_, _, _, _, slots, _): &mut Codegen = codegen;
     stringMapStack_pop::<String>(slots)
 }
 
 /// Insert a new variable-register-mapping into the current scope.
 fn codegen_scope_insert(codegen: &mut Codegen, name: String, pointer_name: String) {
-    let Codegen::Codegen(_, _, _, _, slots): &mut Codegen = codegen;
+    let Codegen::Codegen(_, _, _, _, slots, _): &mut Codegen = codegen;
     let _ = stringMapStack_insert::<String>(slots, name, pointer_name);
 }
 
 /// Lookup the associated virtual register of a variable and return it.
 fn codegen_scope_lookup(codegen: &Codegen, name: &String) -> Option<String> {
-    let Codegen::Codegen(_, _, _, _, slots): &Codegen = codegen;
+    let Codegen::Codegen(_, _, _, _, slots, _): &Codegen = codegen;
     match stringMapStack_lookup::<String>(slots, name) {
         Option::Some(pointer_name) => Option::Some(string_clone(pointer_name)),
         Option::None => Option::None,
+    }
+}
+
+/// Insert one function return type into the codegen cache.
+fn codegen_function_return_type_insert(codegen: &mut Codegen, name: String, return_type: RAstType) {
+    let Codegen::Codegen(_, _, _, _, _, function_return_types): &mut Codegen = codegen;
+    stringMap_insert::<RAstType>(function_return_types, name, return_type);
+}
+
+/// Lookup the return type of a function.
+fn codegen_function_return_type(codegen: &Codegen, name: &String) -> Option<RAstType> {
+    let Codegen::Codegen(_, _, _, _, _, function_return_types): &Codegen = codegen;
+    match stringMap_get::<RAstType>(function_return_types, name) {
+        Option::Some(return_type) => Option::Some(rAstType_clone(return_type)),
+        Option::None => Option::None,
+    }
+}
+
+/// Collect function signatures before code generation starts.
+fn codegen_collect_function_signatures(codegen: &mut Codegen, ast: &RAst) {
+    let RAst::Language(items): &RAst = ast;
+
+    let mut i: usize = 0;
+    while i < vec_len::<RAstItem>(items) {
+        match unwrap::<&RAstItem>(vec_get::<RAstItem>(items, i)) {
+            RAstItem::Function(RAstFunction::Function(_, name, params, return_type, _)) => {
+                let mut param_types: List<RAstType> = list_new::<RAstType>();
+                let mut param_index: usize = 0;
+                while param_index < vec_len::<RAstVariable>(params) {
+                    let RAstVariable::Variable(_, parameter_type): &RAstVariable =
+                        unwrap::<&RAstVariable>(vec_get::<RAstVariable>(params, param_index));
+                    list_append::<RAstType>(&mut param_types, rAstType_clone(parameter_type));
+                    param_index = param_index + 1;
+                }
+
+                if not(symTable_insert_function(
+                    codegen_symtable_mut(codegen),
+                    string_clone(name),
+                    param_types,
+                    rAstType_clone(&return_type),
+                )) {
+                    codegen_error("duplicate function name");
+                }
+
+                codegen_function_return_type_insert(
+                    codegen,
+                    string_clone(name),
+                    rAstType_clone(return_type),
+                );
+            }
+            _ => {}
+        }
+        i = i + 1;
     }
 }
 
@@ -1615,6 +1676,8 @@ fn stPair_get_type(pair: STPair) -> RAstType {
 
 /// Emit LLVM-IR for a full Rust AST.
 fn codegen_language(codegen: &mut Codegen, ast: &RAst) {
+    codegen_collect_function_signatures(codegen, ast);
+
     let RAst::Language(items): &RAst = ast;
     let mut i: usize = 0;
     while i < vec_len::<RAstItem>(items) {
@@ -1654,14 +1717,10 @@ fn codegen_enum(codegen: &mut Codegen, enum_item: &RAstEnum) {
 
 /// Emit LLVM-IR for one function definition.
 fn codegen_function(codegen: &mut Codegen, function: &RAstFunction) {
-    let RAstFunction::Function(_, function_name, parameters, maybe_return_type, body): &RAstFunction =
+    let RAstFunction::Function(_, function_name, parameters, return_type, body): &RAstFunction =
         function;
 
-    let function_return_type: RAstType = match maybe_return_type {
-        Option::Some(return_type) => rAstType_clone(return_type),
-        Option::None => RAstType::Unit,
-    };
-    codegen_set_current_fn_return_type(codegen, rAstType_clone(&function_return_type));
+    codegen_set_current_fn_return_type(codegen, rAstType_clone(&return_type));
 
     let mut parameter_types: List<RAstType> = list_new::<RAstType>();
     let mut i: usize = 0;
@@ -1674,35 +1733,20 @@ fn codegen_function(codegen: &mut Codegen, function: &RAstFunction) {
     }
 
     let is_main: bool = string_eq(function_name, &string_from_str("main"));
-    let llvm_return_type_name: String =
-        if and(is_main, rAstType_eq(&function_return_type, &RAstType::Unit)) {
-            string_from_str("i64")
-        } else {
-            rAstType_to_llvm_name(&function_return_type)
-        };
-    codegen_emit_function_header(
-        codegen_llvm_mut(codegen),
-        function_name,
-        &llvm_return_type_name,
-    );
 
-    if not(symTable_insert_function(
-        codegen_symtable_mut(codegen),
-        string_clone(function_name),
-        parameter_types,
-        rAstType_clone(&function_return_type),
-    )) {
-        codegen_error("duplicate function name");
-    }
+    let llvm_return_type: String = if and(is_main, rAstType_eq(&return_type, &RAstType::Unit)) {
+        string_from_str("i64")
+    } else {
+        rAstType_to_llvm_name(&return_type)
+    };
+    codegen_emit_function_header(codegen, function_name, &llvm_return_type, parameters);
 
     symTable_enter_scope(codegen_symtable_mut(codegen));
     codegen_push_scope(codegen);
     let mut parameter_index: usize = 0;
     while parameter_index < vec_len::<RAstVariable>(parameters) {
-        let parameter: &RAstVariable =
+        let RAstVariable::Variable(pattern, parameter_type): &RAstVariable =
             unwrap::<&RAstVariable>(vec_get::<RAstVariable>(parameters, parameter_index));
-        let RAstVariable::Variable(pattern, parameter_type): &RAstVariable = parameter;
-        let type_name: String = rAstType_to_llvm_name(parameter_type);
 
         match pattern {
             RAstPattern::Identifier(is_mutable, name) => {
@@ -1714,6 +1758,19 @@ fn codegen_function(codegen: &mut Codegen, function: &RAstFunction) {
                 ) {
                     codegen_error("duplicate parameter name");
                 }
+
+                // SSA: all variables (including parameters) are stored on the stack
+                let parameter_pointer: String = codegen_emit_alloca(codegen, parameter_type, 1);
+                let mut parameter_register: String = string_from_str("%");
+                string_push_string(&mut parameter_register, name);
+                codegen_emit_store(
+                    codegen,
+                    parameter_type,
+                    &parameter_register,
+                    &parameter_pointer,
+                );
+
+                codegen_scope_insert(codegen, string_clone(name), parameter_pointer);
             }
             _ => {}
         }
@@ -1722,7 +1779,7 @@ fn codegen_function(codegen: &mut Codegen, function: &RAstFunction) {
     }
 
     let STPair::ST(value_name, block_type): STPair = codegen_block(codegen, body);
-    codegen_expect_same_type(&block_type, &function_return_type);
+    codegen_expect_same_type(&block_type, &return_type);
 
     match &block_type {
         RAstType::Unit => {
@@ -1738,7 +1795,7 @@ fn codegen_function(codegen: &mut Codegen, function: &RAstFunction) {
         }
     }
 
-    codegen_emit_line(codegen_llvm_mut(codegen), "}");
+    codegen_emit_line(codegen_llvm_mut(codegen), "}\n");
     symTable_leave_scope(codegen_symtable_mut(codegen));
     codegen_pop_scope(codegen);
     codegen_set_current_fn_return_type(codegen, RAstType::Unit);
@@ -2051,25 +2108,48 @@ fn codegen_path_expression(codegen: &mut Codegen, path: &RAstPath) -> STPair {
 /// Emit LLVM-IR for a function call expression.
 fn codegen_call(codegen: &mut Codegen, callee: &RAstPath, arguments: &Vec<RAstExpr>) -> STPair {
     let function_name: String = rAstPath_to_string(callee);
-    let mut argument_types: List<RAstType> = list_new::<RAstType>();
+
+    let mut arg_types: List<RAstType> = list_new::<RAstType>();
+    let mut arg_values: Vec<String> = vec_new::<String>();
     let mut i: usize = 0;
     while i < vec_len::<RAstExpr>(arguments) {
         let argument: &RAstExpr = unwrap::<&RAstExpr>(vec_get::<RAstExpr>(arguments, i));
-        let STPair::ST(_, argument_type): STPair = codegen_expression(codegen, argument);
-        list_append::<RAstType>(&mut argument_types, argument_type);
+
+        let STPair::ST(arg_value, arg_type): STPair = codegen_expression(codegen, argument);
+
+        list_append::<RAstType>(&mut arg_types, arg_type);
+        vec_push::<String>(&mut arg_values, arg_value);
         i = i + 1;
     }
 
     match symTable_lookup_function_signature(codegen_symtable(codegen), &function_name) {
-        Option::Some(FnSignature::Fn(parameter_types, return_type)) => {
+        Option::Some(FnSignature::Fn(parameter_types, _)) => {
             if not(list_eq::<RAstType>(
                 &parameter_types,
-                &argument_types,
+                &arg_types,
                 rAstType_eq,
             )) {
                 codegen_error("function call does not match function signature");
             }
-            STPair::ST(string_new(), return_type)
+        }
+        Option::None => codegen_error("call to undefined function"),
+    }
+
+    match codegen_function_return_type(codegen, &function_name) {
+        Option::Some(return_type) => {
+            let result_name: String = if rAstType_eq(&return_type, &RAstType::Unit) {
+                codegen_emit_call_void(codegen, &function_name, &arg_types, &arg_values);
+                string_new()
+            } else {
+                codegen_emit_call_value(
+                    codegen,
+                    &function_name,
+                    &return_type,
+                    &arg_types,
+                    &arg_values,
+                )
+            };
+            STPair::ST(result_name, return_type)
         }
         Option::None => codegen_error("call to undefined function"),
     }
@@ -2397,6 +2477,85 @@ fn codegen_emit_load(codegen: &mut Codegen, ty: &RAstType, pointer: &String) -> 
     name
 }
 
+/// Emit a call instruction that returns a value.
+fn codegen_emit_call_value(
+    codegen: &mut Codegen,
+    function_name: &String,
+    return_type: &RAstType,
+    argument_types: &List<RAstType>,
+    argument_values: &Vec<String>,
+) -> String {
+    let name: String = context_next_temporary(codegen_context_mut(codegen));
+    let code: &mut String = codegen_llvm_mut(codegen);
+    string_push_str(code, "  ");
+    string_push_string(code, &name);
+    string_push_str(code, " = call ");
+    string_push_string(code, &rAstType_to_llvm_name(return_type));
+    string_push_str(code, " @");
+    string_push_string(code, function_name);
+    string_push(code, '(');
+
+    let mut current_types: &List<RAstType> = argument_types;
+    let mut i: usize = 0;
+    while true {
+        match current_types {
+            List::Cons(argument_type, tail) => {
+                if i > 0 {
+                    string_push_str(code, ", ");
+                }
+
+                let argument_value: &String =
+                    unwrap::<&String>(vec_get::<String>(argument_values, i));
+                string_push_string(code, &rAstType_to_llvm_name(argument_type));
+                string_push(code, ' ');
+                string_push_string(code, argument_value);
+                current_types = box_deref::<List<RAstType>>(tail);
+                i = i + 1;
+            }
+            List::Nil => {
+                string_push_str(code, ")\n");
+                return name;
+            }
+        }
+    }
+    string_new() // satisfy compiler
+}
+
+/// Emit a call instruction that returns void.
+fn codegen_emit_call_void(
+    codegen: &mut Codegen,
+    function_name: &String,
+    argument_types: &List<RAstType>,
+    argument_values: &Vec<String>,
+) {
+    let code: &mut String = codegen_llvm_mut(codegen);
+    string_push_str(code, "  call void @");
+    string_push_string(code, function_name);
+    string_push(code, '(');
+
+    let mut current_types: &List<RAstType> = argument_types;
+    let mut i: usize = 0;
+    while true {
+        match current_types {
+            List::Cons(argument_type, tail) => {
+                if i > 0 {
+                    string_push_str(code, ", ");
+                }
+                let argument_value: &String =
+                    unwrap::<&String>(vec_get::<String>(argument_values, i));
+                string_push_string(code, &rAstType_to_llvm_name(argument_type));
+                string_push(code, ' ');
+                string_push_string(code, argument_value);
+                current_types = box_deref::<List<RAstType>>(tail);
+                i = i + 1;
+            }
+            List::Nil => break,
+        }
+    }
+
+    string_push_str(code, ")\n");
+}
+
 /// Append raw text to the LLVM-IR output buffer.
 fn codegen_emit_str(llvm: &mut String, str: &str) {
     string_push_str(llvm, str);
@@ -2414,12 +2573,42 @@ fn codegen_emit_line(llvm: &mut String, text: &str) {
 }
 
 /// Emit a function header.
-fn codegen_emit_function_header(llvm: &mut String, fn_name: &String, return_type_name: &String) {
+fn codegen_emit_function_header(
+    codegen: &mut Codegen,
+    fn_name: &String,
+    return_type_name: &String,
+    parameters: &Vec<RAstVariable>,
+) {
+    let llvm: &mut String = codegen_llvm_mut(codegen);
     codegen_emit_str(llvm, "define ");
     string_push_string(llvm, return_type_name);
     codegen_emit_str(llvm, " @");
     string_push_string(llvm, fn_name);
-    codegen_emit_line(llvm, "() {");
+    codegen_emit_str(llvm, "(");
+
+    let mut i: usize = 0;
+    while i < vec_len::<RAstVariable>(parameters) {
+        if i > 0 {
+            codegen_emit_str(llvm, ", ");
+        }
+
+        let RAstVariable::Variable(pattern, parameter_type): &RAstVariable =
+            unwrap::<&RAstVariable>(vec_get::<RAstVariable>(parameters, i));
+
+        // TODO: what if wildcards are used? Duplicate register names?
+        let parameter_name: String = match pattern {
+            RAstPattern::Identifier(_, name) => string_clone(name),
+            _ => string_from_str("arg"),
+        };
+
+        string_push_string(llvm, &rAstType_to_llvm_name(parameter_type));
+        string_push_str(llvm, " %");
+        string_push_string(llvm, &parameter_name);
+
+        i = i + 1;
+    }
+
+    codegen_emit_line(llvm, ") {");
     codegen_emit_line(llvm, "entry:");
 }
 
