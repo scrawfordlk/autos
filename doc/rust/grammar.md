@@ -18,7 +18,7 @@ block    -> "{" { ( binding | expression [ ";" ] ) } "}"
 ## Statement
 
 ```
-binding   -> "let" variable "=" expression ","
+binding   -> "let" variable "=" expression ";"
 
 variable  -> pattern ":" type
 
@@ -98,12 +98,3 @@ identifier -> ( letter | "_" ) { letter | digit | "_" }
 letter -> "a" | ... | "z" | "A" | ... | "Z"
 ```
 
-## TODO
-
-- Currently, this grammar does not have any rules for anything related to `::`, use in
-  - enum instances (e.g. `Token::Let`)
-  - boostrapped functions (e.g. `std::mem::size_of`)
-
-```
-
-```
