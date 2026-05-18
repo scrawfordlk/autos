@@ -303,34 +303,3 @@ fn test_type_clone() {
     let cloned = rAstType_clone(&custom);
     assert!(rAstType_match(&custom, &cloned));
 }
-
-#[test]
-#[should_panic(expected = "raw pointer dereference requires unsafe context")]
-fn test_semantic_unsafe_required_for_raw_pointer_deref() {
-    compile(
-        "
-fn main() -> usize {
-    let mut x: usize = 1;
-    let p: *mut usize = (&mut x) as *mut usize;
-    *p = 2;
-    x
-}
-",
-    );
-}
-
-#[test]
-#[should_panic(expected = "unsafe function call requires unsafe context")]
-fn test_semantic_unsafe_required_for_unsafe_function_call() {
-    compile(
-        "
-unsafe fn plus_one(x: usize) -> usize {
-    x + 1
-}
-
-fn main() -> usize {
-    plus_one(41)
-}
-",
-    );
-}

@@ -1,5 +1,5 @@
 use std::{
-    fs::{read_dir, remove_file, write},
+    fs::{remove_file, write},
     path::{Path, PathBuf},
     process::{Command, Stdio, id},
     time::{SystemTime, UNIX_EPOCH},
