@@ -1563,6 +1563,32 @@ fn rAstType_get_cast_operation(left_type: &RAstType, right_type: &RAstType) -> C
             RAstType::U8 => CastOperation::None,
             _ => CastOperation::Invalid,
         },
+        RAstType::Reference(left_inner, _) => match right_type {
+            RAstType::RawPointerMut(right_inner) => {
+                if rAstType_eq(
+                    box_deref::<RAstType>(left_inner),
+                    box_deref::<RAstType>(right_inner),
+                ) {
+                    CastOperation::None
+                } else {
+                    CastOperation::Invalid
+                }
+            }
+            _ => CastOperation::Invalid,
+        },
+        RAstType::RawPointerMut(left_inner) => match right_type {
+            RAstType::RawPointerMut(right_inner) => {
+                if rAstType_eq(
+                    box_deref::<RAstType>(left_inner),
+                    box_deref::<RAstType>(right_inner),
+                ) {
+                    CastOperation::None
+                } else {
+                    CastOperation::Invalid
+                }
+            }
+            _ => CastOperation::Invalid,
+        },
         _ => CastOperation::Invalid,
     }
 }
