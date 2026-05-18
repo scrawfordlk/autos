@@ -8,3 +8,6 @@ opt-level = 3
 
 [rust-analyzer.diagnostics.disabled]
 unlinked-file = true
+
+[dependencies]
+walkdir = "2.5.0"

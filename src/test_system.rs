@@ -5,6 +5,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
     vec::Vec,
 };
+use walkdir::WalkDir;
 
 #[test]
 fn test_system() {
@@ -114,11 +115,12 @@ fn run_rustc(path: &Path, output_path: &Path) {
 }
 
 fn rust_sources() -> Vec<PathBuf> {
-    let mut sources: Vec<_> = read_dir("tests/rust")
-        .expect("able to read tests/rust")
+    let mut sources: Vec<_> = WalkDir::new("tests/rust")
+        .into_iter()
         .filter_map(Result::ok)
-        .map(|entry| entry.path())
-        .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("rs"))
+        .filter(|e| e.file_type().is_file())
+        .map(|e| e.path().to_str().expect("is string").to_string())
+        .map(|e| PathBuf::from(e))
         .collect();
     sources.sort_unstable();
     sources
