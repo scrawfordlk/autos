@@ -591,7 +591,7 @@ fn compile(source: &str) -> String {
     let mut lexer: Lexer = lexer_new(string_from_str(source));
     let ast: RAst = parse_language(&mut lexer);
 
-    let function_signatures: StringMap<FnSignature> = semantic_check_analyze(&ast);
+    let function_signatures: StringMap<FnSignature> = semantic_check(&ast);
 
     let mut codegen: Codegen = codegen_new(function_signatures);
     codegen_language(&mut codegen, &ast);
@@ -1309,8 +1309,8 @@ fn parse_literal(lexer: &mut Lexer) -> RAstLiteral {
 
 /// Semantic analysis state.
 enum Semantic {
-    /// symbol table, current function return type, function signatures
-    Semantic(SymTable, RAstType, StringMap<FnSignature>),
+    /// symbol table, current function return type, function signatures, unsafe context depth
+    Semantic(SymTable, RAstType, StringMap<FnSignature>, usize),
 }
 
 fn semantic_new() -> Semantic {
@@ -1318,41 +1318,73 @@ fn semantic_new() -> Semantic {
         symTable_new(),
         RAstType::Unit,
         stringMap_new::<FnSignature>(),
+        0,
     )
 }
 
 fn semantic_symtable(semantic: &Semantic) -> &SymTable {
-    let Semantic::Semantic(symtable, _, _): &Semantic = semantic;
+    let Semantic::Semantic(symtable, _, _, _): &Semantic = semantic;
     symtable
 }
 
 fn semantic_symtable_mut(semantic: &mut Semantic) -> &mut SymTable {
-    let Semantic::Semantic(symtable, _, _): &mut Semantic = semantic;
+    let Semantic::Semantic(symtable, _, _, _): &mut Semantic = semantic;
     symtable
 }
 
 fn semantic_current_fn_return_type(semantic: &Semantic) -> &RAstType {
-    let Semantic::Semantic(_, return_type, _): &Semantic = semantic;
+    let Semantic::Semantic(_, return_type, _, _): &Semantic = semantic;
     return_type
 }
 
 fn semantic_set_current_fn_return_type(semantic: &mut Semantic, ty: RAstType) {
-    let Semantic::Semantic(_, return_type, _): &mut Semantic = semantic;
+    let Semantic::Semantic(_, return_type, _, _): &mut Semantic = semantic;
     *return_type = ty;
 }
 
 fn semantic_function_signatures_mut(semantic: &mut Semantic) -> &mut StringMap<FnSignature> {
-    let Semantic::Semantic(_, _, signatures): &mut Semantic = semantic;
+    let Semantic::Semantic(_, _, signatures, _): &mut Semantic = semantic;
     signatures
 }
 
 fn semantic_into_function_signatures(semantic: Semantic) -> StringMap<FnSignature> {
-    let Semantic::Semantic(_, _, signatures): Semantic = semantic;
+    let Semantic::Semantic(_, _, signatures, _): Semantic = semantic;
     signatures
 }
 
+/// Get the raw unsafe depth value.
+fn semantic_unsafe_depth(semantic: &Semantic) -> usize {
+    let Semantic::Semantic(_, _, _, unsafe_depth): &Semantic = semantic;
+    *unsafe_depth
+}
+
+/// Set the raw unsafe depth value.
+fn semantic_set_unsafe_depth(semantic: &mut Semantic, unsafe_depth: usize) {
+    let Semantic::Semantic(_, _, _, current_unsafe_depth): &mut Semantic = semantic;
+    *current_unsafe_depth = unsafe_depth;
+}
+
+/// Enter a new unsafe context.
+fn semantic_push_unsafe_context(semantic: &mut Semantic) {
+    let current_depth: usize = semantic_unsafe_depth(semantic);
+    semantic_set_unsafe_depth(semantic, current_depth + 1);
+}
+
+/// Exit an unsafe context.
+fn semantic_pop_unsafe_context(semantic: &mut Semantic) {
+    let current_depth: usize = semantic_unsafe_depth(semantic);
+    if current_depth > 0 {
+        semantic_set_unsafe_depth(semantic, current_depth - 1);
+    }
+}
+
+/// Return true if unsafe operations are allowed.
+fn semantic_is_unsafe_context(semantic: &Semantic) -> bool {
+    semantic_unsafe_depth(semantic) > 0
+}
+
 /// Run semantic analysis and return collected function signatures.
-fn semantic_check_analyze(ast: &RAst) -> StringMap<FnSignature> {
+fn semantic_check(ast: &RAst) -> StringMap<FnSignature> {
     let mut semantic: Semantic = semantic_new();
     semantic_check_language(&mut semantic, ast);
     semantic_into_function_signatures(semantic)
@@ -1440,13 +1472,14 @@ fn symTable_insert_function(
     name: String,
     parameter_types: Vec<RAstType>,
     return_type: RAstType,
+    is_unsafe: bool,
 ) -> bool {
     let SymTable::Table(global, _) = symtable;
     if stringMap_contains::<SymTableGlobalEntry>(global, &name) {
         return false;
     }
 
-    let signature: FnSignature = FnSignature::Fn(parameter_types, return_type);
+    let signature: FnSignature = FnSignature::Fn(parameter_types, return_type, is_unsafe);
     stringMap_insert::<SymTableGlobalEntry>(global, name, SymTableGlobalEntry::Function(signature));
     true
 }
@@ -1493,8 +1526,8 @@ enum Variable {
 
 /// A type that represents the (type) signature of a function.
 enum FnSignature {
-    /// parameter types, return type
-    Fn(Vec<RAstType>, RAstType),
+    /// parameter types, return type, is unsafe
+    Fn(Vec<RAstType>, RAstType, bool),
 }
 
 fn rAstType_is_numeric(ty: &RAstType) -> bool {
@@ -1621,7 +1654,7 @@ fn semantic_check_collect_global_items(semantic: &mut Semantic, ast: &RAst) {
     let mut i: usize = 0;
     while i < vec_len::<RAstItem>(items) {
         match vec_at::<RAstItem>(items, i) {
-            RAstItem::Function(RAstFunction::Function(_, name, params, return_type, _)) => {
+            RAstItem::Function(RAstFunction::Function(is_unsafe, name, params, return_type, _)) => {
                 let mut param_types: Vec<RAstType> = vec_new::<RAstType>();
                 let mut param_index: usize = 0;
                 while param_index < vec_len::<RAstVariable>(params) {
@@ -1636,6 +1669,7 @@ fn semantic_check_collect_global_items(semantic: &mut Semantic, ast: &RAst) {
                     string_clone(name),
                     param_types,
                     rAstType_clone(return_type),
+                    *is_unsafe,
                 )) {
                     semantic_check_error("duplicate function name");
                 }
@@ -1681,7 +1715,8 @@ fn semantic_check_collect_global_items(semantic: &mut Semantic, ast: &RAst) {
 
 /// Analyze one function and validate body against its signature.
 fn semantic_check_function(semantic: &mut Semantic, function: &RAstFunction) {
-    let RAstFunction::Function(_, _, parameters, return_type, body): &RAstFunction = function;
+    let RAstFunction::Function(is_unsafe, _, parameters, return_type, body): &RAstFunction =
+        function;
 
     semantic_set_current_fn_return_type(semantic, rAstType_clone(return_type));
     symTable_enter_scope(semantic_symtable_mut(semantic));
@@ -1709,7 +1744,7 @@ fn semantic_check_function(semantic: &mut Semantic, function: &RAstFunction) {
         i = i + 1;
     }
 
-    let block_type: RAstType = semantic_check_block(semantic, body);
+    let block_type: RAstType = semantic_check_block(semantic, body, *is_unsafe);
     semantic_expect_same_type(&block_type, return_type);
 
     symTable_leave_scope(semantic_symtable_mut(semantic));
@@ -1717,8 +1752,11 @@ fn semantic_check_function(semantic: &mut Semantic, function: &RAstFunction) {
 }
 
 /// Analyze one block and return its resulting type.
-fn semantic_check_block(semantic: &mut Semantic, block: &RAstBlock) -> RAstType {
+fn semantic_check_block(semantic: &mut Semantic, block: &RAstBlock, is_unsafe: bool) -> RAstType {
     let RAstBlock::Block(statements, tail): &RAstBlock = block;
+    if is_unsafe {
+        semantic_push_unsafe_context(semantic);
+    }
     symTable_enter_scope(semantic_symtable_mut(semantic));
 
     let mut statement_flow_type: RAstType = RAstType::Unit;
@@ -1752,6 +1790,9 @@ fn semantic_check_block(semantic: &mut Semantic, block: &RAstBlock) -> RAstType 
         block_type = RAstType::Never;
     }
 
+    if is_unsafe {
+        semantic_pop_unsafe_context(semantic);
+    }
     symTable_leave_scope(semantic_symtable_mut(semantic));
     block_type
 }
@@ -1800,7 +1841,7 @@ fn semantic_check_expression(semantic: &mut Semantic, expression: &RAstExpr) -> 
         RAstExpr::Literal(literal) => semantic_check_literal(literal),
         RAstExpr::VariableUse(name) => semantic_check_variable_use(semantic, name),
         RAstExpr::Call(callee, arguments) => semantic_check_call(semantic, callee, arguments),
-        RAstExpr::Block(_, block) => semantic_check_block(semantic, block),
+        RAstExpr::Block(is_unsafe, block) => semantic_check_block(semantic, block, *is_unsafe),
         RAstExpr::If(if_expression) => semantic_check_if(semantic, if_expression),
         RAstExpr::While(condition, body) => {
             semantic_check_while(semantic, box_deref::<RAstExpr>(condition), body)
@@ -1862,7 +1903,12 @@ fn semantic_check_assignment_lvalue_type(
                     }
                     rAstType_clone(box_deref::<RAstType>(&inner))
                 }
-                RAstType::RawPointerMut(inner) => rAstType_clone(box_deref::<RAstType>(&inner)),
+                RAstType::RawPointerMut(inner) => {
+                    if not(semantic_is_unsafe_context(semantic)) {
+                        semantic_check_error("raw pointer dereference requires unsafe");
+                    }
+                    rAstType_clone(box_deref::<RAstType>(&inner))
+                }
                 _ => semantic_check_error("invalid assignment to an expression"),
             }
         }
@@ -1926,7 +1972,12 @@ fn semantic_check_unary_op(
             let ty: RAstType = semantic_check_expression(semantic, value);
             match ty {
                 RAstType::Reference(pointed, _) => rAstType_clone(box_deref::<RAstType>(&pointed)),
-                RAstType::RawPointerMut(pointed) => rAstType_clone(box_deref::<RAstType>(&pointed)),
+                RAstType::RawPointerMut(pointed) => {
+                    if not(semantic_is_unsafe_context(semantic)) {
+                        semantic_check_error("raw pointer dereference requires unsafe context");
+                    }
+                    rAstType_clone(box_deref::<RAstType>(&pointed))
+                }
                 _ => semantic_check_error("cannot dereference this expression"),
             }
         }
@@ -1963,13 +2014,16 @@ fn semantic_check_call(
         i = i + 1;
     }
 
-    let FnSignature::Fn(parameter_types, return_type): FnSignature = signature;
+    let FnSignature::Fn(parameter_types, return_type, is_unsafe): FnSignature = signature;
     if not(vec_eq::<RAstType>(
         &parameter_types,
         &argument_types,
         rAstType_eq,
     )) {
         semantic_check_error("function call does not match function signature");
+    }
+    if and(is_unsafe, not(semantic_is_unsafe_context(semantic))) {
+        semantic_check_error("calling an unsafe function requires unsafe");
     }
     return_type
 }
@@ -1980,14 +2034,14 @@ fn semantic_check_if(semantic: &mut Semantic, if_expression: &RAstIf) -> RAstTyp
         semantic_check_expression(semantic, box_deref::<RAstExpr>(condition));
     semantic_expect_bool_type(&condition_type);
 
-    let then_type: RAstType = semantic_check_block(semantic, then_block);
+    let then_type: RAstType = semantic_check_block(semantic, then_block, false);
     match else_branch {
         Option::Some(else_branch) => {
             let else_type: RAstType = match else_branch {
                 RAstElse::If(nested_if) => {
                     semantic_check_if(semantic, box_deref::<RAstIf>(nested_if))
                 }
-                RAstElse::Block(block) => semantic_check_block(semantic, block),
+                RAstElse::Block(block) => semantic_check_block(semantic, block, false),
             };
             semantic_expect_same_type(&then_type, &else_type);
             then_type
@@ -2003,7 +2057,7 @@ fn semantic_check_while(
 ) -> RAstType {
     let condition_type: RAstType = semantic_check_expression(semantic, condition);
     semantic_expect_bool_type(&condition_type);
-    let body_type: RAstType = semantic_check_block(semantic, body);
+    let body_type: RAstType = semantic_check_block(semantic, body, false);
     semantic_expect_same_type(&RAstType::Unit, &body_type);
     RAstType::Unit
 }
@@ -2529,7 +2583,7 @@ fn codegen_call(codegen: &mut Codegen, callee: &RAstPath, arguments: &Vec<RAstEx
     }
 
     match codegen_function_signature(codegen, &function_name) {
-        Option::Some(FnSignature::Fn(_, return_type)) => {
+        Option::Some(FnSignature::Fn(_, return_type, _)) => {
             let result_name: String = if rAstType_eq(&return_type, &RAstType::Unit) {
                 codegen_emit_call_void(codegen, &function_name, &arg_types, &arg_values);
                 string_new()
@@ -5705,7 +5759,7 @@ fn literalToken_clone(literal: &Literal) -> Literal {
 /// Clone a function signature.
 fn fnSignature_clone(signature: &FnSignature) -> FnSignature {
     match signature {
-        FnSignature::Fn(parameter_types, return_type) => {
+        FnSignature::Fn(parameter_types, return_type, is_unsafe) => {
             let mut cloned_params: Vec<RAstType> = vec_new::<RAstType>();
             let mut i: usize = 0;
             while i < vec_len::<RAstType>(parameter_types) {
@@ -5713,7 +5767,7 @@ fn fnSignature_clone(signature: &FnSignature) -> FnSignature {
                 vec_push::<RAstType>(&mut cloned_params, rAstType_clone(param));
                 i = i + 1;
             }
-            FnSignature::Fn(cloned_params, rAstType_clone(return_type))
+            FnSignature::Fn(cloned_params, rAstType_clone(return_type), *is_unsafe)
         }
     }
 }
