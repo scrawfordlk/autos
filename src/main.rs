@@ -591,7 +591,9 @@ fn compile(source: &str) -> String {
     let mut lexer: Lexer = lexer_new(string_from_str(source));
     let ast: RAst = parse_language(&mut lexer);
 
-    let mut codegen: Codegen = codegen_new();
+    let function_signatures: StringMap<FnSignature> = semantic_check_analyze(&ast);
+
+    let mut codegen: Codegen = codegen_new(function_signatures);
     codegen_language(&mut codegen, &ast);
 
     codegen_into_llvm(codegen)
@@ -1291,147 +1293,58 @@ fn parse_literal(lexer: &mut Lexer) -> RAstLiteral {
     }
 }
 
-/// Type that encapsulates the state during LLVM-IR code generation from an AST.
-enum Codegen {
-    /// llvm code, symbol table, current function return type, llvm context,
-    /// variable-register-mapping, function return types
-    Codegen(
-        String,
-        SymTable,
-        RAstType,
-        Context,
-        StringMapStack<String>,
-        StringMap<RAstType>,
-    ),
+/// Semantic analysis state.
+enum Semantic {
+    /// symbol table, current function return type, function signatures
+    Semantic(SymTable, RAstType, StringMap<FnSignature>),
 }
 
-fn codegen_new() -> Codegen {
-    Codegen::Codegen(
-        string_new(),
+fn semantic_new() -> Semantic {
+    Semantic::Semantic(
         symTable_new(),
         RAstType::Unit,
-        context_new(),
-        stringMapStack_new::<String>(),
-        stringMap_new::<RAstType>(),
+        stringMap_new::<FnSignature>(),
     )
 }
 
-fn codegen_into_llvm(codegen: Codegen) -> String {
-    let Codegen::Codegen(llvm, _, _, _, _, _): Codegen = codegen;
-    llvm
-}
-
-fn codegen_llvm_mut(codegen: &mut Codegen) -> &mut String {
-    let Codegen::Codegen(llvm, _, _, _, _, _): &mut Codegen = codegen;
-    llvm
-}
-
-fn codegen_symtable(codegen: &Codegen) -> &SymTable {
-    let Codegen::Codegen(_, symtable, _, _, _, _): &Codegen = codegen;
+fn semantic_symtable(semantic: &Semantic) -> &SymTable {
+    let Semantic::Semantic(symtable, _, _): &Semantic = semantic;
     symtable
 }
 
-fn codegen_symtable_mut(codegen: &mut Codegen) -> &mut SymTable {
-    let Codegen::Codegen(_, symtable, _, _, _, _): &mut Codegen = codegen;
+fn semantic_symtable_mut(semantic: &mut Semantic) -> &mut SymTable {
+    let Semantic::Semantic(symtable, _, _): &mut Semantic = semantic;
     symtable
 }
 
-fn codegen_current_fn_return_type(codegen: &Codegen) -> &RAstType {
-    let Codegen::Codegen(_, _, return_type, _, _, _): &Codegen = codegen;
+fn semantic_current_fn_return_type(semantic: &Semantic) -> &RAstType {
+    let Semantic::Semantic(_, return_type, _): &Semantic = semantic;
     return_type
 }
 
-fn codegen_set_current_fn_return_type(codegen: &mut Codegen, ty: RAstType) {
-    let Codegen::Codegen(_, _, return_type, _, _, _): &mut Codegen = codegen;
+fn semantic_set_current_fn_return_type(semantic: &mut Semantic, ty: RAstType) {
+    let Semantic::Semantic(_, return_type, _): &mut Semantic = semantic;
     *return_type = ty;
 }
 
-fn codegen_context_mut(codegen: &mut Codegen) -> &mut Context {
-    let Codegen::Codegen(_, _, _, context, _, _): &mut Codegen = codegen;
-    context
+fn semantic_function_signatures_mut(semantic: &mut Semantic) -> &mut StringMap<FnSignature> {
+    let Semantic::Semantic(_, _, signatures): &mut Semantic = semantic;
+    signatures
 }
 
-/// Push a new empty scope onto the stack.
-fn codegen_push_scope(codegen: &mut Codegen) {
-    let Codegen::Codegen(_, _, _, _, slots, _): &mut Codegen = codegen;
-    stringMapStack_push_empty::<String>(slots);
+fn semantic_into_function_signatures(semantic: Semantic) -> StringMap<FnSignature> {
+    let Semantic::Semantic(_, _, signatures): Semantic = semantic;
+    signatures
 }
 
-/// Pop the last pushed scope.
-fn codegen_pop_scope(codegen: &mut Codegen) -> bool {
-    let Codegen::Codegen(_, _, _, _, slots, _): &mut Codegen = codegen;
-    stringMapStack_pop::<String>(slots)
+/// Run semantic analysis and return collected function signatures.
+fn semantic_check_analyze(ast: &RAst) -> StringMap<FnSignature> {
+    let mut semantic: Semantic = semantic_new();
+    semantic_check_language(&mut semantic, ast);
+    semantic_into_function_signatures(semantic)
 }
 
-/// Insert a new variable-register-mapping into the current scope.
-fn codegen_scope_insert(codegen: &mut Codegen, name: String, pointer_name: String) {
-    let Codegen::Codegen(_, _, _, _, slots, _): &mut Codegen = codegen;
-    let _ = stringMapStack_insert::<String>(slots, name, pointer_name);
-}
-
-/// Lookup the associated virtual register of a variable and return it.
-fn codegen_scope_lookup(codegen: &Codegen, name: &String) -> Option<String> {
-    let Codegen::Codegen(_, _, _, _, slots, _): &Codegen = codegen;
-    match stringMapStack_lookup::<String>(slots, name) {
-        Option::Some(pointer_name) => Option::Some(string_clone(pointer_name)),
-        Option::None => Option::None,
-    }
-}
-
-/// Insert one function return type into the codegen cache.
-fn codegen_function_return_type_insert(codegen: &mut Codegen, name: String, return_type: RAstType) {
-    let Codegen::Codegen(_, _, _, _, _, function_return_types): &mut Codegen = codegen;
-    stringMap_insert::<RAstType>(function_return_types, name, return_type);
-}
-
-/// Lookup the return type of a function.
-fn codegen_function_return_type(codegen: &Codegen, name: &String) -> Option<RAstType> {
-    let Codegen::Codegen(_, _, _, _, _, function_return_types): &Codegen = codegen;
-    match stringMap_get::<RAstType>(function_return_types, name) {
-        Option::Some(return_type) => Option::Some(rAstType_clone(return_type)),
-        Option::None => Option::None,
-    }
-}
-
-/// Collect function signatures before code generation starts.
-fn codegen_collect_function_signatures(codegen: &mut Codegen, ast: &RAst) {
-    let RAst::Language(items): &RAst = ast;
-
-    let mut i: usize = 0;
-    while i < vec_len::<RAstItem>(items) {
-        match vec_at::<RAstItem>(items, i) {
-            RAstItem::Function(RAstFunction::Function(_, name, params, return_type, _)) => {
-                let mut param_types: Vec<RAstType> = vec_new::<RAstType>();
-                let mut param_index: usize = 0;
-                while param_index < vec_len::<RAstVariable>(params) {
-                    let RAstVariable::Variable(_, parameter_type): &RAstVariable =
-                        vec_at::<RAstVariable>(params, param_index);
-                    vec_push::<RAstType>(&mut param_types, rAstType_clone(parameter_type));
-                    param_index = param_index + 1;
-                }
-
-                if not(symTable_insert_function(
-                    codegen_symtable_mut(codegen),
-                    string_clone(name),
-                    param_types,
-                    rAstType_clone(&return_type),
-                )) {
-                    codegen_error("duplicate function name");
-                }
-
-                codegen_function_return_type_insert(
-                    codegen,
-                    string_clone(name),
-                    rAstType_clone(return_type),
-                );
-            }
-            _ => {}
-        }
-        i = i + 1;
-    }
-}
-
-fn codegen_expect_same_type(left: &RAstType, right: &RAstType) {
+fn semantic_expect_same_type(left: &RAstType, right: &RAstType) {
     // Never is a special type that indicates the value is unreachable, so it matches every type
     if or(
         rAstType_eq(left, &RAstType::Never),
@@ -1441,60 +1354,20 @@ fn codegen_expect_same_type(left: &RAstType, right: &RAstType) {
     }
 
     if not(rAstType_eq(left, right)) {
-        codegen_error("type mismatch");
+        semantic_check_error("type mismatch");
     }
 }
 
-fn codegen_expect_numeric_type(ty: &RAstType) {
+fn semantic_expect_numeric_type(ty: &RAstType) {
     if not(rAstType_is_numeric(ty)) {
-        codegen_error("expected numeric type");
+        semantic_check_error("expected numeric type");
     }
 }
 
-fn codegen_expect_bool_type(ty: &RAstType) {
+fn semantic_expect_bool_type(ty: &RAstType) {
     if not(rAstType_eq(ty, &RAstType::Bool)) {
-        codegen_error("expected bool type");
+        semantic_check_error("expected bool type");
     }
-}
-
-/// Manages the context of the LLVM-IR that is currently being generated.
-enum Context {
-    /// temporary counter
-    Context(usize),
-}
-
-fn context_new() -> Context {
-    Context::Context(0)
-}
-
-fn context_get_counter(context: &Context) -> usize {
-    let Context::Context(counter): &Context = context;
-    *counter
-}
-
-fn context_increment_counter(context: &mut Context) {
-    let Context::Context(counter): &mut Context = context;
-    *counter = *counter + 1;
-}
-
-/// Get a unique virtual register name.
-fn context_next_temporary(context: &mut Context) -> String {
-    let id: usize = context_get_counter(context);
-    context_increment_counter(context);
-    let mut name: String = string_from_str("%t");
-    string_push_string(&mut name, &integer_to_string(id));
-    name
-}
-
-/// Get a unique basic block label with a given suffix:
-fn context_next_label(context: &mut Context, suffix: &str) -> String {
-    let id: usize = context_get_counter(context);
-    context_increment_counter(context);
-    let mut label: String = string_from_str("l");
-    string_push_string(&mut label, &integer_to_string(id));
-    string_push(&mut label, '.');
-    string_push_str(&mut label, suffix);
-    label
 }
 
 /// Data structure that manages global and local symbol tables.
@@ -1690,8 +1563,591 @@ fn rAstType_get_cast_operation(left_type: &RAstType, right_type: &RAstType) -> C
 }
 
 // -----------------------------------------------------------------
+// --------------------- Semantic Analysis -------------------------
+// -----------------------------------------------------------------
+
+/// Run semantic analysis on the full AST.
+fn semantic_check_language(semantic: &mut Semantic, ast: &RAst) {
+    semantic_check_collect_global_items(semantic, ast);
+
+    let RAst::Language(items): &RAst = ast;
+    let mut i: usize = 0;
+    let len: usize = vec_len::<RAstItem>(items);
+    while i < len {
+        let item: &RAstItem = vec_at::<RAstItem>(items, i);
+        match item {
+            RAstItem::Function(function) => semantic_check_function(semantic, function),
+            _ => {}
+        }
+        i = i + 1;
+    }
+}
+
+/// Collect globally visible item signatures/types.
+fn semantic_check_collect_global_items(semantic: &mut Semantic, ast: &RAst) {
+    let RAst::Language(items): &RAst = ast;
+
+    let mut i: usize = 0;
+    while i < vec_len::<RAstItem>(items) {
+        match vec_at::<RAstItem>(items, i) {
+            RAstItem::Function(RAstFunction::Function(_, name, params, return_type, _)) => {
+                let mut param_types: Vec<RAstType> = vec_new::<RAstType>();
+                let mut param_index: usize = 0;
+                while param_index < vec_len::<RAstVariable>(params) {
+                    let RAstVariable::Variable(_, parameter_type): &RAstVariable =
+                        vec_at::<RAstVariable>(params, param_index);
+                    vec_push::<RAstType>(&mut param_types, rAstType_clone(parameter_type));
+                    param_index = param_index + 1;
+                }
+
+                if not(symTable_insert_function(
+                    semantic_symtable_mut(semantic),
+                    string_clone(name),
+                    param_types,
+                    rAstType_clone(return_type),
+                )) {
+                    semantic_check_error("duplicate function name");
+                }
+
+                match symTable_lookup_function_signature(semantic_symtable(semantic), name) {
+                    Option::Some(signature) => {
+                        stringMap_insert::<FnSignature>(
+                            semantic_function_signatures_mut(semantic),
+                            string_clone(name),
+                            signature,
+                        );
+                    }
+                    Option::None => {
+                        semantic_check_error("internal semantic signature collection error")
+                    }
+                }
+            }
+            RAstItem::Enum(RAstEnum::Enum(enum_name, variants)) => {
+                let mut lowered_variants: Vec<RAstType> = vec_new::<RAstType>();
+                let mut variant_index: usize = 0;
+                while variant_index < vec_len::<RAstVariant>(variants) {
+                    let variant: &RAstVariant = vec_at::<RAstVariant>(variants, variant_index);
+                    let RAstVariant::Variant(variant_name, _): &RAstVariant = variant;
+                    vec_push::<RAstType>(
+                        &mut lowered_variants,
+                        RAstType::Custom(string_clone(variant_name)),
+                    );
+                    variant_index = variant_index + 1;
+                }
+
+                if not(symTable_insert_enum(
+                    semantic_symtable_mut(semantic),
+                    string_clone(enum_name),
+                    lowered_variants,
+                )) {
+                    semantic_check_error("duplicate enum name");
+                }
+            }
+        }
+        i = i + 1;
+    }
+}
+
+/// Analyze one function and validate body against its signature.
+fn semantic_check_function(semantic: &mut Semantic, function: &RAstFunction) {
+    let RAstFunction::Function(_, _, parameters, return_type, body): &RAstFunction = function;
+
+    semantic_set_current_fn_return_type(semantic, rAstType_clone(return_type));
+    symTable_enter_scope(semantic_symtable_mut(semantic));
+
+    let mut i: usize = 0;
+    let len: usize = vec_len::<RAstVariable>(parameters);
+    while i < len {
+        let RAstVariable::Variable(pattern, parameter_type): &RAstVariable =
+            vec_at::<RAstVariable>(parameters, i);
+
+        match pattern {
+            RAstPattern::Identifier(is_mutable, name) => {
+                let already_used: bool = symTable_insert_variable(
+                    semantic_symtable_mut(semantic),
+                    string_clone(name),
+                    rAstType_clone(parameter_type),
+                    *is_mutable,
+                );
+                if already_used {
+                    semantic_check_error("duplicate parameter name");
+                }
+            }
+            _ => {}
+        }
+        i = i + 1;
+    }
+
+    let block_type: RAstType = semantic_check_block(semantic, body);
+    semantic_expect_same_type(&block_type, return_type);
+
+    symTable_leave_scope(semantic_symtable_mut(semantic));
+    semantic_set_current_fn_return_type(semantic, RAstType::Unit);
+}
+
+/// Analyze one block and return its resulting type.
+fn semantic_check_block(semantic: &mut Semantic, block: &RAstBlock) -> RAstType {
+    let RAstBlock::Block(statements, tail): &RAstBlock = block;
+    symTable_enter_scope(semantic_symtable_mut(semantic));
+
+    let mut statement_flow_type: RAstType = RAstType::Unit;
+    let mut i: usize = 0;
+    let len: usize = vec_len::<RAstStatement>(statements);
+    while i < len {
+        let statement: &RAstStatement = vec_at::<RAstStatement>(statements, i);
+        match statement {
+            RAstStatement::Let(variable, value) => {
+                semantic_check_binding(semantic, variable, box_deref::<RAstExpr>(value));
+            }
+            RAstStatement::Expression(expression) => {
+                let ty: RAstType =
+                    semantic_check_expression(semantic, box_deref::<RAstExpr>(expression));
+                if rAstType_eq(&ty, &RAstType::Never) {
+                    statement_flow_type = RAstType::Never;
+                }
+            }
+        }
+        i = i + 1;
+    }
+
+    let mut block_type: RAstType = match tail {
+        Option::Some(expression) => {
+            semantic_check_expression(semantic, box_deref::<RAstExpr>(expression))
+        }
+        Option::None => RAstType::Unit,
+    };
+
+    if rAstType_eq(&statement_flow_type, &RAstType::Never) {
+        block_type = RAstType::Never;
+    }
+
+    symTable_leave_scope(semantic_symtable_mut(semantic));
+    block_type
+}
+
+/// Analyze one let-binding statement.
+fn semantic_check_binding(semantic: &mut Semantic, variable: &RAstVariable, value: &RAstExpr) {
+    let RAstVariable::Variable(pattern, binding_type): &RAstVariable = variable;
+    let actual_type: RAstType = semantic_check_expression(semantic, value);
+    semantic_expect_same_type(binding_type, &actual_type);
+
+    match pattern {
+        RAstPattern::Identifier(is_mutable, lvalue_name) => {
+            // allow shadowing of variables
+            let _ = symTable_insert_variable(
+                semantic_symtable_mut(semantic),
+                string_clone(lvalue_name),
+                rAstType_clone(binding_type),
+                *is_mutable,
+            );
+        }
+        _ => {}
+    }
+}
+
+/// Analyze one expression and return its type.
+fn semantic_check_expression(semantic: &mut Semantic, expression: &RAstExpr) -> RAstType {
+    match expression {
+        RAstExpr::Return(returned) => semantic_check_return(semantic, returned),
+        RAstExpr::Assign(left, right) => semantic_check_assignment(
+            semantic,
+            box_deref::<RAstExpr>(left),
+            box_deref::<RAstExpr>(right),
+        ),
+        RAstExpr::Binary(operator, left, right) => semantic_check_binary_op(
+            semantic,
+            operator,
+            box_deref::<RAstExpr>(left),
+            box_deref::<RAstExpr>(right),
+        ),
+        RAstExpr::Cast(value, to_type) => {
+            semantic_check_cast(semantic, box_deref::<RAstExpr>(value), to_type)
+        }
+        RAstExpr::Unary(operator, value) => {
+            semantic_check_unary_op(semantic, operator, box_deref::<RAstExpr>(value))
+        }
+        RAstExpr::Literal(literal) => semantic_check_literal(literal),
+        RAstExpr::Path(path) => semantic_check_path_expression(semantic, path),
+        RAstExpr::Call(callee, arguments) => semantic_check_call(semantic, callee, arguments),
+        RAstExpr::Block(_, block) => semantic_check_block(semantic, block),
+        RAstExpr::If(if_expression) => semantic_check_if(semantic, if_expression),
+        RAstExpr::While(condition, body) => {
+            semantic_check_while(semantic, box_deref::<RAstExpr>(condition), body)
+        }
+        RAstExpr::Match(value, arms) => {
+            semantic_check_match(semantic, box_deref::<RAstExpr>(value), arms)
+        }
+    }
+}
+
+fn semantic_check_return(semantic: &mut Semantic, returned: &Option<Box<RAstExpr>>) -> RAstType {
+    match returned {
+        Option::Some(expression) => {
+            let ty: RAstType =
+                semantic_check_expression(semantic, box_deref::<RAstExpr>(expression));
+            semantic_expect_same_type(&ty, semantic_current_fn_return_type(semantic));
+        }
+        Option::None => {
+            semantic_expect_same_type(&RAstType::Unit, semantic_current_fn_return_type(semantic));
+        }
+    }
+    RAstType::Never
+}
+
+fn semantic_check_assignment(
+    semantic: &mut Semantic,
+    left: &RAstExpr,
+    right: &RAstExpr,
+) -> RAstType {
+    let right_type: RAstType = semantic_check_expression(semantic, right);
+    let left_type: RAstType = semantic_check_assignment_lvalue_type(semantic, left);
+    semantic_expect_same_type(&left_type, &right_type);
+    RAstType::Unit
+}
+
+fn semantic_check_assignment_lvalue_type(
+    semantic: &mut Semantic,
+    expression: &RAstExpr,
+) -> RAstType {
+    match expression {
+        RAstExpr::Path(path) => {
+            let name: String = rAstPath_to_string(path);
+            match symTable_lookup_variable(semantic_symtable(semantic), &name) {
+                Option::Some(Variable::Variable(variable_type, mutable)) => {
+                    if not(mutable) {
+                        semantic_check_error("invalid assignment to immutable variable");
+                    }
+                    variable_type
+                }
+                Option::None => semantic_check_error("undefined variable"),
+            }
+        }
+        RAstExpr::Unary(RAstUnaryOp::Dereference, value) => {
+            let pointer_type: RAstType =
+                semantic_check_expression(semantic, box_deref::<RAstExpr>(value));
+            match pointer_type {
+                RAstType::Reference(inner, mutable) => {
+                    if not(mutable) {
+                        semantic_check_error("invalid assignment using immutable reference");
+                    }
+                    rAstType_clone(box_deref::<RAstType>(&inner))
+                }
+                RAstType::RawPointerMut(inner) => rAstType_clone(box_deref::<RAstType>(&inner)),
+                _ => semantic_check_error("invalid assignment to an expression"),
+            }
+        }
+        _ => semantic_check_error("invalid assignment target"),
+    }
+}
+
+fn semantic_check_binary_op(
+    semantic: &mut Semantic,
+    operator: &RAstBinaryOp,
+    left: &RAstExpr,
+    right: &RAstExpr,
+) -> RAstType {
+    let left_type: RAstType = semantic_check_expression(semantic, left);
+    let right_type: RAstType = semantic_check_expression(semantic, right);
+    semantic_expect_same_type(&left_type, &right_type);
+
+    match operator {
+        RAstBinaryOp::Arithmetic(_) => {
+            semantic_expect_numeric_type(&left_type);
+            left_type
+        }
+        RAstBinaryOp::Comparison(_) => RAstType::Bool,
+    }
+}
+
+fn semantic_check_cast(semantic: &mut Semantic, value: &RAstExpr, to_type: &RAstType) -> RAstType {
+    let from_type: RAstType = semantic_check_expression(semantic, value);
+    match rAstType_get_cast_operation(&from_type, to_type) {
+        CastOperation::Invalid => semantic_check_error("invalid cast"),
+        _ => rAstType_clone(to_type),
+    }
+}
+
+fn semantic_check_unary_op(
+    semantic: &mut Semantic,
+    operator: &RAstUnaryOp,
+    value: &RAstExpr,
+) -> RAstType {
+    match operator {
+        RAstUnaryOp::Reference(mutable_ref) => match value {
+            RAstExpr::Path(path) => {
+                let name: String = rAstPath_to_string(path);
+                match symTable_lookup_variable(semantic_symtable(semantic), &name) {
+                    Option::Some(Variable::Variable(ty, mutable_var)) => {
+                        if and(*mutable_ref, not(mutable_var)) {
+                            semantic_check_error(
+                                "cannot take mutable reference to immutable variable",
+                            );
+                        }
+                        RAstType::Reference(box_new::<RAstType>(ty), *mutable_ref)
+                    }
+                    _ => semantic_check_error("undefined variable"),
+                }
+            }
+            _ => {
+                let ty: RAstType = semantic_check_expression(semantic, value);
+                RAstType::Reference(box_new::<RAstType>(ty), *mutable_ref)
+            }
+        },
+        RAstUnaryOp::Dereference => {
+            let ty: RAstType = semantic_check_expression(semantic, value);
+            match ty {
+                RAstType::Reference(pointed, _) => rAstType_clone(box_deref::<RAstType>(&pointed)),
+                RAstType::RawPointerMut(pointed) => rAstType_clone(box_deref::<RAstType>(&pointed)),
+                _ => semantic_check_error("cannot dereference this expression"),
+            }
+        }
+    }
+}
+
+fn semantic_check_path_expression(semantic: &mut Semantic, path: &RAstPath) -> RAstType {
+    let name: String = rAstPath_to_string(path);
+    match symTable_lookup_variable(semantic_symtable(semantic), &name) {
+        Option::Some(Variable::Variable(ty, _)) => ty,
+        _ => semantic_check_error("undefined variable"),
+    }
+}
+
+fn semantic_check_call(
+    semantic: &mut Semantic,
+    callee: &RAstPath,
+    arguments: &Vec<RAstExpr>,
+) -> RAstType {
+    let function_name: String = rAstPath_to_string(callee);
+    let signature: FnSignature =
+        match symTable_lookup_function_signature(semantic_symtable(semantic), &function_name) {
+            Option::Some(signature) => signature,
+            Option::None => semantic_check_error("call to undefined function"),
+        };
+
+    let mut argument_types: Vec<RAstType> = vec_new::<RAstType>();
+    let mut i: usize = 0;
+    while i < vec_len::<RAstExpr>(arguments) {
+        let argument: &RAstExpr = vec_at::<RAstExpr>(arguments, i);
+        vec_push::<RAstType>(
+            &mut argument_types,
+            semantic_check_expression(semantic, argument),
+        );
+        i = i + 1;
+    }
+
+    let FnSignature::Fn(parameter_types, return_type): FnSignature = signature;
+    if not(vec_eq::<RAstType>(
+        &parameter_types,
+        &argument_types,
+        rAstType_eq,
+    )) {
+        semantic_check_error("function call does not match function signature");
+    }
+    return_type
+}
+
+fn semantic_check_if(semantic: &mut Semantic, if_expression: &RAstIf) -> RAstType {
+    let RAstIf::If(condition, then_block, else_branch): &RAstIf = if_expression;
+    let condition_type: RAstType =
+        semantic_check_expression(semantic, box_deref::<RAstExpr>(condition));
+    semantic_expect_bool_type(&condition_type);
+
+    let then_type: RAstType = semantic_check_block(semantic, then_block);
+    match else_branch {
+        Option::Some(else_branch) => {
+            let else_type: RAstType = match else_branch {
+                RAstElse::If(nested_if) => {
+                    semantic_check_if(semantic, box_deref::<RAstIf>(nested_if))
+                }
+                RAstElse::Block(block) => semantic_check_block(semantic, block),
+            };
+            semantic_expect_same_type(&then_type, &else_type);
+            then_type
+        }
+        Option::None => RAstType::Unit,
+    }
+}
+
+fn semantic_check_while(
+    semantic: &mut Semantic,
+    condition: &RAstExpr,
+    body: &RAstBlock,
+) -> RAstType {
+    let condition_type: RAstType = semantic_check_expression(semantic, condition);
+    semantic_expect_bool_type(&condition_type);
+    let body_type: RAstType = semantic_check_block(semantic, body);
+    semantic_expect_same_type(&RAstType::Unit, &body_type);
+    RAstType::Unit
+}
+
+fn semantic_check_match(
+    semantic: &mut Semantic,
+    value: &RAstExpr,
+    arms: &Vec<RAstMatchArm>,
+) -> RAstType {
+    if vec_len::<RAstMatchArm>(arms) == 0 {
+        semantic_check_error("match expression requires at least one arm");
+    }
+
+    let matched_type: RAstType = semantic_check_expression(semantic, value);
+    let first_arm: &RAstMatchArm = vec_at::<RAstMatchArm>(arms, 0);
+    let RAstMatchArm::Arm(first_pattern, first_expression): &RAstMatchArm = first_arm;
+    let first_pattern_type: RAstType =
+        semantic_check_pattern_type_for_expression(first_pattern, &matched_type);
+    semantic_expect_same_type(&first_pattern_type, &matched_type);
+    let return_type: RAstType = semantic_check_expression(semantic, first_expression);
+
+    let mut i: usize = 1;
+    while i < vec_len::<RAstMatchArm>(arms) {
+        let arm: &RAstMatchArm = vec_at::<RAstMatchArm>(arms, i);
+        let RAstMatchArm::Arm(pattern, expression): &RAstMatchArm = arm;
+        let pattern_type: RAstType =
+            semantic_check_pattern_type_for_expression(pattern, &matched_type);
+        semantic_expect_same_type(&pattern_type, &matched_type);
+        let arm_type: RAstType = semantic_check_expression(semantic, expression);
+        semantic_expect_same_type(&return_type, &arm_type);
+        i = i + 1;
+    }
+    return_type
+}
+
+fn semantic_check_pattern_type_for_expression(
+    pattern: &RAstPattern,
+    expression_type: &RAstType,
+) -> RAstType {
+    match pattern {
+        RAstPattern::Literal(literal) => rastLiteral_type(literal),
+        RAstPattern::Identifier(_, _) => rAstType_clone(expression_type),
+        RAstPattern::EnumVariant(enum_name, _, _) => RAstType::Custom(string_clone(enum_name)),
+        RAstPattern::Wildcard => rAstType_clone(expression_type),
+    }
+}
+
+fn semantic_check_literal(literal: &RAstLiteral) -> RAstType {
+    rastLiteral_type(literal)
+}
+
+// -----------------------------------------------------------------
 // ---------------------- Code Generation --------------------------
 // -----------------------------------------------------------------
+
+/// Type that encapsulates the state during LLVM-IR code generation from an AST.
+enum Codegen {
+    /// llvm code, current function return type, llvm context, local variable slots, function signatures
+    Codegen(
+        String,
+        RAstType,
+        Context,
+        StringMapStack<STPair>,
+        StringMap<FnSignature>,
+    ),
+}
+
+fn codegen_new(function_signatures: StringMap<FnSignature>) -> Codegen {
+    Codegen::Codegen(
+        string_new(),
+        RAstType::Unit,
+        context_new(),
+        stringMapStack_new::<STPair>(),
+        function_signatures,
+    )
+}
+
+fn codegen_into_llvm(codegen: Codegen) -> String {
+    let Codegen::Codegen(llvm, _, _, _, _): Codegen = codegen;
+    llvm
+}
+
+fn codegen_llvm_mut(codegen: &mut Codegen) -> &mut String {
+    let Codegen::Codegen(llvm, _, _, _, _): &mut Codegen = codegen;
+    llvm
+}
+
+fn codegen_set_current_fn_return_type(codegen: &mut Codegen, ty: RAstType) {
+    let Codegen::Codegen(_, return_type, _, _, _): &mut Codegen = codegen;
+    *return_type = ty;
+}
+
+fn codegen_context_mut(codegen: &mut Codegen) -> &mut Context {
+    let Codegen::Codegen(_, _, context, _, _): &mut Codegen = codegen;
+    context
+}
+
+/// Push a new empty scope onto the stack.
+fn codegen_push_scope(codegen: &mut Codegen) {
+    let Codegen::Codegen(_, _, _, slots, _): &mut Codegen = codegen;
+    stringMapStack_push_empty::<STPair>(slots);
+}
+
+/// Pop the last pushed scope.
+fn codegen_pop_scope(codegen: &mut Codegen) -> bool {
+    let Codegen::Codegen(_, _, _, slots, _): &mut Codegen = codegen;
+    stringMapStack_pop::<STPair>(slots)
+}
+
+/// Insert one variable slot into the current scope.
+fn codegen_scope_insert(codegen: &mut Codegen, name: String, ty: RAstType, pointer_name: String) {
+    let Codegen::Codegen(_, _, _, slots, _): &mut Codegen = codegen;
+    let _ = stringMapStack_insert::<STPair>(slots, name, STPair::ST(pointer_name, ty));
+}
+
+/// Lookup variable slot information.
+fn codegen_scope_lookup(codegen: &Codegen, name: &String) -> STPair {
+    let Codegen::Codegen(_, _, _, slots, _): &Codegen = codegen;
+    match stringMapStack_lookup::<STPair>(slots, name) {
+        Option::Some(variable) => stPair_clone(variable),
+        Option::None => STPair::ST(string_new(), RAstType::Unit), // should not be reachable
+    }
+}
+
+/// Lookup one function signature.
+fn codegen_function_signature(codegen: &Codegen, name: &String) -> Option<FnSignature> {
+    let Codegen::Codegen(_, _, _, _, signatures): &Codegen = codegen;
+    match stringMap_get::<FnSignature>(signatures, name) {
+        Option::Some(signature) => Option::Some(fnSignature_clone(signature)),
+        Option::None => Option::None,
+    }
+}
+
+/// Manages the context of the LLVM-IR that is currently being generated.
+enum Context {
+    /// temporary counter
+    Context(usize),
+}
+
+fn context_new() -> Context {
+    Context::Context(0)
+}
+
+fn context_get_counter(context: &Context) -> usize {
+    let Context::Context(counter): &Context = context;
+    *counter
+}
+
+fn context_increment_counter(context: &mut Context) {
+    let Context::Context(counter): &mut Context = context;
+    *counter = *counter + 1;
+}
+
+/// Get a unique virtual register name.
+fn context_next_temporary(context: &mut Context) -> String {
+    let id: usize = context_get_counter(context);
+    context_increment_counter(context);
+    let mut name: String = string_from_str("%t");
+    string_push_string(&mut name, &integer_to_string(id));
+    name
+}
+
+/// Get a unique basic block label with a given suffix:
+fn context_next_label(context: &mut Context, suffix: &str) -> String {
+    let id: usize = context_get_counter(context);
+    context_increment_counter(context);
+    let mut label: String = string_from_str("l");
+    string_push_string(&mut label, &integer_to_string(id));
+    string_push(&mut label, '.');
+    string_push_str(&mut label, suffix);
+    label
+}
 
 /// Pair that contains a String and a Rust Type
 enum STPair {
@@ -1705,11 +2161,10 @@ fn stPair_get_type(pair: STPair) -> RAstType {
 
 /// Emit LLVM-IR for a full Rust AST.
 fn codegen_language(codegen: &mut Codegen, ast: &RAst) {
-    codegen_collect_function_signatures(codegen, ast);
-
     let RAst::Language(items): &RAst = ast;
     let mut i: usize = 0;
-    while i < vec_len::<RAstItem>(items) {
+    let len: usize = vec_len::<RAstItem>(items);
+    while i < len {
         let item: &RAstItem = vec_at::<RAstItem>(items, i);
         match item {
             RAstItem::Enum(enum_item) => codegen_enum(codegen, enum_item),
@@ -1720,28 +2175,8 @@ fn codegen_language(codegen: &mut Codegen, ast: &RAst) {
 }
 
 /// Emit LLVM-IR for one enum definition.
-fn codegen_enum(codegen: &mut Codegen, enum_item: &RAstEnum) {
-    let RAstEnum::Enum(enum_name, variants): &RAstEnum = enum_item;
-
-    let mut lowered_variants: Vec<RAstType> = vec_new::<RAstType>();
-    let mut i: usize = 0;
-    while i < vec_len::<RAstVariant>(variants) {
-        let variant: &RAstVariant = vec_at::<RAstVariant>(variants, i);
-        let RAstVariant::Variant(variant_name, _): &RAstVariant = variant;
-        vec_push::<RAstType>(
-            &mut lowered_variants,
-            RAstType::Custom(string_clone(variant_name)),
-        );
-        i = i + 1;
-    }
-
-    if not(symTable_insert_enum(
-        codegen_symtable_mut(codegen),
-        string_clone(enum_name),
-        lowered_variants,
-    )) {
-        codegen_error("duplicate enum name");
-    }
+fn codegen_enum(_codegen: &mut Codegen, _enum_item: &RAstEnum) {
+    // TODO:
 }
 
 /// Emit LLVM-IR for one function definition.
@@ -1750,15 +2185,6 @@ fn codegen_function(codegen: &mut Codegen, function: &RAstFunction) {
         function;
 
     codegen_set_current_fn_return_type(codegen, rAstType_clone(&return_type));
-
-    let mut parameter_types: Vec<RAstType> = vec_new::<RAstType>();
-    let mut i: usize = 0;
-    while i < vec_len::<RAstVariable>(parameters) {
-        let parameter: &RAstVariable = vec_at::<RAstVariable>(parameters, i);
-        let RAstVariable::Variable(_, parameter_type): &RAstVariable = parameter;
-        vec_push::<RAstType>(&mut parameter_types, rAstType_clone(parameter_type));
-        i = i + 1;
-    }
 
     let is_main: bool = string_eq(function_name, &string_from_str("main"));
 
@@ -1769,36 +2195,22 @@ fn codegen_function(codegen: &mut Codegen, function: &RAstFunction) {
     };
     codegen_emit_function_header(codegen, function_name, &llvm_return_type, parameters);
 
-    symTable_enter_scope(codegen_symtable_mut(codegen));
     codegen_push_scope(codegen);
     let mut parameter_index: usize = 0;
     while parameter_index < vec_len::<RAstVariable>(parameters) {
-        let RAstVariable::Variable(pattern, parameter_type): &RAstVariable =
+        let RAstVariable::Variable(pattern, param_type): &RAstVariable =
             vec_at::<RAstVariable>(parameters, parameter_index);
 
         match pattern {
-            RAstPattern::Identifier(is_mutable, name) => {
-                if symTable_insert_variable(
-                    codegen_symtable_mut(codegen),
-                    string_clone(name),
-                    rAstType_clone(parameter_type),
-                    *is_mutable,
-                ) {
-                    codegen_error("duplicate parameter name");
-                }
-
+            RAstPattern::Identifier(_, name) => {
                 // SSA: all variables (including parameters) are stored on the stack
-                let parameter_pointer: String = codegen_emit_alloca(codegen, parameter_type, 1);
-                let mut parameter_register: String = string_from_str("%");
-                string_push_string(&mut parameter_register, name);
-                codegen_emit_store(
-                    codegen,
-                    parameter_type,
-                    &parameter_register,
-                    &parameter_pointer,
-                );
+                let param_ptr: String = codegen_emit_alloca(codegen, param_type, 1);
+                let mut param_register: String = string_from_str("%");
+                string_push_string(&mut param_register, name);
+                codegen_emit_store(codegen, param_type, &param_register, &param_ptr);
 
-                codegen_scope_insert(codegen, string_clone(name), parameter_pointer);
+                let name: String = string_clone(name);
+                codegen_scope_insert(codegen, name, rAstType_clone(param_type), param_ptr);
             }
             _ => {}
         }
@@ -1807,7 +2219,6 @@ fn codegen_function(codegen: &mut Codegen, function: &RAstFunction) {
     }
 
     let STPair::ST(value_name, block_type): STPair = codegen_block(codegen, body);
-    codegen_expect_same_type(&block_type, &return_type);
 
     match &block_type {
         RAstType::Unit => {
@@ -1822,9 +2233,7 @@ fn codegen_function(codegen: &mut Codegen, function: &RAstFunction) {
             codegen_emit_ret_value(codegen, &block_type, &value_name);
         }
     }
-
     codegen_emit_line(codegen_llvm_mut(codegen), "}\n");
-    symTable_leave_scope(codegen_symtable_mut(codegen));
     codegen_pop_scope(codegen);
     codegen_set_current_fn_return_type(codegen, RAstType::Unit);
 }
@@ -1832,7 +2241,6 @@ fn codegen_function(codegen: &mut Codegen, function: &RAstFunction) {
 /// Emit LLVM-IR for one block expression.
 fn codegen_block(codegen: &mut Codegen, block: &RAstBlock) -> STPair {
     let RAstBlock::Block(statements, tail): &RAstBlock = block;
-    symTable_enter_scope(codegen_symtable_mut(codegen));
     codegen_push_scope(codegen);
 
     let mut i: usize = 0;
@@ -1868,7 +2276,6 @@ fn codegen_block(codegen: &mut Codegen, block: &RAstBlock) -> STPair {
         ty = RAstType::Never;
     }
 
-    symTable_leave_scope(codegen_symtable_mut(codegen));
     codegen_pop_scope(codegen);
     STPair::ST(name, ty)
 }
@@ -1877,22 +2284,15 @@ fn codegen_block(codegen: &mut Codegen, block: &RAstBlock) -> STPair {
 fn codegen_binding(codegen: &mut Codegen, variable: &RAstVariable, value: &RAstExpr) {
     let RAstVariable::Variable(pattern, binding_type): &RAstVariable = variable;
 
-    let STPair::ST(rvalue_name, actual_type): STPair = codegen_expression(codegen, value);
-    codegen_expect_same_type(binding_type, &actual_type);
+    let STPair::ST(rvalue_name, _): STPair = codegen_expression(codegen, value);
 
     match pattern {
-        RAstPattern::Identifier(is_mutable, lvalue_name) => {
+        RAstPattern::Identifier(_, lvalue_name) => {
             let lvalue_pointer: String = codegen_emit_alloca(codegen, binding_type, 1);
             codegen_emit_store(codegen, binding_type, &rvalue_name, &lvalue_pointer);
 
-            symTable_insert_variable(
-                codegen_symtable_mut(codegen),
-                string_clone(lvalue_name),
-                rAstType_clone(binding_type),
-                *is_mutable,
-            );
-
-            codegen_scope_insert(codegen, string_clone(lvalue_name), lvalue_pointer);
+            let name: String = string_clone(lvalue_name);
+            codegen_scope_insert(codegen, name, rAstType_clone(binding_type), lvalue_pointer);
         }
         _ => codegen_emit_line(codegen_llvm_mut(codegen), "  ; let pattern"),
     }
@@ -1939,14 +2339,11 @@ fn codegen_return(codegen: &mut Codegen, returned: &Option<Box<RAstExpr>>) -> ST
         Option::Some(expression) => {
             let STPair::ST(name, ty): STPair =
                 codegen_expression(codegen, box_deref::<RAstExpr>(expression));
-            codegen_expect_same_type(&ty, codegen_current_fn_return_type(codegen));
-
             codegen_emit_ret_value(codegen, &ty, &name);
         }
 
         // return;
         Option::None => {
-            codegen_expect_same_type(&RAstType::Unit, codegen_current_fn_return_type(codegen));
             codegen_emit_ret_void(codegen);
         }
     }
@@ -1956,10 +2353,9 @@ fn codegen_return(codegen: &mut Codegen, returned: &Option<Box<RAstExpr>>) -> ST
 
 /// Emit LLVM-IR for an assignment expression.
 fn codegen_assignment(codegen: &mut Codegen, left: &RAstExpr, right: &RAstExpr) -> STPair {
-    let STPair::ST(right_name, right_type): STPair = codegen_expression(codegen, right);
+    let STPair::ST(right_name, _): STPair = codegen_expression(codegen, right);
     let STPair::ST(pointer_name, left_type): STPair = codegen_assignment_lvalue(codegen, left);
 
-    codegen_expect_same_type(&left_type, &right_type);
     codegen_emit_store(codegen, &left_type, &right_name, &pointer_name);
     STPair::ST(right_name, RAstType::Unit)
 }
@@ -1968,20 +2364,7 @@ fn codegen_assignment_lvalue(codegen: &mut Codegen, expression: &RAstExpr) -> ST
     match expression {
         RAstExpr::Path(path) => {
             let name: String = rAstPath_to_string(path);
-            let pointer_name: String = match codegen_scope_lookup(codegen, &name) {
-                Option::Some(pointer_name) => pointer_name,
-                Option::None => codegen_error("undefined variable"),
-            };
-
-            match symTable_lookup_variable(codegen_symtable(codegen), &name) {
-                Option::Some(Variable::Variable(variable_type, mutable)) => {
-                    if not(mutable) {
-                        codegen_error("invalid assignment to immutable variable")
-                    }
-                    STPair::ST(pointer_name, variable_type)
-                }
-                Option::None => codegen_error("undefined variable"),
-            }
+            codegen_scope_lookup(codegen, &name)
         }
 
         RAstExpr::Unary(RAstUnaryOp::Dereference, value) => {
@@ -1989,10 +2372,7 @@ fn codegen_assignment_lvalue(codegen: &mut Codegen, expression: &RAstExpr) -> ST
                 codegen_expression(codegen, box_deref::<RAstExpr>(value));
 
             match pointer_type {
-                RAstType::Reference(inner, mutable) => {
-                    if not(mutable) {
-                        codegen_error("invalid assignment using immutable reference");
-                    }
+                RAstType::Reference(inner, _) => {
                     let ty: RAstType = rAstType_clone(box_deref::<RAstType>(&inner));
                     STPair::ST(pointer_name, ty)
                 }
@@ -2000,10 +2380,10 @@ fn codegen_assignment_lvalue(codegen: &mut Codegen, expression: &RAstExpr) -> ST
                     let ty: RAstType = rAstType_clone(box_deref::<RAstType>(&inner));
                     STPair::ST(pointer_name, ty)
                 }
-                _ => codegen_error("invalid assignment to an expression"),
+                _ => STPair::ST(string_new(), RAstType::Unit), // should not be reachable
             }
         }
-        _ => codegen_error("invalid assignment target"),
+        _ => STPair::ST(string_new(), RAstType::Unit), // should not be reachable
     }
 }
 
@@ -2014,21 +2394,18 @@ fn codegen_binary_op(
     left: &RAstExpr,
     right: &RAstExpr,
 ) -> STPair {
-    let STPair::ST(left_name, left_type): STPair = codegen_expression(codegen, left);
-    let STPair::ST(right_name, right_type): STPair = codegen_expression(codegen, right);
-    codegen_expect_same_type(&left_type, &right_type);
+    let STPair::ST(left_name, op_type): STPair = codegen_expression(codegen, left);
+    let STPair::ST(right_name, _): STPair = codegen_expression(codegen, right);
 
     match operator {
         RAstBinaryOp::Arithmetic(op) => {
-            codegen_expect_numeric_type(&left_type);
-            let name: String =
-                codegen_emit_binary(codegen, op, &left_type, &left_name, &right_name);
-            STPair::ST(name, left_type)
+            let name: String = codegen_emit_binary(codegen, op, &op_type, &left_name, &right_name);
+            STPair::ST(name, op_type)
         }
-        RAstBinaryOp::Comparison(op) => STPair::ST(
-            codegen_emit_icmp(codegen, op, &left_type, &left_name, &right_name),
-            RAstType::Bool,
-        ),
+        RAstBinaryOp::Comparison(op) => {
+            let name: String = codegen_emit_icmp(codegen, op, &op_type, &left_name, &right_name);
+            STPair::ST(name, RAstType::Bool)
+        }
     }
 }
 
@@ -2038,16 +2415,16 @@ fn codegen_cast(codegen: &mut Codegen, value: &RAstExpr, to_type: &RAstType) -> 
     let to_type: RAstType = rAstType_clone(to_type);
 
     match rAstType_get_cast_operation(&from_type, &to_type) {
-        CastOperation::ZeroExtend => STPair::ST(
-            codegen_emit_zext(codegen, &from_type, &to_type, &from_name),
-            to_type,
-        ),
-        CastOperation::Truncate => STPair::ST(
-            codegen_emit_trunc(codegen, &from_type, &to_type, &from_name),
-            to_type,
-        ),
+        CastOperation::ZeroExtend => {
+            let name: String = codegen_emit_zext(codegen, &from_type, &to_type, &from_name);
+            STPair::ST(name, to_type)
+        }
+        CastOperation::Truncate => {
+            let name: String = codegen_emit_trunc(codegen, &from_type, &to_type, &from_name);
+            STPair::ST(name, to_type)
+        }
         CastOperation::None => STPair::ST(from_name, to_type),
-        CastOperation::Invalid => codegen_error("invalid cast"),
+        CastOperation::Invalid => STPair::ST(from_name, to_type), // should be unreachable
     }
 }
 
@@ -2057,25 +2434,11 @@ fn codegen_unary_op(codegen: &mut Codegen, operator: &RAstUnaryOp, value: &RAstE
         RAstUnaryOp::Reference(mutable_ref) => match value {
             RAstExpr::Path(path) => {
                 let name: String = rAstPath_to_string(path);
-                match symTable_lookup_variable(codegen_symtable(codegen), &name) {
-                    Option::Some(Variable::Variable(ty, mutable_var)) => {
-                        match codegen_scope_lookup(codegen, &name) {
-                            Option::Some(pointer_name) => {
-                                if and(*mutable_ref, not(mutable_var)) {
-                                    codegen_error(
-                                        "cannot take mutable reference to immutable variable",
-                                    );
-                                }
-                                STPair::ST(
-                                    pointer_name,
-                                    RAstType::Reference(box_new::<RAstType>(ty), *mutable_ref),
-                                )
-                            }
-                            _ => codegen_error("undefined variable"),
-                        }
-                    }
-                    _ => codegen_error("undefined variable"),
-                }
+                let STPair::ST(pointer_name, ty): STPair = codegen_scope_lookup(codegen, &name);
+                STPair::ST(
+                    pointer_name,
+                    RAstType::Reference(box_new::<RAstType>(ty), *mutable_ref),
+                )
             }
             _ => {
                 let STPair::ST(name, ty): STPair = codegen_expression(codegen, value);
@@ -2093,7 +2456,7 @@ fn codegen_unary_op(codegen: &mut Codegen, operator: &RAstUnaryOp, value: &RAstE
             let inner_type: RAstType = match ty {
                 RAstType::Reference(pointed, _) => rAstType_clone(box_deref::<RAstType>(&pointed)),
                 RAstType::RawPointerMut(pointed) => rAstType_clone(box_deref::<RAstType>(&pointed)),
-                _ => codegen_error("cannot dereference this expression"),
+                _ => RAstType::Unit, // should be unreachable
             };
             let name: String = codegen_emit_load(codegen, &inner_type, &name);
             STPair::ST(name, inner_type)
@@ -2120,16 +2483,9 @@ fn codegen_literal(literal: &RAstLiteral) -> STPair {
 /// Emit LLVM-IR for a path expression.
 fn codegen_path_expression(codegen: &mut Codegen, path: &RAstPath) -> STPair {
     let name: String = rAstPath_to_string(path);
-    match symTable_lookup_variable(codegen_symtable(codegen), &name) {
-        Option::Some(Variable::Variable(ty, _)) => match codegen_scope_lookup(codegen, &name) {
-            Option::Some(pointer_name) => {
-                let value_name: String = codegen_emit_load(codegen, &ty, &pointer_name);
-                STPair::ST(value_name, ty)
-            }
-            _ => codegen_error("undefined variable"),
-        },
-        _ => codegen_error("undefined variable"),
-    }
+    let STPair::ST(pointer_name, ty): STPair = codegen_scope_lookup(codegen, &name);
+    let value_name: String = codegen_emit_load(codegen, &ty, &pointer_name);
+    STPair::ST(value_name, ty)
 }
 
 /// Emit LLVM-IR for a function call expression.
@@ -2149,21 +2505,8 @@ fn codegen_call(codegen: &mut Codegen, callee: &RAstPath, arguments: &Vec<RAstEx
         i = i + 1;
     }
 
-    match symTable_lookup_function_signature(codegen_symtable(codegen), &function_name) {
-        Option::Some(FnSignature::Fn(parameter_types, _)) => {
-            if not(vec_eq::<RAstType>(
-                &parameter_types,
-                &arg_types,
-                rAstType_eq,
-            )) {
-                codegen_error("function call does not match function signature");
-            }
-        }
-        Option::None => codegen_error("call to undefined function"),
-    }
-
-    match codegen_function_return_type(codegen, &function_name) {
-        Option::Some(return_type) => {
+    match codegen_function_signature(codegen, &function_name) {
+        Option::Some(FnSignature::Fn(_, return_type)) => {
             let result_name: String = if rAstType_eq(&return_type, &RAstType::Unit) {
                 codegen_emit_call_void(codegen, &function_name, &arg_types, &arg_values);
                 string_new()
@@ -2178,26 +2521,23 @@ fn codegen_call(codegen: &mut Codegen, callee: &RAstPath, arguments: &Vec<RAstEx
             };
             STPair::ST(result_name, return_type)
         }
-        Option::None => codegen_error("call to undefined function"),
+        Option::None => codegen_error("unknown codegen function"),
     }
 }
 
 /// Emit LLVM-IR for an if expression.
 fn codegen_if(codegen: &mut Codegen, if_expression: &RAstIf) -> STPair {
     let RAstIf::If(condition, then_block, else_branch): &RAstIf = if_expression;
-    let STPair::ST(_, condition_type): STPair =
-        codegen_expression(codegen, box_deref::<RAstExpr>(condition));
-    codegen_expect_bool_type(&condition_type);
+    let STPair::ST(_, _): STPair = codegen_expression(codegen, box_deref::<RAstExpr>(condition));
 
-    let STPair::ST(_, then_type): STPair = codegen_block(codegen, then_block);
+    let STPair::ST(_, _then_type): STPair = codegen_block(codegen, then_block);
     let ty: RAstType = match else_branch {
         Option::Some(else_branch) => {
             let STPair::ST(_, else_type): STPair = match else_branch {
                 RAstElse::If(nested_if) => codegen_if(codegen, box_deref::<RAstIf>(nested_if)),
                 RAstElse::Block(block) => codegen_block(codegen, block),
             };
-            codegen_expect_same_type(&then_type, &else_type);
-            then_type
+            else_type
         }
         Option::None => RAstType::Unit,
     };
@@ -2216,8 +2556,7 @@ fn codegen_while(codegen: &mut Codegen, condition: &RAstExpr, body: &RAstBlock) 
     // start entry block
     codegen_emit_label(codegen, &entry_label);
 
-    let STPair::ST(condition_name, condition_type): STPair = codegen_expression(codegen, condition);
-    codegen_expect_bool_type(&condition_type);
+    let STPair::ST(condition_name, _): STPair = codegen_expression(codegen, condition);
 
     // conditionally execute body or skip body
     codegen_emit_br_conditional(codegen, &condition_name, &body_label, &end_label);
@@ -2225,8 +2564,7 @@ fn codegen_while(codegen: &mut Codegen, condition: &RAstExpr, body: &RAstBlock) 
     // start body block
     codegen_emit_label(codegen, &body_label);
 
-    let STPair::ST(_, ty): STPair = codegen_block(codegen, body);
-    codegen_expect_same_type(&RAstType::Unit, &ty);
+    codegen_block(codegen, body);
 
     // jump back to entry to reevaluate condition
     codegen_emit_br(codegen, &entry_label);
@@ -2239,43 +2577,21 @@ fn codegen_while(codegen: &mut Codegen, condition: &RAstExpr, body: &RAstBlock) 
 
 /// Emit LLVM-IR for a match expression.
 fn codegen_match(codegen: &mut Codegen, value: &RAstExpr, arms: &Vec<RAstMatchArm>) -> STPair {
-    if vec_len::<RAstMatchArm>(arms) == 0 {
-        codegen_error("match expression requires at least one arm");
-    }
-
-    let STPair::ST(_, matched_type): STPair = codegen_expression(codegen, value);
+    let STPair::ST(_, _): STPair = codegen_expression(codegen, value);
     let first_arm: &RAstMatchArm = vec_at::<RAstMatchArm>(arms, 0);
-    let RAstMatchArm::Arm(first_pattern, first_expression): &RAstMatchArm = first_arm;
-    let first_pattern_type: RAstType =
-        codegen_pattern_type_for_expression(first_pattern, &matched_type);
-    codegen_expect_same_type(&first_pattern_type, &matched_type);
+    let RAstMatchArm::Arm(_, first_expression): &RAstMatchArm = first_arm;
     let return_type: RAstType = stPair_get_type(codegen_expression(codegen, first_expression));
 
     let mut i: usize = 1;
     while i < vec_len::<RAstMatchArm>(arms) {
         let arm: &RAstMatchArm = vec_at::<RAstMatchArm>(arms, i);
-        let RAstMatchArm::Arm(pattern, expression): &RAstMatchArm = arm;
-        let pattern_type: RAstType = codegen_pattern_type_for_expression(pattern, &matched_type);
-        codegen_expect_same_type(&pattern_type, &matched_type);
+        let RAstMatchArm::Arm(_, expression): &RAstMatchArm = arm;
         let arm_type: RAstType = stPair_get_type(codegen_expression(codegen, expression));
-        codegen_expect_same_type(&return_type, &arm_type);
+        let _ = arm_type;
         i = i + 1;
     }
 
     STPair::ST(string_new(), return_type)
-}
-
-/// Infer the type contributed by a pattern in the context of one matched expression type.
-fn codegen_pattern_type_for_expression(
-    pattern: &RAstPattern,
-    expression_type: &RAstType,
-) -> RAstType {
-    match pattern {
-        RAstPattern::Literal(literal) => rastLiteral_type(literal),
-        RAstPattern::Identifier(_, _) => rAstType_clone(expression_type),
-        RAstPattern::EnumVariant(enum_name, _, _) => RAstType::Custom(string_clone(enum_name)),
-        RAstPattern::Wildcard => rAstType_clone(expression_type),
-    }
 }
 
 // ---------------------------- Code Emission ---------------------------------
@@ -4266,6 +4582,10 @@ fn codegen_error(message: &str) -> ! {
     panic!("Codegeneration error: {}", message)
 }
 
+fn semantic_check_error(message: &str) -> ! {
+    panic!("Semantic error: {}", message)
+}
+
 /// Emit an LLVM parser error and panic.
 fn llvmParser_error(parser: &LlvmParser, message: &str) -> ! {
     let file: &SourceFile = llvmLexer_sourcefile(llvmParser_lexer(parser));
@@ -5411,6 +5731,11 @@ fn rAstType_clone(t: &RAstType) -> RAstType {
             RAstType::RawPointerMut(box_clone::<RAstType>(inner, rAstType_clone))
         }
     }
+}
+
+/// Clone a STPair
+fn stPair_clone(STPair::ST(string, ty): &STPair) -> STPair {
+    STPair::ST(string_clone(string), rAstType_clone(ty))
 }
 
 /// Clone an LLVM token.
