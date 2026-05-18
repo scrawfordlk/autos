@@ -711,7 +711,7 @@ enum RAstExpr {
     Cast(Box<RAstExpr>, RAstType),
     Unary(RAstUnaryOp, Box<RAstExpr>),
     Literal(RAstLiteral),
-    Path(RAstPath),
+    VariableUse(String),
     Call(RAstPath, Vec<RAstExpr>),
     /// unsafe, block
     Block(bool, RAstBlock),
@@ -1128,11 +1128,25 @@ fn parse_factor(lexer: &mut Lexer) -> RAstExpr {
     match lexer_current_token(lexer) {
         Token::Literal(_) => RAstExpr::Literal(parse_literal(lexer)),
         Token::Identifier(_) => {
-            let path: RAstPath = parse_path(lexer);
-            if lexer_current_token_eq(lexer, &Token::LParen) {
-                parse_call(lexer, path)
+            let first_identifier: String = expect_identifier(lexer);
+
+            if lexer_current_token_eq(lexer, &Token::DoubleColon) {
+                let mut segments: Vec<String> = vec_new::<String>();
+                vec_push::<String>(&mut segments, first_identifier);
+
+                while lexer_try_consume(lexer, &Token::DoubleColon) {
+                    let segment: String = expect_identifier(lexer);
+                    vec_push::<String>(&mut segments, segment);
+                }
+
+                expect_token(lexer, &Token::LParen);
+                parse_call(lexer, RAstPath::Path(segments))
+            } else if lexer_current_token_eq(lexer, &Token::LParen) {
+                let mut path_segments: Vec<String> = vec_new::<String>();
+                vec_push::<String>(&mut path_segments, first_identifier);
+                parse_call(lexer, RAstPath::Path(path_segments))
             } else {
-                RAstExpr::Path(path)
+                RAstExpr::VariableUse(first_identifier)
             }
         }
         Token::LParen => {
@@ -1767,7 +1781,7 @@ fn semantic_check_expression(semantic: &mut Semantic, expression: &RAstExpr) -> 
             semantic_check_unary_op(semantic, operator, box_deref::<RAstExpr>(value))
         }
         RAstExpr::Literal(literal) => semantic_check_literal(literal),
-        RAstExpr::Path(path) => semantic_check_path_expression(semantic, path),
+        RAstExpr::VariableUse(name) => semantic_check_variable_use(semantic, name),
         RAstExpr::Call(callee, arguments) => semantic_check_call(semantic, callee, arguments),
         RAstExpr::Block(_, block) => semantic_check_block(semantic, block),
         RAstExpr::If(if_expression) => semantic_check_if(semantic, if_expression),
@@ -1810,9 +1824,8 @@ fn semantic_check_assignment_lvalue_type(
     expression: &RAstExpr,
 ) -> RAstType {
     match expression {
-        RAstExpr::Path(path) => {
-            let name: String = rAstPath_to_string(path);
-            match symTable_lookup_variable(semantic_symtable(semantic), &name) {
+        RAstExpr::VariableUse(name) => {
+            match symTable_lookup_variable(semantic_symtable(semantic), name) {
                 Option::Some(Variable::Variable(variable_type, mutable)) => {
                     if not(mutable) {
                         semantic_check_error("invalid assignment to immutable variable");
@@ -1874,9 +1887,8 @@ fn semantic_check_unary_op(
 ) -> RAstType {
     match operator {
         RAstUnaryOp::Reference(mutable_ref) => match value {
-            RAstExpr::Path(path) => {
-                let name: String = rAstPath_to_string(path);
-                match symTable_lookup_variable(semantic_symtable(semantic), &name) {
+            RAstExpr::VariableUse(name) => {
+                match symTable_lookup_variable(semantic_symtable(semantic), name) {
                     Option::Some(Variable::Variable(ty, mutable_var)) => {
                         if and(*mutable_ref, not(mutable_var)) {
                             semantic_check_error(
@@ -1904,9 +1916,8 @@ fn semantic_check_unary_op(
     }
 }
 
-fn semantic_check_path_expression(semantic: &mut Semantic, path: &RAstPath) -> RAstType {
-    let name: String = rAstPath_to_string(path);
-    match symTable_lookup_variable(semantic_symtable(semantic), &name) {
+fn semantic_check_variable_use(semantic: &mut Semantic, name: &String) -> RAstType {
+    match symTable_lookup_variable(semantic_symtable(semantic), name) {
         Option::Some(Variable::Variable(ty, _)) => ty,
         _ => semantic_check_error("undefined variable"),
     }
@@ -2320,7 +2331,7 @@ fn codegen_expression(codegen: &mut Codegen, expression: &RAstExpr) -> STPair {
             codegen_unary_op(codegen, operator, box_deref::<RAstExpr>(value))
         }
         RAstExpr::Literal(literal) => codegen_literal(literal),
-        RAstExpr::Path(path) => codegen_path_expression(codegen, path),
+        RAstExpr::VariableUse(name) => codegen_variable_use(codegen, name),
         RAstExpr::Call(callee, arguments) => codegen_call(codegen, callee, arguments),
         RAstExpr::Block(_, block) => codegen_block(codegen, block),
         RAstExpr::If(if_expression) => codegen_if(codegen, if_expression),
@@ -2362,10 +2373,7 @@ fn codegen_assignment(codegen: &mut Codegen, left: &RAstExpr, right: &RAstExpr) 
 
 fn codegen_assignment_lvalue(codegen: &mut Codegen, expression: &RAstExpr) -> STPair {
     match expression {
-        RAstExpr::Path(path) => {
-            let name: String = rAstPath_to_string(path);
-            codegen_scope_lookup(codegen, &name)
-        }
+        RAstExpr::VariableUse(name) => codegen_scope_lookup(codegen, name),
 
         RAstExpr::Unary(RAstUnaryOp::Dereference, value) => {
             let STPair::ST(pointer_name, pointer_type): STPair =
@@ -2432,9 +2440,8 @@ fn codegen_cast(codegen: &mut Codegen, value: &RAstExpr, to_type: &RAstType) -> 
 fn codegen_unary_op(codegen: &mut Codegen, operator: &RAstUnaryOp, value: &RAstExpr) -> STPair {
     match operator {
         RAstUnaryOp::Reference(mutable_ref) => match value {
-            RAstExpr::Path(path) => {
-                let name: String = rAstPath_to_string(path);
-                let STPair::ST(pointer_name, ty): STPair = codegen_scope_lookup(codegen, &name);
+            RAstExpr::VariableUse(name) => {
+                let STPair::ST(pointer_name, ty): STPair = codegen_scope_lookup(codegen, name);
                 STPair::ST(
                     pointer_name,
                     RAstType::Reference(box_new::<RAstType>(ty), *mutable_ref),
@@ -2480,10 +2487,9 @@ fn codegen_literal(literal: &RAstLiteral) -> STPair {
     }
 }
 
-/// Emit LLVM-IR for a path expression.
-fn codegen_path_expression(codegen: &mut Codegen, path: &RAstPath) -> STPair {
-    let name: String = rAstPath_to_string(path);
-    let STPair::ST(pointer_name, ty): STPair = codegen_scope_lookup(codegen, &name);
+/// Emit LLVM-IR for a variable-use expression.
+fn codegen_variable_use(codegen: &mut Codegen, variable_name: &String) -> STPair {
+    let STPair::ST(pointer_name, ty): STPair = codegen_scope_lookup(codegen, variable_name);
     let value_name: String = codegen_emit_load(codegen, &ty, &pointer_name);
     STPair::ST(value_name, ty)
 }
