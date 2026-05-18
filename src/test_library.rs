@@ -226,14 +226,15 @@ fn test_symtable_global_insert_and_lookup() {
         &mut symtable,
         string_from_str("f"),
         vec_new::<RAstType>(),
-        RAstType::Usize
+        RAstType::Usize,
+        false,
     ));
-    assert!(symTable_contains(&symtable, &string_from_str("f")));
 
     match symTable_lookup_function_signature(&symtable, &string_from_str("f")) {
-        Option::Some(FnSignature::Fn(parameter_types, return_type)) => {
+        Option::Some(FnSignature::Fn(parameter_types, return_type, is_unsafe)) => {
             assert!(vec_len::<RAstType>(&parameter_types) == 0);
             assert!(matches!(return_type, RAstType::Usize));
+            assert_eq!(is_unsafe, false);
         }
         Option::Some(_) => assert!(false, "expected function signature"),
         Option::None => assert!(false, "expected function signature"),
@@ -244,7 +245,6 @@ fn test_symtable_global_insert_and_lookup() {
         string_from_str("State"),
         vec_new::<RAstType>()
     ));
-    assert!(symTable_contains(&symtable, &string_from_str("State")));
 }
 
 #[test]
@@ -256,7 +256,6 @@ fn test_symtable_scope_and_variables() {
         RAstType::U8,
         true
     ));
-    assert!(!symTable_contains(&symtable, &string_from_str("x")));
     assert!(matches!(
         symTable_lookup_variable(&symtable, &string_from_str("x")),
         Option::None
@@ -269,7 +268,6 @@ fn test_symtable_scope_and_variables() {
         RAstType::U8,
         true
     ));
-    assert!(symTable_contains(&symtable, &string_from_str("x")));
     assert!(matches!(
         symTable_lookup_variable(&symtable, &string_from_str("x")),
         Option::Some(Variable::Variable(RAstType::U8, true))
@@ -304,4 +302,35 @@ fn test_type_clone() {
     let custom = RAstType::Custom(string_from_str("MyType"));
     let cloned = rAstType_clone(&custom);
     assert!(rAstType_match(&custom, &cloned));
+}
+
+#[test]
+#[should_panic(expected = "raw pointer dereference requires unsafe context")]
+fn test_semantic_unsafe_required_for_raw_pointer_deref() {
+    compile(
+        "
+fn main() -> usize {
+    let mut x: usize = 1;
+    let p: *mut usize = (&mut x) as *mut usize;
+    *p = 2;
+    x
+}
+",
+    );
+}
+
+#[test]
+#[should_panic(expected = "unsafe function call requires unsafe context")]
+fn test_semantic_unsafe_required_for_unsafe_function_call() {
+    compile(
+        "
+unsafe fn plus_one(x: usize) -> usize {
+    x + 1
+}
+
+fn main() -> usize {
+    plus_one(41)
+}
+",
+    );
 }

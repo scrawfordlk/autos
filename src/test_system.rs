@@ -1,7 +1,5 @@
 use std::{
-    convert::TryFrom,
-    fs::{read_dir, read_to_string, remove_file, write},
-    panic::{AssertUnwindSafe, catch_unwind, set_hook, take_hook},
+    fs::{read_dir, remove_file, write},
     path::{Path, PathBuf},
     process::{Command, Stdio, id},
     time::{SystemTime, UNIX_EPOCH},
