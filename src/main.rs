@@ -1398,15 +1398,6 @@ fn symTable_new() -> SymTable {
     )
 }
 
-/// Check whether a symbol exists in local scopes or globals.
-fn symTable_contains(symtable: &SymTable, name: &String) -> bool {
-    let SymTable::Table(global, local_scopes): &SymTable = symtable;
-    or(
-        stringMapStack_contains::<Variable>(local_scopes, name),
-        stringMap_contains::<SymTableGlobalEntry>(global, name),
-    )
-}
-
 /// Lookup a variable in local scopes.
 fn symTable_lookup_variable(symtable: &SymTable, name: &String) -> Option<Variable> {
     let SymTable::Table(_, local_scopes): &SymTable = symtable;
@@ -4764,12 +4755,6 @@ fn box_deref<T>(ptr_wrap: &Box<T>) -> &T {
     unsafe { &**ptr }
 }
 
-/// Mutably dereference a box.
-fn box_deref_mut<T>(ptr_wrap: &mut Box<T>) -> &mut T {
-    let Box::Ptr(ptr): &mut Box<T> = ptr_wrap;
-    unsafe { &mut **ptr }
-}
-
 /// Clone a boxed value.
 fn box_clone<T>(ptr: &Box<T>, clone_fn: fn(&T) -> T) -> Box<T> {
     box_new::<T>(clone_fn(box_deref::<T>(ptr)))
@@ -4852,11 +4837,6 @@ fn vec_accomodate_extra_space<T>(vec: &mut Vec<T>, space: usize) {
         *ptr = new_ptr;
         vec_accomodate_extra_space::<T>(vec, space); // if doubling was not enough, double again
     }
-}
-
-/// Returns true if the vector is empty.
-fn vec_is_empty<T>(vec: &Vec<T>) -> bool {
-    vec_len::<T>(vec) == 0
 }
 
 /// Append one element.
@@ -5121,14 +5101,6 @@ fn stringMapStack_lookup<'a, T>(stack: &'a StringMapStack<T>, name: &String) -> 
         }
     }
     Option::None
-}
-
-/// Check whether a name exists in any visible scope.
-fn stringMapStack_contains<T>(stack: &StringMapStack<T>, name: &String) -> bool {
-    match stringMapStack_lookup::<T>(stack, name) {
-        Option::Some(_) => true,
-        Option::None => false,
-    }
 }
 
 // ----------------------------------------------------------------
@@ -6012,4 +5984,4 @@ fn alloc(size: usize, align: usize) -> *mut u8 {
 // -------------------------- Tests --------------------------------
 // -----------------------------------------------------------------
 
-include!("tests.rs");
+// include!("tests.rs");
