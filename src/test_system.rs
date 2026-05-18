@@ -128,13 +128,12 @@ fn rust_sources() -> Vec<PathBuf> {
 
 fn compile_emulate(source: &Path) -> (i32, PathBuf) {
     let status = Command::new("cargo")
+        .env("RUSTFLAGS", "-Awarnings") // hide warnings
         .arg("run")
         .arg("--")
         .arg("-c")
         .arg(source)
         .arg("-e")
-        // .stdout(std::process::Stdio::null())
-        // .stderr(std::process::Stdio::null())
         .status()
         .expect("able to run bootstrapped compiler/emulator");
 
