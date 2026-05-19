@@ -2805,7 +2805,6 @@ fn codegen_emit_br(codegen: &mut Codegen, target_label: &String) {
     let mut line: String = string_new();
     string_push_str(&mut line, "  br label %");
     string_push_string(&mut line, target_label);
-    string_push(&mut line, '\n');
 
     codegen_emit_line(codegen, line);
 }
@@ -3042,8 +3041,7 @@ fn codegen_emit_function_header(
             string_push_str(&mut line, ", ");
         }
     }
-    string_push_str(&mut line, ") {");
-    string_push_str(&mut line, "entry:");
+    string_push_str(&mut line, ") {\nentry:");
 
     codegen_emit_line(codegen, line);
 }
