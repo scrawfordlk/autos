@@ -2115,11 +2115,11 @@ fn semantic_check_literal(literal: &RAstLiteral) -> RAstType {
 
 /// Type that encapsulates the state during LLVM-IR code generation from an AST.
 enum Codegen {
-    /// llvm code, current function return type, llvm context, local variable slots, function signatures
+    /// llvm code, current function return type, SSA numbering counter, local variable slots, function signatures
     Codegen(
         String,
         RAstType,
-        Context,
+        usize,
         StringMapStack<STPair>,
         StringMap<FnSignature>,
     ),
@@ -2129,7 +2129,7 @@ fn codegen_new(function_signatures: StringMap<FnSignature>) -> Codegen {
     Codegen::Codegen(
         string_new(),
         RAstType::Unit,
-        context_new(),
+        0,
         stringMapStack_new::<STPair>(),
         function_signatures,
     )
@@ -2148,11 +2148,6 @@ fn codegen_llvm_mut(codegen: &mut Codegen) -> &mut String {
 fn codegen_set_current_fn_return_type(codegen: &mut Codegen, ty: RAstType) {
     let Codegen::Codegen(_, return_type, _, _, _): &mut Codegen = codegen;
     *return_type = ty;
-}
-
-fn codegen_context_mut(codegen: &mut Codegen) -> &mut Context {
-    let Codegen::Codegen(_, _, context, _, _): &mut Codegen = codegen;
-    context
 }
 
 /// Push a new empty scope onto the stack.
@@ -2191,39 +2186,31 @@ fn codegen_function_signature(codegen: &Codegen, name: &String) -> Option<FnSign
     }
 }
 
-/// Manages the context of the LLVM-IR that is currently being generated.
-enum Context {
-    /// temporary counter
-    Context(usize),
-}
-
-fn context_new() -> Context {
-    Context::Context(0)
-}
-
-fn context_get_counter(context: &Context) -> usize {
-    let Context::Context(counter): &Context = context;
+/// Get the current value of the SSA numbering scheme.
+fn codegen_ssa_counter(codegen: &Codegen) -> usize {
+    let Codegen::Codegen(_, _, counter, _, _): &Codegen = codegen;
     *counter
 }
 
-fn context_increment_counter(context: &mut Context) {
-    let Context::Context(counter): &mut Context = context;
+/// Increment the SSA numbering value by one.
+fn codegen_increment_ssa_counter(codegen: &mut Codegen) {
+    let Codegen::Codegen(_, _, counter, _, _): &mut Codegen = codegen;
     *counter = *counter + 1;
 }
 
 /// Get a unique virtual register name.
-fn context_next_temporary(context: &mut Context) -> String {
-    let id: usize = context_get_counter(context);
-    context_increment_counter(context);
+fn codegen_next_register(codegen: &mut Codegen) -> String {
+    let id: usize = codegen_ssa_counter(codegen);
+    codegen_increment_ssa_counter(codegen);
     let mut name: String = string_from_str("%t");
     string_push_string(&mut name, &integer_to_string(id));
     name
 }
 
-/// Get a unique basic block label with a given suffix:
-fn context_next_label(context: &mut Context, suffix: &str) -> String {
-    let id: usize = context_get_counter(context);
-    context_increment_counter(context);
+/// Get a unique basic block label with a given suffix.
+fn codegen_next_label(codegen: &mut Codegen, suffix: &str) -> String {
+    let id: usize = codegen_ssa_counter(codegen);
+    codegen_increment_ssa_counter(codegen);
     let mut label: String = string_from_str("l");
     string_push_string(&mut label, &integer_to_string(id));
     string_push(&mut label, '.');
@@ -2624,9 +2611,9 @@ fn codegen_if(codegen: &mut Codegen, if_expression: &RAstIf) -> STPair {
 
 /// Emit LLVM-IR for a while expression.
 fn codegen_while(codegen: &mut Codegen, condition: &RAstExpr, body: &RAstBlock) -> STPair {
-    let entry_label: String = context_next_label(codegen_context_mut(codegen), "while.entry");
-    let body_label: String = context_next_label(codegen_context_mut(codegen), "while.body");
-    let end_label: String = context_next_label(codegen_context_mut(codegen), "while.end");
+    let entry_label: String = codegen_next_label(codegen, "while.entry");
+    let body_label: String = codegen_next_label(codegen, "while.body");
+    let end_label: String = codegen_next_label(codegen, "while.end");
 
     // jump from current block to while-entry block
     codegen_emit_br(codegen, &entry_label);
@@ -2691,7 +2678,7 @@ fn codegen_emit_binary(
         RAstArithmeticOp::Div => "udiv",
         RAstArithmeticOp::Rem => "urem",
     };
-    let name: String = context_next_temporary(codegen_context_mut(codegen));
+    let name: String = codegen_next_register(codegen);
     let code: &mut String = codegen_llvm_mut(codegen);
 
     string_push_str(code, "  ");
@@ -2727,7 +2714,7 @@ fn codegen_emit_icmp(
         RAstComparisonOp::Ge => "uge",
         RAstComparisonOp::Le => "ule",
     };
-    let name: String = context_next_temporary(codegen_context_mut(codegen));
+    let name: String = codegen_next_register(codegen);
     let code: &mut String = codegen_llvm_mut(codegen);
 
     string_push_str(code, "  ");
@@ -2810,7 +2797,7 @@ fn codegen_emit_cast(
     to_type: &RAstType,
     value: &String,
 ) -> String {
-    let name: String = context_next_temporary(codegen_context_mut(codegen));
+    let name: String = codegen_next_register(codegen);
     let code: &mut String = codegen_llvm_mut(codegen);
     string_push_str(code, "  ");
     string_push_string(code, &name);
@@ -2854,7 +2841,7 @@ fn codegen_emit_trunc(
 /// `name` = alloca `ty`, i64 `num_elements`
 /// and return `name`.
 fn codegen_emit_alloca(codegen: &mut Codegen, ty: &RAstType, num_elements: usize) -> String {
-    let name: String = context_next_temporary(codegen_context_mut(codegen));
+    let name: String = codegen_next_register(codegen);
     let llvm_type: String = rAstType_to_llvm_name(ty);
     let code: &mut String = codegen_llvm_mut(codegen);
     string_push_str(code, "  ");
@@ -2884,7 +2871,7 @@ fn codegen_emit_store(codegen: &mut Codegen, ty: &RAstType, value: &String, poin
 /// Emit a load instruction:
 /// `name` = load `ty`, `ptr` pointer`.
 fn codegen_emit_load(codegen: &mut Codegen, ty: &RAstType, pointer: &String) -> String {
-    let name: String = context_next_temporary(codegen_context_mut(codegen));
+    let name: String = codegen_next_register(codegen);
     let code: &mut String = codegen_llvm_mut(codegen);
     string_push_str(code, "  ");
     string_push_string(code, &name);
@@ -2905,7 +2892,7 @@ fn codegen_emit_call_value(
     argument_types: &Vec<RAstType>,
     argument_values: &Vec<String>,
 ) -> String {
-    let name: String = context_next_temporary(codegen_context_mut(codegen));
+    let name: String = codegen_next_register(codegen);
     let code: &mut String = codegen_llvm_mut(codegen);
     string_push_str(code, "  ");
     string_push_string(code, &name);
