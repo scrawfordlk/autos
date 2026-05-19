@@ -2117,7 +2117,7 @@ fn semantic_check_literal(literal: &RAstLiteral) -> RAstType {
 enum Codegen {
     /// llvm code, current function return type, SSA numbering counter, local variable slots, function signatures
     Codegen(
-        String,
+        Code,
         RAstType,
         usize,
         StringMapStack<STPair>,
@@ -2127,22 +2127,12 @@ enum Codegen {
 
 fn codegen_new(function_signatures: StringMap<FnSignature>) -> Codegen {
     Codegen::Codegen(
-        string_new(),
+        code_new(),
         RAstType::Unit,
         0,
         stringMapStack_new::<STPair>(),
         function_signatures,
     )
-}
-
-fn codegen_into_llvm(codegen: Codegen) -> String {
-    let Codegen::Codegen(llvm, _, _, _, _): Codegen = codegen;
-    llvm
-}
-
-fn codegen_llvm_mut(codegen: &mut Codegen) -> &mut String {
-    let Codegen::Codegen(llvm, _, _, _, _): &mut Codegen = codegen;
-    llvm
 }
 
 fn codegen_set_current_fn_return_type(codegen: &mut Codegen, ty: RAstType) {
@@ -2302,7 +2292,7 @@ fn codegen_function(codegen: &mut Codegen, function: &RAstFunction) {
             codegen_emit_ret_value(codegen, &block_type, &value_name);
         }
     }
-    codegen_emit_line(codegen_llvm_mut(codegen), "}\n");
+    codegen_emit_line(codegen, string_from_str("}"));
     codegen_pop_scope(codegen);
     codegen_set_current_fn_return_type(codegen, RAstType::Unit);
 }
@@ -2363,7 +2353,7 @@ fn codegen_binding(codegen: &mut Codegen, variable: &RAstVariable, value: &RAstE
             let name: String = string_clone(lvalue_name);
             codegen_scope_insert(codegen, name, rAstType_clone(binding_type), lvalue_pointer);
         }
-        _ => codegen_emit_line(codegen_llvm_mut(codegen), "  ; let pattern"),
+        _ => {}
     }
 }
 
@@ -2660,6 +2650,50 @@ fn codegen_match(codegen: &mut Codegen, value: &RAstExpr, arms: &Vec<RAstMatchAr
 
 // ---------------------------- Code Emission ---------------------------------
 
+/// The emitted LLVM-IR code.
+enum Code {
+    /// code lines, cursor index
+    Code(Vec<String>),
+}
+
+fn code_new() -> Code {
+    Code::Code(vec_new::<String>())
+}
+
+/// Emit the given string as a new line of LLVM-IR code.
+/// Resets the cursor to point to this line.
+fn codegen_emit_line(codegen: &mut Codegen, line: String) {
+    let Codegen::Codegen(Code::Code(lines), _, _, _, _): &mut Codegen = codegen;
+    vec_push::<String>(lines, line);
+}
+
+/// Get the line index of the last emitted line.
+fn codegen_code_last_index(codegen: &Codegen) -> usize {
+    let Codegen::Codegen(Code::Code(lines), _, _, _, _): &Codegen = codegen;
+    vec_len::<String>(lines) - 1
+}
+
+/// Fixup the emitted line at index `i` by replacing it with `line`.
+fn codegen_fixup(codegen: &mut Codegen, i: usize, line: String) {
+    let Codegen::Codegen(Code::Code(lines), _, _, _, _): &mut Codegen = codegen;
+    vec_set(lines, i, line);
+}
+
+/// Get the emitted LLVM-IR from Codegen.
+fn codegen_into_llvm(codegen: Codegen) -> String {
+    let Codegen::Codegen(Code::Code(lines), _, _, _, _): Codegen = codegen;
+    let mut code: String = string_new();
+    let mut i: usize = 0;
+    let len: usize = vec_len::<String>(&lines);
+    while i < len {
+        let line: &String = vec_at::<String>(&lines, i);
+        string_push_string(&mut code, line);
+        string_push(&mut code, '\n');
+        i = i + 1;
+    }
+    code
+}
+
 /// Emit a binary instruction of the following form:
 /// `name` = `op` `ty` `lhs`,`rhs`
 /// where `op` can be one of the following: `add`, `sub`, `mul`, `udiv`, `urem`
@@ -2679,19 +2713,21 @@ fn codegen_emit_binary(
         RAstArithmeticOp::Rem => "urem",
     };
     let name: String = codegen_next_register(codegen);
-    let code: &mut String = codegen_llvm_mut(codegen);
 
-    string_push_str(code, "  ");
-    string_push_string(code, &name);
-    string_push_str(code, " = ");
-    string_push_str(code, op_name);
-    string_push(code, ' ');
-    string_push_string(code, &rAstType_to_llvm_name(ty));
-    string_push(code, ' ');
-    string_push_string(code, lhs);
-    string_push(code, ',');
-    string_push_string(code, rhs);
-    string_push(code, '\n');
+    let mut line: String = string_new();
+    string_push_str(&mut line, "  ");
+    string_push_string(&mut line, &name);
+    string_push_str(&mut line, " = ");
+    string_push_str(&mut line, op_name);
+    string_push(&mut line, ' ');
+    string_push_string(&mut line, &rAstType_to_llvm_name(ty));
+    string_push(&mut line, ' ');
+    string_push_string(&mut line, lhs);
+    string_push(&mut line, ',');
+    string_push_string(&mut line, rhs);
+
+    codegen_emit_line(codegen, line);
+
     name
 }
 
@@ -2715,57 +2751,63 @@ fn codegen_emit_icmp(
         RAstComparisonOp::Le => "ule",
     };
     let name: String = codegen_next_register(codegen);
-    let code: &mut String = codegen_llvm_mut(codegen);
 
-    string_push_str(code, "  ");
-    string_push_string(code, &name);
-    string_push_str(code, " = icmp ");
-    string_push_str(code, op_name);
-    string_push(code, ' ');
-    string_push_string(code, &rAstType_to_llvm_name(ty));
-    string_push(code, ' ');
-    string_push_string(code, lhs);
-    string_push(code, ',');
-    string_push_string(code, rhs);
-    string_push(code, '\n');
+    let mut line: String = string_new();
+    string_push_str(&mut line, "  ");
+    string_push_string(&mut line, &name);
+    string_push_str(&mut line, " = icmp ");
+    string_push_str(&mut line, op_name);
+    string_push(&mut line, ' ');
+    string_push_string(&mut line, &rAstType_to_llvm_name(ty));
+    string_push(&mut line, ' ');
+    string_push_string(&mut line, lhs);
+    string_push(&mut line, ',');
+    string_push_string(&mut line, rhs);
+
+    codegen_emit_line(codegen, line);
+
     name
 }
 
 /// Emit a ret instruction:
 /// ret `ty` `value`
 fn codegen_emit_ret_value(codegen: &mut Codegen, ty: &RAstType, value: &String) {
-    let code: &mut String = codegen_llvm_mut(codegen);
-    string_push_str(code, "  ");
-    string_push_str(code, "ret ");
-    string_push_string(code, &rAstType_to_llvm_name(ty));
-    string_push(code, ' ');
-    string_push_string(code, value);
-    string_push(code, '\n');
+    let mut line: String = string_new();
+    string_push_str(&mut line, "  ");
+    string_push_str(&mut line, "ret ");
+    string_push_string(&mut line, &rAstType_to_llvm_name(ty));
+    string_push(&mut line, ' ');
+    string_push_string(&mut line, value);
+
+    codegen_emit_line(codegen, line);
 }
 
 /// Emit a ret void instruction:
 /// ret void
 fn codegen_emit_ret_void(codegen: &mut Codegen) {
-    let code: &mut String = codegen_llvm_mut(codegen);
-    string_push_str(code, "  ret void\n");
+    codegen_emit_line(codegen, string_from_str("  ret void"));
 }
 
 /// Emit a label:
 /// `label`:
 fn codegen_emit_label(codegen: &mut Codegen, label: &String) {
-    let code: &mut String = codegen_llvm_mut(codegen);
-    string_push(code, '\n');
-    string_push_string(code, label);
-    string_push_str(code, ":\n");
+    let mut line: String = string_new();
+    string_push(&mut line, '\n');
+    string_push_string(&mut line, label);
+    string_push(&mut line, ':');
+
+    codegen_emit_line(codegen, line);
 }
 
 /// Emit an unconditional branch:
 /// br label %`target_label`
 fn codegen_emit_br(codegen: &mut Codegen, target_label: &String) {
-    let code: &mut String = codegen_llvm_mut(codegen);
-    string_push_str(code, "  br label %");
-    string_push_string(code, target_label);
-    string_push(code, '\n');
+    let mut line: String = string_new();
+    string_push_str(&mut line, "  br label %");
+    string_push_string(&mut line, target_label);
+    string_push(&mut line, '\n');
+
+    codegen_emit_line(codegen, line);
 }
 
 /// Emit a conditional branch:
@@ -2776,14 +2818,15 @@ fn codegen_emit_br_conditional(
     then_label: &String,
     else_label: &String,
 ) {
-    let code: &mut String = codegen_llvm_mut(codegen);
-    string_push_str(code, "  br i1 ");
-    string_push_string(code, condition);
-    string_push_str(code, ", label %");
-    string_push_string(code, then_label);
-    string_push_str(code, ", label %");
-    string_push_string(code, else_label);
-    string_push(code, '\n');
+    let mut line: String = string_new();
+    string_push_str(&mut line, "  br i1 ");
+    string_push_string(&mut line, condition);
+    string_push_str(&mut line, ", label %");
+    string_push_string(&mut line, then_label);
+    string_push_str(&mut line, ", label %");
+    string_push_string(&mut line, else_label);
+
+    codegen_emit_line(codegen, line);
 }
 
 /// Emit a cast instruction of the following form:
@@ -2798,18 +2841,22 @@ fn codegen_emit_cast(
     value: &String,
 ) -> String {
     let name: String = codegen_next_register(codegen);
-    let code: &mut String = codegen_llvm_mut(codegen);
-    string_push_str(code, "  ");
-    string_push_string(code, &name);
-    string_push_str(code, " = ");
-    string_push_str(code, op);
-    string_push(code, ' ');
-    string_push_string(code, &rAstType_to_llvm_name(from_type));
-    string_push(code, ' ');
-    string_push_string(code, value);
-    string_push_str(code, " to ");
-    string_push_string(code, &rAstType_to_llvm_name(to_type));
-    string_push(code, '\n');
+
+    let mut line: String = string_new();
+    string_push_str(&mut line, "  ");
+    string_push_string(&mut line, &name);
+    string_push_str(&mut line, " = ");
+    string_push_str(&mut line, op);
+    string_push(&mut line, ' ');
+    string_push_string(&mut line, &rAstType_to_llvm_name(from_type));
+    string_push(&mut line, ' ');
+    string_push_string(&mut line, value);
+    string_push_str(&mut line, " to ");
+    string_push_string(&mut line, &rAstType_to_llvm_name(to_type));
+    string_push(&mut line, '\n');
+
+    codegen_emit_line(codegen, line);
+
     name
 }
 
@@ -2842,45 +2889,50 @@ fn codegen_emit_trunc(
 /// and return `name`.
 fn codegen_emit_alloca(codegen: &mut Codegen, ty: &RAstType, num_elements: usize) -> String {
     let name: String = codegen_next_register(codegen);
-    let llvm_type: String = rAstType_to_llvm_name(ty);
-    let code: &mut String = codegen_llvm_mut(codegen);
-    string_push_str(code, "  ");
-    string_push_string(code, &name);
-    string_push_str(code, " = alloca ");
-    string_push_string(code, &llvm_type);
-    string_push_str(code, ", i64 ");
-    string_push_string(code, &integer_to_string(num_elements));
-    string_push(code, '\n');
+
+    let mut line: String = string_new();
+    string_push_str(&mut line, "  ");
+    string_push_string(&mut line, &name);
+    string_push_str(&mut line, " = alloca ");
+    string_push_string(&mut line, &rAstType_to_llvm_name(ty));
+    string_push_str(&mut line, ", i64 ");
+    string_push_string(&mut line, &integer_to_string(num_elements));
+
+    codegen_emit_line(codegen, line);
+
     name
 }
 
 /// Emit a store instruction:
 /// store `ty` `value`, ptr `pointer`.
 fn codegen_emit_store(codegen: &mut Codegen, ty: &RAstType, value: &String, pointer: &String) {
-    let code: &mut String = codegen_llvm_mut(codegen);
-    string_push_str(code, "  store ");
-    string_push_string(code, &rAstType_to_llvm_name(ty));
-    string_push(code, ' ');
-    string_push_string(code, value);
-    string_push(code, ',');
-    string_push_str(code, " ptr ");
-    string_push_string(code, pointer);
-    string_push(code, '\n');
+    let mut line: String = string_new();
+    string_push_str(&mut line, "  store ");
+    string_push_string(&mut line, &rAstType_to_llvm_name(ty));
+    string_push(&mut line, ' ');
+    string_push_string(&mut line, value);
+    string_push(&mut line, ',');
+    string_push_str(&mut line, " ptr ");
+    string_push_string(&mut line, pointer);
+
+    codegen_emit_line(codegen, line);
 }
 
 /// Emit a load instruction:
 /// `name` = load `ty`, `ptr` pointer`.
 fn codegen_emit_load(codegen: &mut Codegen, ty: &RAstType, pointer: &String) -> String {
     let name: String = codegen_next_register(codegen);
-    let code: &mut String = codegen_llvm_mut(codegen);
-    string_push_str(code, "  ");
-    string_push_string(code, &name);
-    string_push_str(code, " = load ");
-    string_push_string(code, &rAstType_to_llvm_name(ty));
-    string_push(code, ',');
-    string_push_str(code, " ptr ");
-    string_push_string(code, pointer);
-    string_push(code, '\n');
+    let mut line: String = string_new();
+    string_push_str(&mut line, "  ");
+    string_push_string(&mut line, &name);
+    string_push_str(&mut line, " = load ");
+    string_push_string(&mut line, &rAstType_to_llvm_name(ty));
+    string_push(&mut line, ',');
+    string_push_str(&mut line, " ptr ");
+    string_push_string(&mut line, pointer);
+
+    codegen_emit_line(codegen, line);
+
     name
 }
 
@@ -2893,31 +2945,34 @@ fn codegen_emit_call_value(
     argument_values: &Vec<String>,
 ) -> String {
     let name: String = codegen_next_register(codegen);
-    let code: &mut String = codegen_llvm_mut(codegen);
-    string_push_str(code, "  ");
-    string_push_string(code, &name);
-    string_push_str(code, " = call ");
-    string_push_string(code, &rAstType_to_llvm_name(return_type));
-    string_push_str(code, " @");
-    string_push_string(code, function_name);
-    string_push(code, '(');
+
+    let mut line: String = string_new();
+    string_push_str(&mut line, "  ");
+    string_push_string(&mut line, &name);
+    string_push_str(&mut line, " = call ");
+    string_push_string(&mut line, &rAstType_to_llvm_name(return_type));
+    string_push_str(&mut line, " @");
+    string_push_string(&mut line, function_name);
+    string_push(&mut line, '(');
 
     let mut i: usize = 0;
     let len: usize = vec_len::<RAstType>(argument_types);
     while i < len {
         let argument_type: &RAstType = vec_at::<RAstType>(argument_types, i);
         let argument_value: &String = vec_at::<String>(argument_values, i);
-        string_push_string(code, &rAstType_to_llvm_name(argument_type));
-        string_push(code, ' ');
-        string_push_string(code, argument_value);
+        string_push_string(&mut line, &rAstType_to_llvm_name(argument_type));
+        string_push(&mut line, ' ');
+        string_push_string(&mut line, argument_value);
 
         i = i + 1;
         if i < len {
-            string_push_str(code, ", ");
+            string_push_str(&mut line, ", ");
         }
     }
+    string_push_str(&mut line, ")");
 
-    string_push_str(code, ")\n");
+    codegen_emit_line(codegen, line);
+
     name
 }
 
@@ -2928,43 +2983,28 @@ fn codegen_emit_call_void(
     argument_types: &Vec<RAstType>,
     argument_values: &Vec<String>,
 ) {
-    let code: &mut String = codegen_llvm_mut(codegen);
-    string_push_str(code, "  call void @");
-    string_push_string(code, function_name);
-    string_push(code, '(');
+    let mut line: String = string_new();
+    string_push_str(&mut line, "  call void @");
+    string_push_string(&mut line, function_name);
+    string_push(&mut line, '(');
 
     let mut i: usize = 0;
     let len: usize = vec_len::<RAstType>(argument_types);
     while i < len {
         let argument_type: &RAstType = vec_at::<RAstType>(argument_types, i);
         let argument_value: &String = vec_at::<String>(argument_values, i);
-        string_push_string(code, &rAstType_to_llvm_name(argument_type));
-        string_push(code, ' ');
-        string_push_string(code, argument_value);
+        string_push_string(&mut line, &rAstType_to_llvm_name(argument_type));
+        string_push(&mut line, ' ');
+        string_push_string(&mut line, argument_value);
 
         i = i + 1;
         if i < len {
-            string_push_str(code, ", ");
+            string_push_str(&mut line, ", ");
         }
     }
+    string_push_str(&mut line, ")");
 
-    string_push_str(code, ")\n");
-}
-
-/// Append raw text to the LLVM-IR output buffer.
-fn codegen_emit_str(llvm: &mut String, str: &str) {
-    string_push_str(llvm, str);
-}
-
-/// Append a single newline to the LLVM-IR output buffer.
-fn codegen_emit_newline(llvm: &mut String) {
-    string_push(llvm, '\n');
-}
-
-/// Append one full LLVM-IR line to the output buffer.
-fn codegen_emit_line(llvm: &mut String, text: &str) {
-    codegen_emit_str(llvm, text);
-    codegen_emit_newline(llvm);
+    codegen_emit_line(codegen, line);
 }
 
 /// Emit a function header.
@@ -2974,19 +3014,16 @@ fn codegen_emit_function_header(
     return_type_name: &String,
     parameters: &Vec<RAstVariable>,
 ) {
-    let llvm: &mut String = codegen_llvm_mut(codegen);
-    codegen_emit_str(llvm, "define ");
-    string_push_string(llvm, return_type_name);
-    codegen_emit_str(llvm, " @");
-    string_push_string(llvm, fn_name);
-    codegen_emit_str(llvm, "(");
+    let mut line: String = string_new();
+    string_push_str(&mut line, "define ");
+    string_push_string(&mut line, return_type_name);
+    string_push_str(&mut line, " @");
+    string_push_string(&mut line, fn_name);
+    string_push_str(&mut line, "(");
 
     let mut i: usize = 0;
-    while i < vec_len::<RAstVariable>(parameters) {
-        if i > 0 {
-            codegen_emit_str(llvm, ", ");
-        }
-
+    let len: usize = vec_len::<RAstVariable>(parameters);
+    while i < len {
         let RAstVariable::Variable(pattern, parameter_type): &RAstVariable =
             vec_at::<RAstVariable>(parameters, i);
 
@@ -2996,15 +3033,19 @@ fn codegen_emit_function_header(
             _ => string_from_str("arg"),
         };
 
-        string_push_string(llvm, &rAstType_to_llvm_name(parameter_type));
-        string_push_str(llvm, " %");
-        string_push_string(llvm, &parameter_name);
+        string_push_string(&mut line, &rAstType_to_llvm_name(parameter_type));
+        string_push_str(&mut line, " %");
+        string_push_string(&mut line, &parameter_name);
 
         i = i + 1;
+        if i < len {
+            string_push_str(&mut line, ", ");
+        }
     }
+    string_push_str(&mut line, ") {");
+    string_push_str(&mut line, "entry:");
 
-    codegen_emit_line(llvm, ") {");
-    codegen_emit_line(llvm, "entry:");
+    codegen_emit_line(codegen, line);
 }
 
 // -----------------------------------------------------------------
