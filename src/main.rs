@@ -2582,21 +2582,63 @@ fn codegen_call(codegen: &mut Codegen, callee: &RAstPath, arguments: &Vec<RAstEx
 /// Emit LLVM-IR for an if expression.
 fn codegen_if(codegen: &mut Codegen, if_expression: &RAstIf) -> STPair {
     let RAstIf::If(condition, then_block, else_branch): &RAstIf = if_expression;
-    let STPair::ST(_, _): STPair = codegen_expression(codegen, box_deref::<RAstExpr>(condition));
 
-    let STPair::ST(_, _then_type): STPair = codegen_block(codegen, then_block);
-    let ty: RAstType = match else_branch {
+    let then_label: String = codegen_next_label(codegen, "if.then");
+    let else_label: String = codegen_next_label(codegen, "if.else");
+    let end_label: String = codegen_next_label(codegen, "if.end");
+
+    let STPair::ST(cond, _): STPair = codegen_expression(codegen, box_deref::<RAstExpr>(condition));
+
+    // Allocate memory for potential result value, though size is still unknown.
+    // In the event that the result type is unit, this instruction will be removed later.
+    let result_pointer: String = codegen_emit_alloca(codegen, &RAstType::Unit, 1);
+    let alloca_idx: usize = codegen_code_last_index(codegen);
+
+    codegen_emit_br_conditional(codegen, &cond, &then_label, &else_label);
+
+    // start of the then block
+    codegen_emit_label(codegen, &then_label);
+
+    let STPair::ST(then_value, then_type): STPair = codegen_block(codegen, then_block);
+    if not(rAstType_eq(&then_type, &RAstType::Unit)) {
+        // the if returns a value, so store the result in the allocated register
+        codegen_emit_store(codegen, &then_type, &then_value, &result_pointer);
+    }
+
+    // end of then block, so jump to the end
+    codegen_emit_br(codegen, &end_label);
+
+    match else_branch {
         Option::Some(else_branch) => {
-            let STPair::ST(_, else_type): STPair = match else_branch {
+            // start of the else block
+            codegen_emit_label(codegen, &else_label);
+
+            let STPair::ST(else_value, else_type): STPair = match else_branch {
                 RAstElse::If(nested_if) => codegen_if(codegen, box_deref::<RAstIf>(nested_if)),
                 RAstElse::Block(block) => codegen_block(codegen, block),
             };
-            else_type
+
+            if not(rAstType_eq(&then_type, &RAstType::Unit)) {
+                // the else returns a value, so store the result in the allocated register
+                codegen_emit_store(codegen, &else_type, &else_value, &result_pointer);
+            }
+
+            // end of else block, so jump to the end
+            codegen_emit_br(codegen, &end_label);
         }
-        Option::None => RAstType::Unit,
+        _ => {}
+    }
+
+    codegen_emit_label(codegen, &end_label);
+
+    // load and return the value if there is one
+    let result: String = if not(rAstType_eq(&then_type, &RAstType::Unit)) {
+        codegen_emit_load(codegen, &then_type, &result_pointer)
+    } else {
+        string_new() // no value is returned, so some placeholder
     };
 
-    STPair::ST(string_new(), ty)
+    STPair::ST(result, then_type)
 }
 
 /// Emit LLVM-IR for a while expression.
@@ -2661,10 +2703,14 @@ fn code_new() -> Code {
 }
 
 /// Emit the given string as a new line of LLVM-IR code.
-/// Resets the cursor to point to this line.
 fn codegen_emit_line(codegen: &mut Codegen, line: String) {
     let Codegen::Codegen(Code::Code(lines), _, _, _, _): &mut Codegen = codegen;
     vec_push::<String>(lines, line);
+}
+
+/// Emit a line that serves as a placeholder
+fn codegen_emit_placeholder(codegen: &mut Codegen) {
+    codegen_emit_line(codegen, string_new());
 }
 
 /// Get the line index of the last emitted line.
