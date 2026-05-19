@@ -2608,11 +2608,11 @@ fn codegen_if(codegen: &mut Codegen, if_expression: &RAstIf) -> STPair {
     // end of then block, so jump to the end
     codegen_emit_br(codegen, &end_label);
 
+    // start of the else block
+    codegen_emit_label(codegen, &else_label);
+
     match else_branch {
         Option::Some(else_branch) => {
-            // start of the else block
-            codegen_emit_label(codegen, &else_label);
-
             let STPair::ST(else_value, else_type): STPair = match else_branch {
                 RAstElse::If(nested_if) => codegen_if(codegen, box_deref::<RAstIf>(nested_if)),
                 RAstElse::Block(block) => codegen_block(codegen, block),
@@ -2622,13 +2622,14 @@ fn codegen_if(codegen: &mut Codegen, if_expression: &RAstIf) -> STPair {
                 // the else returns a value, so store the result in the allocated register
                 codegen_emit_store(codegen, &else_type, &else_value, &result_pointer);
             }
-
-            // end of else block, so jump to the end
-            codegen_emit_br(codegen, &end_label);
         }
         _ => {}
     }
 
+    // end of else block, so jump to the end
+    codegen_emit_br(codegen, &end_label);
+
+    // start of the merge block
     codegen_emit_label(codegen, &end_label);
 
     // load and return the value if there is one
