@@ -49,6 +49,37 @@ fn test_system() {
     }
 }
 
+#[test]
+fn test_llvm() {
+    assert!(tool_available("clang"), "clang is required");
+    assert!(tool_available("lli"), "lli is required");
+
+    for llvm_path in llvm_sources() {
+        let label = source_label(&llvm_path);
+
+        let emu_exit = emulate_llvm(&llvm_path);
+
+        let clang_exe_path = unique_path(&format!("{}-clang", label), "bin");
+        run_clang(&llvm_path, &clang_exe_path);
+        let clang_exit = run_binary(&clang_exe_path);
+
+        let lli_exit = run_lli(&llvm_path);
+
+        assert_eq!(
+            emu_exit,
+            clang_exit,
+            "emulator exit code does not match clang-compiled binary exit code for {}",
+            llvm_path.display()
+        );
+        assert_eq!(
+            emu_exit,
+            lli_exit,
+            "emulator exit code does not match lli emulated exit code for {}",
+            llvm_path.display()
+        );
+    }
+}
+
 fn unique_path(label: &str, extension: &str) -> PathBuf {
     let mut path = std::env::temp_dir();
     let nanos = SystemTime::now()
@@ -130,6 +161,18 @@ fn rust_sources() -> Vec<PathBuf> {
     sources
 }
 
+fn llvm_sources() -> Vec<PathBuf> {
+    let mut sources: Vec<_> = WalkDir::new("tests/llvm")
+        .into_iter()
+        .filter_map(Result::ok)
+        .filter(|e| e.file_type().is_file())
+        .map(|e| e.path().to_str().expect("is string").to_string())
+        .map(|e| PathBuf::from(e))
+        .collect();
+    sources.sort_unstable();
+    sources
+}
+
 fn compile_emulate(source: &Path) -> (i32, PathBuf) {
     let status = Command::new("cargo")
         .env("RUSTFLAGS", "-Awarnings") // hide warnings
@@ -147,6 +190,18 @@ fn compile_emulate(source: &Path) -> (i32, PathBuf) {
         .unwrap_or("code");
     let output = PathBuf::from(format!("{}.ll", stem));
     (status.code().expect("returns an exit code"), output)
+}
+
+fn emulate_llvm(path: &Path) -> i32 {
+    let status = Command::new("cargo")
+        .env("RUSTFLAGS", "-Awarnings") // hide warnings
+        .arg("run")
+        .arg("--")
+        .arg("-e")
+        .arg(path)
+        .status()
+        .expect("able to run LLVM emulator");
+    status.code().expect("returns an exit code")
 }
 
 fn source_label(path: &Path) -> std::string::String {
