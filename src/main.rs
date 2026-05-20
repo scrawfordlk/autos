@@ -190,7 +190,7 @@ fn sourceFile_current_column(file: &SourceFile) -> usize {
 /// Returns the index of the beginning of the current line.
 fn sourceFile_current_line_start(file: &SourceFile) -> usize {
     let SourceFile::SourceFile(_, _, _, last_newline_idx): &SourceFile = file;
-    *last_newline_idx + 1
+    *last_newline_idx
 }
 
 /// Create a lexer and prime it with the first token.
