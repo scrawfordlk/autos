@@ -802,6 +802,19 @@ fn rastLiteral_type(literal: &RAstLiteral) -> RAstType {
     }
 }
 
+/// Checks for equality between two types.
+/// If one of the arguments is Never, return true, since Never matches every type.
+fn type_matches(left: &RAstType, right: &RAstType) -> bool {
+    or(
+        // Never is a special type that indicates the value is unreachable, so it matches every type
+        or(
+            rAstType_eq(left, &RAstType::Never),
+            rAstType_eq(right, &RAstType::Never),
+        ),
+        rAstType_eq(left, right),
+    )
+}
+
 fn parse_language(lexer: &mut Lexer) -> RAst {
     let mut items: Vec<RAstItem> = vec_new::<RAstItem>();
 
@@ -1391,15 +1404,7 @@ fn semantic_check(ast: &RAst) -> StringMap<FnSignature> {
 }
 
 fn semantic_expect_same_type(left: &RAstType, right: &RAstType) {
-    // Never is a special type that indicates the value is unreachable, so it matches every type
-    if or(
-        rAstType_eq(left, &RAstType::Never),
-        rAstType_eq(right, &RAstType::Never),
-    ) {
-        return;
-    }
-
-    if not(rAstType_eq(left, right)) {
+    if not(type_matches(left, right)) {
         semantic_check_error("type mismatch");
     }
 }
@@ -2599,10 +2604,16 @@ fn codegen_if(codegen: &mut Codegen, if_expression: &RAstIf) -> STPair {
     // start of the then block
     codegen_emit_label(codegen, &then_label);
 
-    let STPair::ST(then_value, then_type): STPair = codegen_block(codegen, then_block);
-    if not(rAstType_eq(&then_type, &RAstType::Unit)) {
-        // the if returns a value, so store the result in the allocated register
-        codegen_emit_store(codegen, &then_type, &then_value, &result_pointer);
+    let STPair::ST(then_value, mut if_type): STPair = codegen_block(codegen, then_block);
+
+    if not(type_matches(&if_type, &RAstType::Unit)) {
+        // now we know the type and thus the size to allocate
+        codegen_fixup_alloca(codegen, alloca_idx, &if_type, 1);
+
+        codegen_emit_store(codegen, &if_type, &then_value, &result_pointer);
+    } else {
+        // the if returns nothing, so we can remove the unnecessarily emitted alloca instruction
+        codegen_fixup(codegen, alloca_idx, string_new());
     }
 
     // end of then block, so jump to the end
@@ -2618,12 +2629,17 @@ fn codegen_if(codegen: &mut Codegen, if_expression: &RAstIf) -> STPair {
                 RAstElse::Block(block) => codegen_block(codegen, block),
             };
 
-            if not(rAstType_eq(&then_type, &RAstType::Unit)) {
+            // propagate type by coalescing the types of the blocks
+            if rAstType_eq(&if_type, &RAstType::Never) {
+                if_type = else_type;
+            }
+
+            if not(type_matches(&if_type, &RAstType::Unit)) {
                 // the else returns a value, so store the result in the allocated register
-                codegen_emit_store(codegen, &else_type, &else_value, &result_pointer);
+                codegen_emit_store(codegen, &if_type, &else_value, &result_pointer);
             }
         }
-        _ => {}
+        _ => if_type = RAstType::Unit, // else is implicitly unit, so type of if must be unit
     }
 
     // end of else block, so jump to the end
@@ -2633,13 +2649,13 @@ fn codegen_if(codegen: &mut Codegen, if_expression: &RAstIf) -> STPair {
     codegen_emit_label(codegen, &end_label);
 
     // load and return the value if there is one
-    let result: String = if not(rAstType_eq(&then_type, &RAstType::Unit)) {
-        codegen_emit_load(codegen, &then_type, &result_pointer)
+    let result: String = if not(type_matches(&if_type, &RAstType::Unit)) {
+        codegen_emit_load(codegen, &if_type, &result_pointer)
     } else {
         string_new() // no value is returned, so some placeholder
     };
 
-    STPair::ST(result, then_type)
+    STPair::ST(result, if_type)
 }
 
 /// Emit LLVM-IR for a while expression.
@@ -2734,8 +2750,10 @@ fn codegen_into_llvm(codegen: Codegen) -> String {
     let len: usize = vec_len::<String>(&lines);
     while i < len {
         let line: &String = vec_at::<String>(&lines, i);
-        string_push_string(&mut code, line);
-        string_push(&mut code, '\n');
+        if string_len(line) > 0 {
+            string_push_string(&mut code, line);
+            string_push(&mut code, '\n');
+        }
         i = i + 1;
     }
     code
@@ -3091,6 +3109,41 @@ fn codegen_emit_function_header(
     string_push_str(&mut line, ") {\nentry:");
 
     codegen_emit_line(codegen, line);
+}
+
+/// Fixup a previously emitted alloca instruction without changing the destination register.
+// TODO: assumes a lot about the emitted LLVM-IR, make this more robust.
+fn codegen_fixup_alloca(
+    codegen: &mut Codegen,
+    index: usize,
+    new_type: &RAstType,
+    new_count: usize,
+) {
+    let Codegen::Codegen(Code::Code(lines), _, _, _, _): &mut Codegen = codegen;
+
+    let old_alloca: &String = vec_at::<String>(lines, index);
+    let mut new_alloca: String = string_new();
+
+    let mut space_count: usize = 0;
+    let mut i: usize = 0;
+
+    // "  <register> = alloca " has 5 spaces.
+    while space_count < 5 {
+        let c: char = string_at(&old_alloca, i);
+
+        if is_whitespace(c) {
+            space_count = space_count + 1;
+        }
+
+        string_push(&mut new_alloca, c);
+        i = i + 1;
+    }
+
+    string_push_string(&mut new_alloca, &rAstType_to_llvm_name(new_type));
+    string_push_str(&mut new_alloca, ", i64 ");
+    string_push_string(&mut new_alloca, &integer_to_string(new_count));
+
+    codegen_fixup(codegen, index, new_alloca);
 }
 
 // -----------------------------------------------------------------
@@ -5987,6 +6040,12 @@ fn string_get(string: &String, index: usize) -> Option<char> {
         Option::Some(value) => Option::Some(*value as char),
         Option::None => Option::None,
     }
+}
+
+/// Get the character at the given index and panic if the index is out of bounds.
+fn string_at(string: &String, index: usize) -> char {
+    let String::Inner(bytes): &String = string;
+    *vec_at::<u8>(bytes, index) as char
 }
 
 /// Set a character in a string. Return false if the index is out of bounds.
