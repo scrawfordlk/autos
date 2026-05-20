@@ -4853,8 +4853,7 @@ fn llvm_eval_value(
 
 /// Report an error message with source location and exit.
 /// TODO: not subset-conform
-fn lexer_error(lexer: &Lexer, message: &String) -> ! {
-    let file: &SourceFile = lexer_sourcefile(lexer);
+fn report_error(file: &SourceFile, message: &String) -> ! {
     let line: usize = sourceFile_current_line(file);
     let col: usize = sourceFile_current_column(file);
 
@@ -4882,6 +4881,10 @@ fn lexer_error(lexer: &Lexer, message: &String) -> ! {
     eprintln!();
 
     std::process::exit(1);
+}
+
+fn lexer_error(lexer: &Lexer, message: &String) -> ! {
+    report_error(lexer_sourcefile(lexer), message)
 }
 
 /// Emit an error at the parser current location and abort.
@@ -4900,32 +4903,7 @@ fn semantic_check_error(message: &str) -> ! {
 /// Emit an LLVM parser error and panic.
 fn llvmParser_error(parser: &LlvmParser, message: &String) -> ! {
     let file: &SourceFile = llvmLexer_sourcefile(llvmParser_lexer(parser));
-    let line: usize = sourceFile_current_line(file);
-    let col: usize = sourceFile_current_column(file);
-
-    eprintln!("ERROR at {}:{}:", line, col);
-
-    let mut start: usize = sourceFile_current_line_start(file);
-    let mut reached_end: bool = false;
-    while not(reached_end) {
-        match sourceFile_get_char(file, start) {
-            Option::Some('\n') => reached_end = true,
-            Option::Some(c) => eprint!("{}", c),
-            Option::None => reached_end = true,
-        }
-        start = start + 1;
-    }
-    eprintln!();
-    let mut i: usize = 1;
-    while i < col {
-        eprint!(" ");
-        i = i + 1;
-    }
-    eprint!("^ ");
-    eprint_string(message);
-    eprintln!();
-
-    std::process::exit(1);
+    report_error(file, message)
 }
 
 fn llvmParser_expected_message(parser: &LlvmParser, expected: &String) -> String {
