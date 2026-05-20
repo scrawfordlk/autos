@@ -3638,7 +3638,8 @@ fn llvmParser_try_consume(parser: &mut LlvmParser, token: &LlvmToken) -> bool {
 /// Require and consume one token.
 fn llvmParser_expect_token(parser: &mut LlvmParser, token: &LlvmToken) {
     if not(llvmParser_try_consume(parser, token)) {
-        llvmParser_error(parser, "unexpected LLVM token");
+        let message: String = llvmParser_expected_message(parser, &llvmToken_to_string(token));
+        llvmParser_error(parser, &message);
     }
 }
 
@@ -3650,13 +3651,20 @@ fn llvmParser_expect_identifier(parser: &mut LlvmParser) -> String {
             llvmParser_next_token(parser);
             value
         }
-        _ => llvmParser_error(parser, "expected LLVM identifier"),
+        _ => {
+            let message: String =
+                llvmParser_expected_message(parser, &string_from_str("LLVM identifier"));
+            llvmParser_error(parser, &message)
+        }
     }
 }
 
 fn llvmParser_expect_value_type(parser: &LlvmParser, value: &LlvmValue, expected: &LlvmType) {
     if not(llvmParser_value_has_type(parser, value, expected)) {
-        llvmParser_error(parser, "LLVM value does not match expected type");
+        llvmParser_error(
+            parser,
+            &string_from_str("LLVM value does not match expected type"),
+        );
     }
 }
 
@@ -3796,7 +3804,11 @@ fn llvmType_bitwidth(parser: &LlvmParser, ty: &LlvmType) -> usize {
         LlvmType::I1 => 1,
         LlvmType::I8 => 8,
         LlvmType::I64 => 64,
-        _ => llvmParser_error(parser, "expected LLVM integer type"),
+        _ => {
+            let message: String =
+                llvmParser_expected_message(parser, &string_from_str("LLVM integer type"));
+            llvmParser_error(parser, &message)
+        }
     }
 }
 
@@ -3949,7 +3961,11 @@ fn llvmParser_parse_language(parser: &mut LlvmParser) {
         match llvmParser_current_token(parser) {
             LlvmToken::At => llvmParser_parse_string(parser),
             LlvmToken::Define => llvmParser_parse_function(parser),
-            _ => llvmParser_error(parser, "expected LLVM top-level item"),
+            _ => {
+                let message: String =
+                    llvmParser_expected_message(parser, &string_from_str("LLVM top-level item"));
+                llvmParser_error(parser, &message)
+            }
         }
     }
 }
@@ -3965,7 +3981,11 @@ fn llvmParser_parse_string(parser: &mut LlvmParser) {
             let string_value: String = string_clone(value);
             llvmParser_next_token(parser);
         }
-        _ => llvmParser_error(parser, "expected LLVM c-string literal"),
+        _ => {
+            let message: String =
+                llvmParser_expected_message(parser, &string_from_str("LLVM c-string literal"));
+            llvmParser_error(parser, &message)
+        }
     }
 }
 
@@ -3988,7 +4008,10 @@ fn llvmParser_parse_function(parser: &mut LlvmParser) {
         function_name,
         function,
     )) {
-        llvmParser_error(parser, "duplicate LLVM function definition");
+        llvmParser_error(
+            parser,
+            &string_from_str("duplicate LLVM function definition"),
+        );
     }
 }
 
@@ -4020,7 +4043,10 @@ fn llvmParser_parse_parameters(parser: &mut LlvmParser) -> Vec<LlvmParameter> {
                 string_clone(&param_name),
                 llvmType_clone(&parameter_type),
             )) {
-                llvmParser_error(parser, "duplicate parameters in LLVM function");
+                llvmParser_error(
+                    parser,
+                    &string_from_str("duplicate parameters in LLVM function"),
+                );
             }
 
             let parameter: LlvmParameter = LlvmParameter::Parameter(param_name, parameter_type);
@@ -4074,7 +4100,11 @@ fn llvmParser_parse_instruction(parser: &mut LlvmParser) -> Instruction {
             llvmParser_next_token(parser);
             Instruction::Call(llvmParser_parse_call(parser))
         }
-        _ => llvmParser_error(parser, "expected LLVM instruction"),
+        _ => {
+            let message: String =
+                llvmParser_expected_message(parser, &string_from_str("LLVM instruction"));
+            llvmParser_error(parser, &message)
+        }
     }
 }
 
@@ -4128,7 +4158,11 @@ fn llvmParser_parse_assignment(parser: &mut LlvmParser) -> AssignInstruction {
         LlvmToken::Load => llvmParser_parse_load_assign(parser),
         LlvmToken::Call => llvmParser_parse_call_assign(parser),
         LlvmToken::Gep => llvmParser_parse_gep_assign(parser),
-        _ => llvmParser_error(parser, "expected LLVM assignment operation"),
+        _ => {
+            let message: String =
+                llvmParser_expected_message(parser, &string_from_str("LLVM assignment operation"));
+            llvmParser_error(parser, &message)
+        }
     };
 
     if not(llvmLocalSymTable_insert_register(
@@ -4138,7 +4172,7 @@ fn llvmParser_parse_assignment(parser: &mut LlvmParser) -> AssignInstruction {
     )) {
         llvmParser_error(
             parser,
-            "SSA violation: duplicate virtual register assignment",
+            &string_from_str("SSA violation: duplicate virtual register assignment"),
         );
     }
 
@@ -4161,7 +4195,11 @@ fn llvmParser_parse_icmp_assign(parser: &mut LlvmParser) -> AssignOp {
         LlvmToken::Uge => IcmpOp::Uge,
         LlvmToken::Ult => IcmpOp::Ult,
         LlvmToken::Ule => IcmpOp::Ule,
-        _ => llvmParser_error(parser, "expected LLVM icmp operator"),
+        _ => {
+            let message: String =
+                llvmParser_expected_message(parser, &string_from_str("LLVM icmp operator"));
+            llvmParser_error(parser, &message)
+        }
     };
 
     let ty: LlvmType = llvmParser_parse_type(parser);
@@ -4180,7 +4218,7 @@ fn llvmParser_parse_call_assign(parser: &mut LlvmParser) -> AssignOp {
 
     let Call::Call(return_type, _, _): &Call = &call;
     if llvmType_eq(return_type, &LlvmType::Void) {
-        llvmParser_error(parser, "cannot assign void to a register");
+        llvmParser_error(parser, &string_from_str("cannot assign void to a register"));
     }
 
     AssignOp::Call(call)
@@ -4202,7 +4240,9 @@ fn llvmParser_parse_cast_assign(parser: &mut LlvmParser, operator: CastOp) -> As
             if not(from_bits < to_bits) {
                 llvmParser_error(
                     parser,
-                    "invalid LLVM zext: source type must be smaller than target type",
+                    &string_from_str(
+                        "invalid LLVM zext: source type must be smaller than target type",
+                    ),
                 );
             }
         }
@@ -4210,7 +4250,9 @@ fn llvmParser_parse_cast_assign(parser: &mut LlvmParser, operator: CastOp) -> As
             if not(from_bits > to_bits) {
                 llvmParser_error(
                     parser,
-                    "invalid LLVM trunc: source type must be larger than target type",
+                    &string_from_str(
+                        "invalid LLVM trunc: source type must be larger than target type",
+                    ),
                 );
             }
         }
@@ -4318,17 +4360,31 @@ fn llvmParser_parse_type(parser: &mut LlvmParser) -> LlvmType {
             match llvmParser_current_token(parser) {
                 LlvmToken::Identifier(separator) => {
                     if not(string_eq(separator, &string_from_str("x"))) {
-                        llvmParser_error(parser, "expected x in LLVM array type");
+                        let message: String = llvmParser_expected_message(
+                            parser,
+                            &string_from_str("x in LLVM array type"),
+                        );
+                        llvmParser_error(parser, &message);
                     }
                     llvmParser_next_token(parser);
                 }
-                _ => llvmParser_error(parser, "expected x in LLVM array type"),
+                _ => {
+                    let message: String = llvmParser_expected_message(
+                        parser,
+                        &string_from_str("x in LLVM array type"),
+                    );
+                    llvmParser_error(parser, &message)
+                }
             }
             let inner: LlvmType = llvmParser_parse_type(parser);
             llvmParser_expect_token(parser, &LlvmToken::RBracket);
             LlvmType::Array(len, box_new::<LlvmType>(inner))
         }
-        _ => llvmParser_error(parser, "expected LLVM type"),
+        _ => {
+            let message: String =
+                llvmParser_expected_message(parser, &string_from_str("LLVM type"));
+            llvmParser_error(parser, &message)
+        }
     }
 }
 
@@ -4337,14 +4393,22 @@ fn llvmParser_parse_value(parser: &mut LlvmParser) -> LlvmValue {
         LlvmToken::Percent => LlvmValue::Register(llvmParser_parse_register(parser)),
         LlvmToken::At => LlvmValue::Global(llvmParser_parse_global_name(parser)),
         LlvmToken::Integer(_) => LlvmValue::Literal(llvmParser_parse_integer(parser)),
-        _ => llvmParser_error(parser, "expected LLVM value"),
+        _ => {
+            let message: String =
+                llvmParser_expected_message(parser, &string_from_str("LLVM value"));
+            llvmParser_error(parser, &message)
+        }
     }
 }
 
 fn llvmParser_parse_integer(parser: &mut LlvmParser) -> usize {
     match llvmParser_consume_current_token(parser) {
         LlvmToken::Integer(value) => value,
-        _ => llvmParser_error(parser, "expected LLVM integer literal"),
+        _ => {
+            let message: String =
+                llvmParser_expected_message(parser, &string_from_str("LLVM integer literal"));
+            llvmParser_error(parser, &message)
+        }
     }
 }
 
@@ -4834,7 +4898,7 @@ fn semantic_check_error(message: &str) -> ! {
 }
 
 /// Emit an LLVM parser error and panic.
-fn llvmParser_error(parser: &LlvmParser, message: &str) -> ! {
+fn llvmParser_error(parser: &LlvmParser, message: &String) -> ! {
     let file: &SourceFile = llvmLexer_sourcefile(llvmParser_lexer(parser));
     let line: usize = sourceFile_current_line(file);
     let col: usize = sourceFile_current_column(file);
@@ -4852,23 +4916,25 @@ fn llvmParser_error(parser: &LlvmParser, message: &str) -> ! {
         start = start + 1;
     }
     eprintln!();
-
     let mut i: usize = 1;
     while i < col {
         eprint!(" ");
         i = i + 1;
     }
-    eprintln!("^ {}", message);
-    match llvmParser_current_token(parser) {
-        LlvmToken::Eof => {}
-        token => {
-            eprint!("token: ");
-            print_string(&llvmToken_to_string(token));
-            eprintln!();
-        }
-    }
+    eprint!("^ ");
+    eprint_string(message);
+    eprintln!();
 
     std::process::exit(1);
+}
+
+fn llvmParser_expected_message(parser: &LlvmParser, expected: &String) -> String {
+    let mut message: String = string_from_str("expected ");
+    string_push_string(&mut message, expected);
+    let token: &LlvmToken = llvmParser_current_token(parser);
+    string_push_str(&mut message, ", but got: ");
+    string_push_string(&mut message, &llvmToken_to_string(token));
+    message
 }
 
 // -----------------------------------------------------------------
