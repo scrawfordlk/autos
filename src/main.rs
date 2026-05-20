@@ -2649,13 +2649,10 @@ fn codegen_if(codegen: &mut Codegen, if_expression: &RAstIf) -> STPair {
     let STPair::ST(then_value, mut if_type): STPair = codegen_block(codegen, then_block);
 
     if not(type_matches(&if_type, &RAstType::Unit)) {
-        // now we know the type and thus the size to allocate
+        // now we know the type and thus the size to allocate on the stack
         codegen_fixup_alloca(codegen, alloca_idx, &if_type, 1);
 
         codegen_emit_store(codegen, &if_type, &then_value, &result_pointer);
-    } else {
-        // the if returns nothing, so we can remove the unnecessarily emitted alloca instruction
-        codegen_fixup(codegen, alloca_idx, string_new());
     }
 
     // end of then block, so jump to the end
@@ -2671,14 +2668,19 @@ fn codegen_if(codegen: &mut Codegen, if_expression: &RAstIf) -> STPair {
                 RAstElse::Block(block) => codegen_block(codegen, block),
             };
 
+            // store result if there is one
+            if not(type_matches(&else_type, &RAstType::Unit)) {
+                codegen_emit_store(codegen, &else_type, &else_value, &result_pointer);
+            }
+
             // propagate type by coalescing the types of the blocks
             if rAstType_eq(&if_type, &RAstType::Never) {
                 if_type = else_type;
             }
 
             if not(type_matches(&if_type, &RAstType::Unit)) {
-                // the else returns a value, so store the result in the allocated register
-                codegen_emit_store(codegen, &if_type, &else_value, &result_pointer);
+                // now we know the type and thus the size to allocate on the stack
+                codegen_fixup_alloca(codegen, alloca_idx, &if_type, 1);
             }
         }
         _ => if_type = RAstType::Unit, // else is implicitly unit, so type of if must be unit
@@ -2694,6 +2696,7 @@ fn codegen_if(codegen: &mut Codegen, if_expression: &RAstIf) -> STPair {
     let result: String = if not(type_matches(&if_type, &RAstType::Unit)) {
         codegen_emit_load(codegen, &if_type, &result_pointer)
     } else {
+        codegen_fixup(codegen, alloca_idx, string_new()); // alloca was not needed
         string_new() // no value is returned, so some placeholder
     };
 
