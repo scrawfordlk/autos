@@ -271,10 +271,12 @@ fn lexer_expect_char(lexer: &mut Lexer, expected: char) {
     match lexer_consume_char(lexer) {
         Option::Some(c) => {
             if c != expected {
-                lexer_error(lexer, "unexpected character");
+                let mut message: String = string_from_str("unexpected character: ");
+                string_push_string(&mut message, &literal_to_string(&Literal::Char(c)));
+                lexer_error(lexer, &message);
             }
         }
-        Option::None => lexer_error(lexer, "unexpected end of input"),
+        Option::None => lexer_error(lexer, &string_from_str("unexpected end of input")),
     }
 }
 
@@ -390,9 +392,13 @@ fn lexer_scan_integer(lexer: &mut Lexer) -> usize {
         }
     }
 
-    match string_to_integer(value, 10) {
+    match string_to_integer(&value, 10) {
         Option::Some(int) => int,
-        _ => lexer_error(lexer, "invalid integer literal"),
+        _ => {
+            let mut message: String = string_from_str("invalid integer literal: ");
+            string_push_string(&mut message, &value);
+            lexer_error(lexer, &message);
+        }
     }
 }
 
@@ -401,7 +407,7 @@ fn lexer_scan_char_literal(lexer: &mut Lexer) -> char {
     let c: char = match lexer_consume_char(lexer) {
         Option::Some('\\') => lexer_scan_escape_char(lexer),
         Option::Some(ch) => ch,
-        Option::None => lexer_error(lexer, "unexpected end of char literal"),
+        Option::None => lexer_error(lexer, &string_from_str("unexpected end of file")),
     };
     lexer_expect_char(lexer, '\'');
     c
@@ -415,7 +421,9 @@ fn lexer_scan_string_literal(lexer: &mut Lexer) -> String {
             Option::Some('"') => return s,
             Option::Some('\\') => string_push(&mut s, lexer_scan_escape_char(lexer)),
             Option::Some(c) => string_push(&mut s, c),
-            Option::None => lexer_error(lexer, "unexpected end of string literal"),
+            Option::None => {
+                lexer_error(lexer, &string_from_str("unexpected end of string literal"))
+            }
         }
     }
     s // satisfy compiler
@@ -429,7 +437,7 @@ fn lexer_scan_escape_char(lexer: &mut Lexer) -> char {
         Option::Some('r') => '\r',
         Option::Some('0') => '\0',
         Option::Some(c) => c,
-        Option::None => lexer_error(lexer, "unexpected end of escape sequence"),
+        Option::None => lexer_error(lexer, &string_from_str("unexpected end of escape sequence")),
     }
 }
 
@@ -452,7 +460,11 @@ fn lexer_scan_symbol(lexer: &mut Lexer) -> Token {
         '!' => lexer_scan_bang(lexer),
         '<' => lexer_scan_less(lexer),
         '>' => lexer_scan_greater(lexer),
-        _ => lexer_error(lexer, "unexpected character"),
+        c => {
+            let mut message: String = string_from_str("unexpected character: ");
+            string_push_string(&mut message, &literal_to_string(&Literal::Char(c)));
+            lexer_error(lexer, &message);
+        }
     }
 }
 
@@ -575,7 +587,9 @@ fn skip_attributes(lexer: &mut Lexer) {
                             }
                         }
                     }
-                    _ => lexer_error(lexer, "expected '[' after '#'"),
+                    _ => {
+                        lexer_error(lexer, &string_from_str("expected '[' after '#'"));
+                    }
                 }
             }
             _ => return,
@@ -601,7 +615,12 @@ fn compile(source: &str) -> String {
 /// Require and consume the given token.
 fn expect_token(lexer: &mut Lexer, token: &Token) {
     if not(lexer_try_consume(lexer, token)) {
-        parse_error(lexer, "unexpected token");
+        let bad_token: &Token = lexer_current_token(lexer);
+        let mut message: String = string_from_str("expected ");
+        string_push_string(&mut message, &token_to_string(token));
+        string_push_str(&mut message, ", but got: ");
+        string_push_string(&mut message, &token_to_string(bad_token));
+        parse_error(lexer, &message);
     }
 }
 
@@ -613,7 +632,11 @@ fn expect_identifier(lexer: &mut Lexer) -> String {
             lexer_next_token(lexer);
             name
         }
-        _ => parse_error(lexer, "expected identifier"),
+        token => {
+            let mut message: String = string_from_str("expected identifier, but got: ");
+            string_push_string(&mut message, &token_to_string(token));
+            parse_error(lexer, &message);
+        }
     }
 }
 
@@ -827,7 +850,11 @@ fn parse_language(lexer: &mut Lexer) -> RAst {
                 let enumeration: RAstItem = RAstItem::Enum(parse_enum(lexer));
                 vec_push::<RAstItem>(&mut items, enumeration);
             }
-            _ => parse_error(lexer, "expected top-level item"),
+            token => {
+                let mut message: String = string_from_str("expected function or enum, but got: ");
+                string_push_string(&mut message, &token_to_string(token));
+                parse_error(lexer, &message);
+            }
         }
     }
 
@@ -996,7 +1023,11 @@ fn parse_type(lexer: &mut Lexer) -> RAstType {
             let enum_name: String = expect_identifier(lexer);
             RAstType::Custom(enum_name)
         }
-        _ => parse_error(lexer, "expected type"),
+        token => {
+            let mut message: String = string_from_str("expected a type, but got: ");
+            string_push_string(&mut message, &token_to_string(token));
+            parse_error(lexer, &message);
+        }
     }
 }
 
@@ -1175,7 +1206,11 @@ fn parse_factor(lexer: &mut Lexer) -> RAstExpr {
         Token::If => RAstExpr::If(parse_if(lexer)),
         Token::While => parse_while(lexer),
         Token::Match => parse_match(lexer),
-        _ => parse_error(lexer, "unexpected token in parse_factor()"),
+        token => {
+            let mut message: String = string_from_str("unexpected token: ");
+            string_push_string(&mut message, &token_to_string(token));
+            parse_error(lexer, &message);
+        }
     }
 }
 
@@ -1267,7 +1302,11 @@ fn parse_pattern(lexer: &mut Lexer) -> RAstPattern {
                 RAstPattern::Identifier(false, identifier)
             }
         }
-        _ => parse_error(lexer, "expected pattern"),
+        token => {
+            let mut message: String = string_from_str("expected pattern, but got: ");
+            string_push_string(&mut message, &token_to_string(token));
+            parse_error(lexer, &message);
+        }
     }
 }
 
@@ -1315,7 +1354,11 @@ fn parse_literal(lexer: &mut Lexer) -> RAstLiteral {
             lexer_next_token(lexer);
             literal
         }
-        _ => parse_error(lexer, "expected literal"),
+        token => {
+            let mut message: String = string_from_str("expected literal, but got: ");
+            string_push_string(&mut message, &token_to_string(token));
+            parse_error(lexer, &message);
+        }
     }
 }
 
@@ -3345,7 +3388,7 @@ fn llvmLexer_scan_escape(lexer: &mut LlvmLexer) -> char {
                         string_push(&mut char_byte, hex_digit);
                         string_push(&mut char_byte, second_hex_digit);
 
-                        unwrap::<usize>(string_to_integer(char_byte, 16)) as u8 as char
+                        unwrap::<usize>(string_to_integer(&char_byte, 16)) as u8 as char
                     }
                     _ => panic!("expected second digit for escaped character byte"),
                 }
@@ -4746,7 +4789,7 @@ fn llvm_eval_value(
 
 /// Report an error message with source location and exit.
 /// TODO: not subset-conform
-fn lexer_error(lexer: &Lexer, message: &str) -> ! {
+fn lexer_error(lexer: &Lexer, message: &String) -> ! {
     let file: &SourceFile = lexer_sourcefile(lexer);
     let line: usize = sourceFile_current_line(file);
     let col: usize = sourceFile_current_column(file);
@@ -4770,13 +4813,15 @@ fn lexer_error(lexer: &Lexer, message: &str) -> ! {
         eprint!(" ");
         i = i + 1;
     }
-    eprintln!("^ {}", message);
+    eprint!("^ ");
+    eprint_string(message);
+    eprintln!();
 
     std::process::exit(1);
 }
 
 /// Emit an error at the parser current location and abort.
-fn parse_error(lexer: &Lexer, message: &str) -> ! {
+fn parse_error(lexer: &Lexer, message: &String) -> ! {
     lexer_error(lexer, message)
 }
 
@@ -4814,6 +4859,14 @@ fn llvmParser_error(parser: &LlvmParser, message: &str) -> ! {
         i = i + 1;
     }
     eprintln!("^ {}", message);
+    match llvmParser_current_token(parser) {
+        LlvmToken::Eof => {}
+        token => {
+            eprint!("token: ");
+            print_string(&llvmToken_to_string(token));
+            eprintln!();
+        }
+    }
 
     std::process::exit(1);
 }
@@ -6102,12 +6155,12 @@ fn eprint_string(string: &String) {
 
 /// Converts a string into an integer given the base.
 /// Returns None if the integer contained in the string is invalid for 64-bit integers.
-fn string_to_integer(string: String, base: usize) -> Option<usize> {
+fn string_to_integer(string: &String, base: usize) -> Option<usize> {
     let mut value: usize = 0;
 
     let mut i: usize = 0;
-    while i < string_len(&string) {
-        let digit: char = unwrap::<char>(string_get(&string, i));
+    while i < string_len(string) {
+        let digit: char = unwrap::<char>(string_get(string, i));
 
         let digit_value: usize = if is_digit(digit) {
             digit as usize - '0' as usize
