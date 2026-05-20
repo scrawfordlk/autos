@@ -372,7 +372,6 @@ fn identifier_to_token(ident: String) -> Token {
     }
 }
 
-// TODO: check for too large integer
 fn lexer_scan_integer(lexer: &mut Lexer) -> usize {
     let mut value: String = string_new();
 
