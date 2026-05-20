@@ -6158,6 +6158,147 @@ fn string_hash(string: &String, bucket_count: usize) -> usize {
     hash % bucket_count
 }
 
+/// Convert a token into a string.
+fn token_to_string(token: &Token) -> String {
+    match token {
+        Token::Fn => string_from_str("fn"),
+        Token::Enum => string_from_str("enum"),
+        Token::Let => string_from_str("let"),
+        Token::If => string_from_str("if"),
+        Token::Else => string_from_str("else"),
+        Token::While => string_from_str("while"),
+        Token::Return => string_from_str("return"),
+        Token::Match => string_from_str("match"),
+        Token::As => string_from_str("as"),
+        Token::Unsafe => string_from_str("unsafe"),
+        Token::Mut => string_from_str("mut"),
+        Token::Ampersand => string_from_str("&"),
+        Token::LBrace => string_from_str("{"),
+        Token::RBrace => string_from_str("}"),
+        Token::LParen => string_from_str("("),
+        Token::RParen => string_from_str(")"),
+        Token::Colon => string_from_str(":"),
+        Token::DoubleColon => string_from_str("::"),
+        Token::SemiColon => string_from_str(";"),
+        Token::Comma => string_from_str(","),
+        Token::Assign => string_from_str("="),
+        Token::Bang => string_from_str("!"),
+        Token::Cmp(comparison) => comparison_to_string(comparison),
+        Token::ArmArrow => string_from_str("=>"),
+        Token::Plus => string_from_str("+"),
+        Token::Minus => string_from_str("-"),
+        Token::Star => string_from_str("*"),
+        Token::Slash => string_from_str("/"),
+        Token::Remainder => string_from_str("%"),
+        Token::Usize => string_from_str("usize"),
+        Token::U8 => string_from_str("u8"),
+        Token::Bool => string_from_str("bool"),
+        Token::Char => string_from_str("char"),
+        Token::Str => string_from_str("str"),
+        Token::TypeArrow => string_from_str("->"),
+        Token::Literal(literal) => literal_to_string(literal),
+        Token::Identifier(name) => string_clone(name),
+        Token::Eof => string_from_str("<eof>"),
+    }
+}
+
+/// Convert an LLVM token into a string.
+fn llvmToken_to_string(token: &LlvmToken) -> String {
+    match token {
+        LlvmToken::Define => string_from_str("define"),
+        LlvmToken::Ret => string_from_str("ret"),
+        LlvmToken::Br => string_from_str("br"),
+        LlvmToken::Label => string_from_str("label"),
+        LlvmToken::Add => string_from_str("add"),
+        LlvmToken::Sub => string_from_str("sub"),
+        LlvmToken::Mul => string_from_str("mul"),
+        LlvmToken::Udiv => string_from_str("udiv"),
+        LlvmToken::Urem => string_from_str("urem"),
+        LlvmToken::Icmp => string_from_str("icmp"),
+        LlvmToken::Zext => string_from_str("zext"),
+        LlvmToken::Trunc => string_from_str("trunc"),
+        LlvmToken::Alloca => string_from_str("alloca"),
+        LlvmToken::Store => string_from_str("store"),
+        LlvmToken::Load => string_from_str("load"),
+        LlvmToken::To => string_from_str("to"),
+        LlvmToken::Call => string_from_str("call"),
+        LlvmToken::Gep => string_from_str("getelementptr"),
+        LlvmToken::Constant => string_from_str("constant"),
+        LlvmToken::Eq => string_from_str("eq"),
+        LlvmToken::Ne => string_from_str("ne"),
+        LlvmToken::Ugt => string_from_str("ugt"),
+        LlvmToken::Uge => string_from_str("uge"),
+        LlvmToken::Ult => string_from_str("ult"),
+        LlvmToken::Ule => string_from_str("ule"),
+        LlvmToken::Ptr => string_from_str("ptr"),
+        LlvmToken::I64 => string_from_str("i64"),
+        LlvmToken::I8 => string_from_str("i8"),
+        LlvmToken::I1 => string_from_str("i1"),
+        LlvmToken::Void => string_from_str("void"),
+        LlvmToken::At => string_from_str("@"),
+        LlvmToken::Percent => string_from_str("%"),
+        LlvmToken::LParen => string_from_str("("),
+        LlvmToken::RParen => string_from_str(")"),
+        LlvmToken::LBrace => string_from_str("{"),
+        LlvmToken::RBrace => string_from_str("}"),
+        LlvmToken::LBracket => string_from_str("["),
+        LlvmToken::RBracket => string_from_str("]"),
+        LlvmToken::Comma => string_from_str(","),
+        LlvmToken::Assign => string_from_str("="),
+        LlvmToken::Colon => string_from_str(":"),
+        LlvmToken::CString(value) => {
+            let mut string: String = string_new();
+            string_push_str(&mut string, "c\"");
+            string_push_string(&mut string, value);
+            string_push(&mut string, '"');
+            string
+        }
+        LlvmToken::Identifier(name) => string_clone(name),
+        LlvmToken::Integer(value) => integer_to_string(*value),
+        LlvmToken::Eof => string_from_str("<eof>"),
+    }
+}
+
+/// Convert a comparison token into a string.
+fn comparison_to_string(comparison: &Comparison) -> String {
+    match comparison {
+        Comparison::Eq => string_from_str("=="),
+        Comparison::Ne => string_from_str("!="),
+        Comparison::Gt => string_from_str(">"),
+        Comparison::Lt => string_from_str("<"),
+        Comparison::Geq => string_from_str(">="),
+        Comparison::Leq => string_from_str("<="),
+    }
+}
+
+/// Convert a literal token into a string.
+fn literal_to_string(literal: &Literal) -> String {
+    match literal {
+        Literal::Int(value) => integer_to_string(*value),
+        Literal::Bool(value) => {
+            if *value {
+                string_from_str("true")
+            } else {
+                string_from_str("false")
+            }
+        }
+        Literal::Char(value) => {
+            let mut string: String = string_new();
+            string_push(&mut string, '\'');
+            string_push(&mut string, *value);
+            string_push(&mut string, '\'');
+            string
+        }
+        Literal::String(value) => {
+            let mut string: String = string_new();
+            string_push(&mut string, '"');
+            string_push_string(&mut string, value);
+            string_push(&mut string, '"');
+            string
+        }
+    }
+}
+
 // ------------------------- Memory -------------------------------
 
 /// Copy n bytes from src to dest.
