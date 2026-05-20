@@ -6081,12 +6081,22 @@ fn string_push_string(string: &mut String, other: &String) {
     vec_extend::<u8>(bytes, other_bytes);
 }
 
-/// Print a string.
+/// Print a string stdout.
 fn print_string(string: &String) {
     let mut i: usize = 0;
     while i < string_len(string) {
         let character: char = string_at(string, i);
         print!("{}", character);
+        i = i + 1;
+    }
+}
+
+/// Print a string to stderr.
+fn eprint_string(string: &String) {
+    let mut i: usize = 0;
+    while i < string_len(string) {
+        let character: char = string_at(string, i);
+        eprint!("{}", character);
         i = i + 1;
     }
 }
