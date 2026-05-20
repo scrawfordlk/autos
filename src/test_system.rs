@@ -34,12 +34,16 @@ fn test_system() {
         let lli_exit = run_lli(&llvm_path);
 
         assert_eq!(
-            emu_exit, clang_exit,
-            "emulator exit code does not match clang-compiled binary exit code"
+            emu_exit,
+            clang_exit,
+            "emulator exit code does not match clang-compiled binary exit code for {}",
+            source_path.display()
         );
         assert_eq!(
-            emu_exit, lli_exit,
-            "emulator exit code does not match lli emulated exit code"
+            emu_exit,
+            lli_exit,
+            "emulator exit code does not match lli emulated exit code for {}",
+            source_path.display()
         );
         remove_file(&llvm_path).expect("can remove generated LLVM-IR file");
     }
