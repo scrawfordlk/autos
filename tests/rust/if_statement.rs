@@ -7,7 +7,5 @@ fn main() -> usize {
         return 42;
     }
 
-    if true {
-        return 2;
-    }
+    2
 }
