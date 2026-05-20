@@ -6081,6 +6081,16 @@ fn string_push_string(string: &mut String, other: &String) {
     vec_extend::<u8>(bytes, other_bytes);
 }
 
+/// Print a string.
+fn print_string(string: &String) {
+    let mut i: usize = 0;
+    while i < string_len(string) {
+        let character: char = string_at(string, i);
+        print!("{}", character);
+        i = i + 1;
+    }
+}
+
 /// Converts a string into an integer given the base.
 /// Returns None if the integer contained in the string is invalid for 64-bit integers.
 fn string_to_integer(string: String, base: usize) -> Option<usize> {
