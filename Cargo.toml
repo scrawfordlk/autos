@@ -1,5 +1,5 @@
 [package]
-name = "thesis"
+name = "autos"
 edition = "2024"
 
 # Optimise, even for non-release builds
