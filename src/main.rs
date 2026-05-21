@@ -1034,6 +1034,10 @@ fn parse_type(lexer: &mut Lexer) -> RAstType {
             expect_token(lexer, &Token::RParen);
             RAstType::Unit
         }
+        Token::Bang => {
+            lexer_next_token(lexer);
+            RAstType::Never
+        }
         Token::Ampersand => {
             lexer_next_token(lexer);
 
