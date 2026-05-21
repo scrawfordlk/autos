@@ -2469,11 +2469,13 @@ fn codegen_binding(codegen: &mut Codegen, variable: &RAstVariable, value: &RAstE
 
     match pattern {
         RAstPattern::Identifier(_, lvalue_name) => {
-            let lvalue_pointer: String = codegen_emit_alloca(codegen, binding_type, 1);
-            codegen_emit_store(codegen, binding_type, &rvalue_name, &lvalue_pointer);
+            if type_has_value(binding_type) {
+                let lvalue_pointer: String = codegen_emit_alloca(codegen, binding_type, 1);
+                codegen_emit_store(codegen, binding_type, &rvalue_name, &lvalue_pointer);
 
-            let name: String = string_clone(lvalue_name);
-            codegen_scope_insert(codegen, name, rAstType_clone(binding_type), lvalue_pointer);
+                let name: String = string_clone(lvalue_name);
+                codegen_scope_insert(codegen, name, rAstType_clone(binding_type), lvalue_pointer);
+            }
         }
         _ => {}
     }
@@ -2664,8 +2666,13 @@ fn codegen_literal(literal: &RAstLiteral) -> STPair {
 /// Emit LLVM-IR for a variable-use expression.
 fn codegen_variable_use(codegen: &mut Codegen, variable_name: &String) -> STPair {
     let STPair::ST(pointer_name, ty): STPair = codegen_scope_lookup(codegen, variable_name);
-    let value_name: String = codegen_emit_load(codegen, &ty, &pointer_name);
-    STPair::ST(value_name, ty)
+    if type_has_value(&ty) {
+        let value_name: String = codegen_emit_load(codegen, &ty, &pointer_name);
+        STPair::ST(value_name, ty)
+    } else {
+        // Unit and Never have no value, so don't load
+        STPair::ST(string_new(), ty)
+    }
 }
 
 /// Emit LLVM-IR for a function call expression.
