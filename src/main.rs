@@ -824,6 +824,22 @@ fn rastLiteral_type(literal: &RAstLiteral) -> RAstType {
     }
 }
 
+
+/// Coalesce two types into a type that encompasses both.
+/// Assumes that only the following cases can occur:
+/// 1. left == right
+/// 2. left == Never
+/// 3. right == Never
+///
+/// The type returned is only Never if left == right == Never
+fn rAstType_coalesce(left: RAstType, right: RAstType) -> RAstType {
+    if rAstType_eq(&left, &RAstType::Never) {
+        right
+    } else {
+        left
+    }
+}
+
 /// Checks for equality between two types.
 /// If one of the arguments is Never, return true, since Never matches every type.
 fn type_matches(left: &RAstType, right: &RAstType) -> bool {
@@ -2673,10 +2689,7 @@ fn codegen_if(codegen: &mut Codegen, if_expression: &RAstIf) -> STPair {
                 codegen_emit_store(codegen, &else_type, &else_value, &result_pointer);
             }
 
-            // propagate type by coalescing the types of the blocks
-            if rAstType_eq(&if_type, &RAstType::Never) {
-                if_type = else_type;
-            }
+            if_type = rAstType_coalesce(if_type, else_type);
 
             if not(type_matches(&if_type, &RAstType::Unit)) {
                 // now we know the type and thus the size to allocate on the stack
