@@ -853,6 +853,12 @@ fn type_matches(left: &RAstType, right: &RAstType) -> bool {
     )
 }
 
+/// Return true if the type has a value.
+/// This is true for all types, other than Unit and Never.
+fn type_has_value(ty: &RAstType) -> bool {
+    not(type_matches(ty, &RAstType::Unit))
+}
+
 fn parse_language(lexer: &mut Lexer) -> RAst {
     let mut items: Vec<RAstItem> = vec_new::<RAstItem>();
 
@@ -2664,10 +2670,7 @@ fn codegen_if(codegen: &mut Codegen, if_expression: &RAstIf) -> STPair {
 
     let STPair::ST(then_value, mut if_type): STPair = codegen_block(codegen, then_block);
 
-    if not(type_matches(&if_type, &RAstType::Unit)) {
-        // now we know the type and thus the size to allocate on the stack
-        codegen_fixup_alloca(codegen, alloca_idx, &if_type, 1);
-
+    if type_has_value(&if_type) {
         codegen_emit_store(codegen, &if_type, &then_value, &result_pointer);
     }
 
@@ -2684,17 +2687,11 @@ fn codegen_if(codegen: &mut Codegen, if_expression: &RAstIf) -> STPair {
                 RAstElse::Block(block) => codegen_block(codegen, block),
             };
 
-            // store result if there is one
-            if not(type_matches(&else_type, &RAstType::Unit)) {
+            if type_has_value(&else_type) {
                 codegen_emit_store(codegen, &else_type, &else_value, &result_pointer);
             }
 
             if_type = rAstType_coalesce(if_type, else_type);
-
-            if not(type_matches(&if_type, &RAstType::Unit)) {
-                // now we know the type and thus the size to allocate on the stack
-                codegen_fixup_alloca(codegen, alloca_idx, &if_type, 1);
-            }
         }
         _ => if_type = RAstType::Unit, // else is implicitly unit, so type of if must be unit
     }
@@ -2706,7 +2703,10 @@ fn codegen_if(codegen: &mut Codegen, if_expression: &RAstIf) -> STPair {
     codegen_emit_label(codegen, &end_label);
 
     // load and return the value if there is one
-    let result: String = if not(type_matches(&if_type, &RAstType::Unit)) {
+    let result: String = if type_has_value(&if_type) {
+        // now we know the type and thus the size to allocate on the stack
+        codegen_fixup_alloca(codegen, alloca_idx, &if_type, 1);
+
         codegen_emit_load(codegen, &if_type, &result_pointer)
     } else {
         codegen_fixup(codegen, alloca_idx, string_new()); // alloca was not needed
