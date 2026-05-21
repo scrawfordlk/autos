@@ -2214,40 +2214,71 @@ fn semantic_check_literal(literal: &RAstLiteral) -> RAstType {
 
 /// Type that encapsulates the state during LLVM-IR code generation from an AST.
 enum Codegen {
-    /// llvm code, current function return type, SSA numbering counter, local variable slots, function signatures
-    Codegen(Code, usize, StringMapStack<STPair>, StringMap<FnSignature>),
+    /// llvm code, is main function, SSA numbering counter, local variable slots, function signatures
+    Codegen(
+        Code,
+        bool,
+        usize,
+        StringMapStack<STPair>,
+        StringMap<FnSignature>,
+    ),
 }
 
 fn codegen_new(function_signatures: StringMap<FnSignature>) -> Codegen {
     Codegen::Codegen(
         code_new(),
+        false,
         0,
         stringMapStack_new::<STPair>(),
         function_signatures,
     )
 }
 
+/// Get a shared reference to the code.
+fn codegen_code(codegen: &Codegen) -> &Code {
+    let Codegen::Codegen(code, _, _, _, _): &Codegen = codegen;
+    code
+}
+
+/// Get a mutable reference to the code.
+fn codegen_code_mut(codegen: &mut Codegen) -> &mut Code {
+    let Codegen::Codegen(code, _, _, _, _): &mut Codegen = codegen;
+    code
+}
+
+/// Marks the current function as the main function.
+fn codegen_mark_as_main(codegen: &mut Codegen, is_main_function: bool) {
+    let Codegen::Codegen(_, is_main, _, _, _): &mut Codegen = codegen;
+    *is_main = is_main_function;
+}
+
+/// Return true if the current function is the main function.
+fn codegen_is_main(codegen: &Codegen) -> bool {
+    let Codegen::Codegen(_, is_main, _, _, _): &Codegen = codegen;
+    *is_main
+}
+
 /// Push a new empty scope onto the stack.
 fn codegen_push_scope(codegen: &mut Codegen) {
-    let Codegen::Codegen(_, _, stack, _): &mut Codegen = codegen;
+    let Codegen::Codegen(_, _, _, stack, _): &mut Codegen = codegen;
     stringMapStack_push_empty::<STPair>(stack);
 }
 
 /// Pop the last pushed scope.
 fn codegen_pop_scope(codegen: &mut Codegen) -> bool {
-    let Codegen::Codegen(_, _, stack, _): &mut Codegen = codegen;
+    let Codegen::Codegen(_, _, _, stack, _): &mut Codegen = codegen;
     stringMapStack_pop::<STPair>(stack)
 }
 
 /// Insert one variable slot into the current scope.
 fn codegen_scope_insert(codegen: &mut Codegen, name: String, ty: RAstType, pointer_name: String) {
-    let Codegen::Codegen(_, _, stack, _): &mut Codegen = codegen;
+    let Codegen::Codegen(_, _, _, stack, _): &mut Codegen = codegen;
     let _ = stringMapStack_insert::<STPair>(stack, name, STPair::ST(pointer_name, ty));
 }
 
 /// Lookup variable slot information.
 fn codegen_scope_lookup(codegen: &Codegen, name: &String) -> STPair {
-    let Codegen::Codegen(_, _, stack, _): &Codegen = codegen;
+    let Codegen::Codegen(_, _, _, stack, _): &Codegen = codegen;
     match stringMapStack_lookup::<STPair>(stack, name) {
         Option::Some(variable) => stPair_clone(variable),
         Option::None => STPair::ST(string_new(), RAstType::Unit), // should not be reachable
@@ -2256,7 +2287,7 @@ fn codegen_scope_lookup(codegen: &Codegen, name: &String) -> STPair {
 
 /// Lookup one function signature.
 fn codegen_function_signature(codegen: &Codegen, name: &String) -> Option<FnSignature> {
-    let Codegen::Codegen(_, _, _, signatures): &Codegen = codegen;
+    let Codegen::Codegen(_, _, _, _, signatures): &Codegen = codegen;
     match stringMap_get::<FnSignature>(signatures, name) {
         Option::Some(signature) => Option::Some(fnSignature_clone(signature)),
         Option::None => Option::None,
@@ -2265,13 +2296,13 @@ fn codegen_function_signature(codegen: &Codegen, name: &String) -> Option<FnSign
 
 /// Get the current value of the SSA numbering scheme.
 fn codegen_ssa_counter(codegen: &Codegen) -> usize {
-    let Codegen::Codegen(_, counter, _, _): &Codegen = codegen;
+    let Codegen::Codegen(_, _, counter, _, _): &Codegen = codegen;
     *counter
 }
 
 /// Increment the SSA numbering value by one.
 fn codegen_increment_ssa_counter(codegen: &mut Codegen) {
-    let Codegen::Codegen(_, counter, _, _): &mut Codegen = codegen;
+    let Codegen::Codegen(_, _, counter, _, _): &mut Codegen = codegen;
     *counter = *counter + 1;
 }
 
@@ -2330,13 +2361,18 @@ fn codegen_function(codegen: &mut Codegen, function: &RAstFunction) {
     let RAstFunction::Function(_, function_name, parameters, return_type, body): &RAstFunction =
         function;
 
-    let is_main: bool = string_eq(function_name, &string_from_str("main"));
+    let llvm_return_type: String = if string_eq(function_name, &string_from_str("main")) {
+        codegen_mark_as_main(codegen, true);
 
-    let llvm_return_type: String = if and(is_main, rAstType_eq(&return_type, &RAstType::Unit)) {
-        string_from_str("i64")
+        if rAstType_eq(&return_type, &RAstType::Unit) {
+            string_from_str("i64")
+        } else {
+            rAstType_to_llvm_name(&return_type)
+        }
     } else {
         rAstType_to_llvm_name(&return_type)
     };
+
     codegen_emit_function_header(codegen, function_name, &llvm_return_type, parameters);
 
     codegen_push_scope(codegen);
@@ -2366,7 +2402,7 @@ fn codegen_function(codegen: &mut Codegen, function: &RAstFunction) {
 
     match &block_type {
         RAstType::Unit => {
-            if is_main {
+            if codegen_is_main(codegen) {
                 codegen_emit_ret_value(codegen, &RAstType::Usize, &string_from_str("0"));
             } else {
                 codegen_emit_ret_void(codegen);
@@ -2378,6 +2414,8 @@ fn codegen_function(codegen: &mut Codegen, function: &RAstFunction) {
         }
     }
     codegen_emit_line(codegen, string_from_str("}"));
+
+    codegen_mark_as_main(codegen, false);
     codegen_pop_scope(codegen);
 }
 
@@ -2487,7 +2525,11 @@ fn codegen_return(codegen: &mut Codegen, returned: &Option<Box<RAstExpr>>) -> ST
 
         // return;
         Option::None => {
-            codegen_emit_ret_void(codegen);
+            if codegen_is_main(codegen) {
+                codegen_emit_ret_value(codegen, &RAstType::Usize, &string_from_str("0"));
+            } else {
+                codegen_emit_ret_void(codegen);
+            }
         }
     }
 
@@ -2863,7 +2905,7 @@ fn code_new() -> Code {
 
 /// Emit the given string as a new line of LLVM-IR code.
 fn codegen_emit_line(codegen: &mut Codegen, line: String) {
-    let Codegen::Codegen(Code::Code(lines), _, _, _): &mut Codegen = codegen;
+    let Code::Code(lines): &mut Code = codegen_code_mut(codegen);
     vec_push::<String>(lines, line);
 }
 
@@ -2874,19 +2916,19 @@ fn codegen_emit_placeholder(codegen: &mut Codegen) {
 
 /// Get the line index of the last emitted line.
 fn codegen_code_last_index(codegen: &Codegen) -> usize {
-    let Codegen::Codegen(Code::Code(lines), _, _, _): &Codegen = codegen;
+    let Code::Code(lines): &Code = codegen_code(codegen);
     vec_len::<String>(lines) - 1
 }
 
 /// Fixup the emitted line at index `i` by replacing it with `line`.
 fn codegen_fixup(codegen: &mut Codegen, i: usize, line: String) {
-    let Codegen::Codegen(Code::Code(lines), _, _, _): &mut Codegen = codegen;
+    let Code::Code(lines): &mut Code = codegen_code_mut(codegen);
     vec_set(lines, i, line);
 }
 
 /// Get the emitted LLVM-IR from Codegen.
 fn codegen_into_llvm(codegen: Codegen) -> String {
-    let Codegen::Codegen(Code::Code(lines), _, _, _): Codegen = codegen;
+    let Codegen::Codegen(Code::Code(lines), _, _, _, _): Codegen = codegen;
     let mut code: String = string_new();
     let mut i: usize = 0;
     let len: usize = vec_len::<String>(&lines);
@@ -3261,7 +3303,7 @@ fn codegen_fixup_alloca(
     new_type: &RAstType,
     new_count: usize,
 ) {
-    let Codegen::Codegen(Code::Code(lines), _, _, _): &mut Codegen = codegen;
+    let Code::Code(lines): &mut Code = codegen_code_mut(codegen);
 
     let old_alloca: &String = vec_at::<String>(lines, index);
     let mut new_alloca: String = string_new();
