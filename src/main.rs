@@ -688,12 +688,18 @@ enum RAstStatement {
 
 /// Pattern forms.
 enum RAstPattern {
-    Literal(RAstLiteral),
+    Literal(RAstPatternLiteral),
     /// mutable, identifier
     Identifier(bool, String),
     /// enum, variant, fields
     EnumVariant(String, String, Vec<RAstPattern>),
     Wildcard,
+}
+
+enum RAstPatternLiteral {
+    Int(usize),
+    Char(char),
+    Bool(bool),
 }
 
 /// Type forms from the Rust subset grammar.
@@ -824,6 +830,14 @@ fn rastLiteral_type(literal: &RAstLiteral) -> RAstType {
     }
 }
 
+/// Get the integer value of a pattern literal (integer, char, bool).
+fn rAstPatternLiteral_value(literal: &RAstPatternLiteral) -> usize {
+    match literal {
+        RAstPatternLiteral::Int(value) => *value,
+        RAstPatternLiteral::Char(value) => *value as usize,
+        RAstPatternLiteral::Bool(value) => *value as usize,
+    }
+}
 
 /// Coalesce two types into a type that encompasses both.
 /// Assumes that only the following cases can occur:
@@ -1288,7 +1302,15 @@ fn parse_arm(lexer: &mut Lexer) -> RAstMatchArm {
 
 fn parse_pattern(lexer: &mut Lexer) -> RAstPattern {
     match lexer_current_token(lexer) {
-        Token::Literal(_) => RAstPattern::Literal(parse_literal(lexer)),
+        Token::Literal(_) => RAstPattern::Literal(match parse_literal(lexer) {
+            RAstLiteral::Int(value) => RAstPatternLiteral::Int(value),
+            RAstLiteral::Char(value) => RAstPatternLiteral::Char(value),
+            RAstLiteral::Bool(value) => RAstPatternLiteral::Bool(value),
+            RAstLiteral::String(_) => parse_error(
+                lexer,
+                &string_from_str("matching on string literals is unsupported"),
+            ),
+        }),
         Token::Mut => {
             lexer_next_token(lexer);
             let identifier: String = expect_identifier(lexer);
@@ -2167,7 +2189,11 @@ fn semantic_check_pattern_type_for_expression(
     expression_type: &RAstType,
 ) -> RAstType {
     match pattern {
-        RAstPattern::Literal(literal) => rastLiteral_type(literal),
+        RAstPattern::Literal(literal) => match literal {
+            RAstPatternLiteral::Int(_) => RAstType::Usize,
+            RAstPatternLiteral::Char(_) => RAstType::Char,
+            RAstPatternLiteral::Bool(_) => RAstType::Bool,
+        },
         RAstPattern::Identifier(_, _) => rAstType_clone(expression_type),
         RAstPattern::EnumVariant(enum_name, _, _) => RAstType::Custom(string_clone(enum_name)),
         RAstPattern::Wildcard => rAstType_clone(expression_type),
@@ -2748,21 +2774,90 @@ fn codegen_while(codegen: &mut Codegen, condition: &RAstExpr, body: &RAstBlock) 
 
 /// Emit LLVM-IR for a match expression.
 fn codegen_match(codegen: &mut Codegen, value: &RAstExpr, arms: &Vec<RAstMatchArm>) -> STPair {
-    let STPair::ST(_, _): STPair = codegen_expression(codegen, value);
-    let first_arm: &RAstMatchArm = vec_at::<RAstMatchArm>(arms, 0);
-    let RAstMatchArm::Arm(_, first_expression): &RAstMatchArm = first_arm;
-    let return_type: RAstType = stPair_get_type(codegen_expression(codegen, first_expression));
+    let STPair::ST(expr_name, expr_type): STPair = codegen_expression(codegen, value);
 
-    let mut i: usize = 1;
+    let end_label: String = codegen_next_label(codegen, "match.end");
+
+    // Allocate memory for potential result value, though size is still unknown.
+    // In the event that the result type is unit, this instruction will be removed later.
+    let result_pointer: String = codegen_emit_alloca(codegen, &RAstType::Unit, 1);
+    let alloca_idx: usize = codegen_code_last_index(codegen);
+
+    let mut return_type: RAstType = RAstType::Never; // still unknown, coalescing arm types yields correct type
+
+    let mut i: usize = 0;
     while i < vec_len::<RAstMatchArm>(arms) {
-        let arm: &RAstMatchArm = vec_at::<RAstMatchArm>(arms, i);
-        let RAstMatchArm::Arm(_, expression): &RAstMatchArm = arm;
-        let arm_type: RAstType = stPair_get_type(codegen_expression(codegen, expression));
-        let _ = arm_type;
+        codegen_push_scope(codegen);
+
+        let is_last_arm: bool = i == vec_len::<RAstMatchArm>(arms) - 1;
+        let arm_label: String = codegen_next_label(codegen, "match.arm");
+        let else_label: String = codegen_next_label(codegen, "match.else");
+
+        let RAstMatchArm::Arm(pattern, arm_expr): &RAstMatchArm = vec_at::<RAstMatchArm>(arms, i);
+
+        match pattern {
+            RAstPattern::Literal(literal) => {
+                if not(is_last_arm) {
+                    let value: String = integer_to_string(rAstPatternLiteral_value(literal));
+
+                    let cond_name: String = codegen_emit_icmp(
+                        codegen,
+                        &RAstComparisonOp::Eq,
+                        &expr_type,
+                        &expr_name,
+                        &value,
+                    );
+
+                    codegen_emit_br_conditional(codegen, &cond_name, &arm_label, &else_label);
+                } // otherwise no need to branch, arm is executed unconditionally
+            }
+            RAstPattern::Identifier(_, identifier) => {
+                let pointer_name: String = codegen_emit_alloca(codegen, &expr_type, 1);
+                codegen_emit_store(codegen, &expr_type, &expr_name, &pointer_name);
+
+                let variable_name: String = string_clone(identifier);
+                let variable_type: RAstType = rAstType_clone(&expr_type);
+                codegen_scope_insert(codegen, variable_name, variable_type, pointer_name);
+            }
+            RAstPattern::Wildcard => {}
+            RAstPattern::EnumVariant(_, _, _) => {} // unimplemented
+        };
+
+        if not(is_last_arm) {
+            codegen_emit_label(codegen, &arm_label);
+        }
+
+        let STPair::ST(arm_value, arm_type) = codegen_expression(codegen, arm_expr);
+        if type_has_value(&arm_type) {
+            codegen_emit_store(codegen, &arm_type, &arm_value, &result_pointer);
+        }
+
+        // arm evaluated, so jump to end
+        codegen_emit_br(codegen, &end_label);
+
+        if not(is_last_arm) {
+            codegen_emit_label(codegen, &else_label);
+        }
+
+        return_type = rAstType_coalesce(return_type, arm_type);
+        codegen_pop_scope(codegen);
         i = i + 1;
     }
 
-    STPair::ST(string_new(), return_type)
+    // start of the merge block
+    codegen_emit_label(codegen, &end_label);
+
+    let result: String = if type_has_value(&return_type) {
+        // now we know the type and thus the size to allocate on the stack
+        codegen_fixup_alloca(codegen, alloca_idx, &return_type, 1);
+
+        codegen_emit_load(codegen, &return_type, &result_pointer)
+    } else {
+        codegen_fixup(codegen, alloca_idx, string_new()); // alloca was not needed
+        string_new() // no value is returned, so some placeholder
+    };
+
+    STPair::ST(result, return_type)
 }
 
 // ---------------------------- Code Emission ---------------------------------
