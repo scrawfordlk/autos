@@ -1,8 +1,9 @@
 fn main() -> usize {
+    let n: u8 = 4 as u8;
     let x: bool = true;
     let c: char = 'a';
 
-    match 4 {
+    match n as usize {
         10 => return 1,
         4 => match x {
             true => match c {
