@@ -1580,8 +1580,8 @@ fn semantic_check_run(ast: &RAst, items: StringMap<Item>) -> StringMap<Item> {
 
 /// Check if the given types are equal, otherwise throw an error.
 fn semantic_expect_exact_type_match(left: &RAstType, right: &RAstType) {
-    if not(type_matches(left, right)) {
-        semantic_check_error("type mismatch");
+    if not(rAstType_eq(left, right)) {
+        semantic_check_error("types do not match perfectly");
     }
 }
 
@@ -1797,7 +1797,7 @@ fn semantic_check_function(semantic: &mut Semantic, function: &RAstFunction) {
     }
 
     let block_type: RAstType = semantic_check_block(semantic, body, *is_unsafe);
-    semantic_expect_exact_type_match(&block_type, return_type);
+    semantic_expect_rough_type_match(&block_type, return_type);
 
     semantic_leave_scope(semantic);
     semantic_set_current_fn_return_type(semantic, RAstType::Unit);
@@ -2046,34 +2046,34 @@ fn semantic_check_call(
     arguments: &Vec<RAstExpr>,
 ) -> RAstType {
     let function_name: String = rAstPath_to_string(callee);
-    let signature: FnSignature = match semantic_lookup_function_signature(semantic, &function_name)
-    {
-        Option::Some(signature) => signature,
-        Option::None => semantic_check_error("call to undefined function"),
-    };
 
-    let mut argument_types: Vec<RAstType> = vec_new::<RAstType>();
-    let mut i: usize = 0;
-    while i < vec_len::<RAstExpr>(arguments) {
-        let argument: &RAstExpr = vec_at::<RAstExpr>(arguments, i);
-        vec_push::<RAstType>(
-            &mut argument_types,
-            semantic_check_expression(semantic, argument),
-        );
-        i = i + 1;
-    }
+    let FnSignature::Fn(parameter_types, return_type, is_unsafe): FnSignature =
+        match semantic_lookup_function_signature(semantic, &function_name) {
+            Option::Some(signature) => signature,
+            _ => semantic_check_error("call to undefined function"),
+        };
 
-    let FnSignature::Fn(parameter_types, return_type, is_unsafe): FnSignature = signature;
-    if not(vec_eq::<RAstType>(
-        &parameter_types,
-        &argument_types,
-        rAstType_eq,
-    )) {
-        semantic_check_error("function call does not match function signature");
-    }
     if and(is_unsafe, not(semantic_is_unsafe_context(semantic))) {
         semantic_check_error("calling an unsafe function requires unsafe");
     }
+
+    let mut i: usize = 0;
+    while i < vec_len::<RAstExpr>(arguments) {
+        let argument: &RAstExpr = vec_at::<RAstExpr>(arguments, i);
+        let arg_type: RAstType = semantic_check_expression(semantic, argument);
+
+        match vec_get::<RAstType>(&parameter_types, i) {
+            Option::Some(ty) => {
+                semantic_expect_exact_type_match(ty, &arg_type);
+            }
+            _ => {
+                semantic_check_error("function call has more arguments than there are parameters");
+            }
+        }
+
+        i = i + 1;
+    }
+
     return_type
 }
 
@@ -2092,7 +2092,7 @@ fn semantic_check_if(semantic: &mut Semantic, if_expression: &RAstIf) -> RAstTyp
                 }
                 RAstElse::Block(block) => semantic_check_block(semantic, block, false),
             };
-            semantic_expect_exact_type_match(&then_type, &else_type);
+            semantic_expect_rough_type_match(&then_type, &else_type);
 
             rAstType_coalesce(then_type, else_type)
         }
@@ -2108,7 +2108,7 @@ fn semantic_check_while(
     let condition_type: RAstType = semantic_check_expression(semantic, condition);
     semantic_expect_bool_type(&condition_type);
     let body_type: RAstType = semantic_check_block(semantic, body, false);
-    semantic_expect_exact_type_match(&RAstType::Unit, &body_type);
+    semantic_expect_rough_type_match(&RAstType::Unit, &body_type);
     RAstType::Unit
 }
 
