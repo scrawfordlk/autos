@@ -1880,7 +1880,7 @@ fn semantic_check_expression(semantic: &mut Semantic, expression: &RAstExpr) -> 
         RAstExpr::Unary(operator, value) => {
             semantic_check_unary_op(semantic, operator, box_deref::<RAstExpr>(value))
         }
-        RAstExpr::Literal(literal) => semantic_check_literal(literal),
+        RAstExpr::Literal(literal) => rastLiteral_type(literal),
         RAstExpr::VariableUse(name) => semantic_check_variable_use(semantic, name),
         RAstExpr::Call(callee, arguments) => semantic_check_call(semantic, callee, arguments),
         RAstExpr::Block(is_unsafe, block) => semantic_check_block(semantic, block, *is_unsafe),
@@ -2148,10 +2148,6 @@ fn semantic_check_pattern_type_for_expression(
         RAstPattern::EnumVariant(enum_name, _, _) => RAstType::Custom(string_clone(enum_name)),
         RAstPattern::Wildcard => rAstType_clone(expression_type),
     }
-}
-
-fn semantic_check_literal(literal: &RAstLiteral) -> RAstType {
-    rastLiteral_type(literal)
 }
 
 // -----------------------------------------------------------------
