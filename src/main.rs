@@ -2139,7 +2139,8 @@ fn semantic_check_if(semantic: &mut Semantic, if_expression: &RAstIf) -> RAstTyp
                 RAstElse::Block(block) => semantic_check_block(semantic, block, false),
             };
             semantic_expect_same_type(&then_type, &else_type);
-            then_type
+
+            rAstType_coalesce(then_type,else_type)
         }
         Option::None => RAstType::Unit,
     }
