@@ -9,25 +9,30 @@ fn main() {
 
     let args: StdVec<StdString> = std::env::args().collect();
     if args.len() <= 1 {
-        eprintln!("Usage: <program> ( -c <input> [ -o <output> ] [ -e ] | -e <inputllvm> )");
+        eprintln!(
+            "Usage: <program> ( -c <input> [ -o <output> ] [ -e ] [ --unsafe ] | -e <inputllvm> )"
+        );
         std::process::exit(1);
     }
 
     if args[1] == "-c" {
         if args.len() < 3 {
-            eprintln!("Usage: <program> ( -c <input> [ -o <output> ] [ -e ] | -e <inputllvm> )");
+            eprintln!(
+                "Usage: <program> ( -c <input> [ -o <output> ] [ -e ] [ --unsafe ] | -e <inputllvm> )"
+            );
             std::process::exit(1);
         }
         let input = args[2].clone();
         let mut file: StdOption<StdString> = StdOption::None;
         let mut emulate_after = false;
+        let mut run_semantic = true;
 
         let mut i = 3;
         while i < args.len() {
             if args[i] == "-o" {
                 if i + 1 >= args.len() {
                     eprintln!(
-                        "Usage: <program> ( -c <input> [ -o <output> ] [ -e ] | -e <inputllvm> )"
+                        "Usage: <program> ( -c <input> [ -o <output> ] [ -e ] [ --unsafe ] | -e <inputllvm> )"
                     );
                     std::process::exit(1);
                 }
@@ -36,13 +41,19 @@ fn main() {
             } else if args[i] == "-e" {
                 emulate_after = true;
                 i += 1;
+            } else if args[i] == "--unsafe" {
+                run_semantic = false;
+                i += 1;
             } else {
                 // ignore unknown arguments
                 i += 1;
             }
         }
 
-        let code: String = compile(&std::fs::read_to_string(&input).expect("no program found"));
+        let code: String = compile(
+            &std::fs::read_to_string(&input).expect("no program found"),
+            run_semantic,
+        );
         let code_clone: String = string_clone(&code);
 
         let output_name: StdString = match file {
@@ -73,7 +84,9 @@ fn main() {
 
     if args[1] == "-e" {
         if args.len() < 3 {
-            eprintln!("Usage: <program> ( -c <input> [ -o <output> ] [ -e ] | -e <inputllvm> )");
+            eprintln!(
+                "Usage: <program> ( -c <input> [ -o <output> ] [ -e ] [ --unsafe ] | -e <inputllvm> )"
+            );
             std::process::exit(1);
         }
         let llvm_ir: StdString = std::fs::read_to_string(&args[2]).expect("no llvm file found");
@@ -81,7 +94,9 @@ fn main() {
         std::process::exit((exit_code % 256) as i32);
     }
 
-    eprintln!("Usage: <program> ( -c <input> [ -o <output> ] [ -e ] | -e <inputllvm> )");
+    eprintln!(
+        "Usage: <program> ( -c <input> [ -o <output> ] [ -e ] [ --unsafe ] | -e <inputllvm> )"
+    );
     std::process::exit(1);
 }
 
@@ -600,13 +615,18 @@ fn skip_attributes(lexer: &mut Lexer) {
 // -------------------------- Parser -------------------------------
 
 /// Compile source code into LLVM-IR.
-fn compile(source: &str) -> String {
+fn compile(source: &str, do_semantic_analysis: bool) -> String {
     let mut lexer: Lexer = lexer_new(string_from_str(source));
     let ast: RAst = parse_language(&mut lexer);
 
-    let function_signatures: StringMap<FnSignature> = semantic_check(&ast);
+    let items: StringMap<Item> = collect_items(&ast);
+    let items: StringMap<Item> = if do_semantic_analysis {
+        semantic_check(&ast, items)
+    } else {
+        items
+    };
 
-    let mut codegen: Codegen = codegen_new(function_signatures);
+    let mut codegen: Codegen = codegen_new(items);
     codegen_language(&mut codegen, &ast);
 
     codegen_into_llvm(codegen)
@@ -1410,49 +1430,107 @@ fn parse_literal(lexer: &mut Lexer) -> RAstLiteral {
     }
 }
 
+fn collect_items(ast: &RAst) -> StringMap<Item> {
+    let mut item_map: StringMap<Item> = stringMap_new::<Item>();
+    let RAst::Language(ast_items): &RAst = ast;
+    let mut i: usize = 0;
+    while i < vec_len::<RAstItem>(ast_items) {
+        match vec_at::<RAstItem>(ast_items, i) {
+            RAstItem::Function(RAstFunction::Function(is_unsafe, name, params, return_type, _)) => {
+                if stringMap_contains::<Item>(&item_map, name) {
+                    semantic_check_error("duplicate function name");
+                }
+                let mut param_types: Vec<RAstType> = vec_new::<RAstType>();
+                let mut param_index: usize = 0;
+                while param_index < vec_len::<RAstVariable>(params) {
+                    let RAstVariable::Variable(_, parameter_type): &RAstVariable =
+                        vec_at::<RAstVariable>(params, param_index);
+                    vec_push::<RAstType>(&mut param_types, rAstType_clone(parameter_type));
+                    param_index = param_index + 1;
+                }
+
+                let signature: FnSignature =
+                    FnSignature::Fn(param_types, rAstType_clone(return_type), *is_unsafe);
+                stringMap_insert::<Item>(
+                    &mut item_map,
+                    string_clone(name),
+                    Item::Function(signature),
+                );
+            }
+            RAstItem::Enum(enum_item) => {
+                let RAstEnum::Enum(name, variants): &RAstEnum = enum_item;
+                if stringMap_contains::<Item>(&item_map, name) {
+                    semantic_check_error("duplicate enum name");
+                }
+                let mut cloned_variants: Vec<RAstVariant> = vec_new::<RAstVariant>();
+                let mut variant_index: usize = 0;
+                while variant_index < vec_len::<RAstVariant>(variants) {
+                    let variant: &RAstVariant = vec_at::<RAstVariant>(variants, variant_index);
+                    let RAstVariant::Variant(variant_name, fields): &RAstVariant = variant;
+                    let mut cloned_fields: Vec<RAstType> = vec_new::<RAstType>();
+                    let mut field_index: usize = 0;
+                    while field_index < vec_len::<RAstType>(fields) {
+                        let field_type: &RAstType = vec_at::<RAstType>(fields, field_index);
+                        vec_push::<RAstType>(&mut cloned_fields, rAstType_clone(field_type));
+                        field_index = field_index + 1;
+                    }
+                    vec_push::<RAstVariant>(
+                        &mut cloned_variants,
+                        RAstVariant::Variant(string_clone(variant_name), cloned_fields),
+                    );
+                    variant_index = variant_index + 1;
+                }
+                let cloned_enum: RAstEnum = RAstEnum::Enum(string_clone(name), cloned_variants);
+                stringMap_insert::<Item>(
+                    &mut item_map,
+                    string_clone(name),
+                    Item::Enum(cloned_enum),
+                );
+            }
+        }
+        i = i + 1;
+    }
+    item_map
+}
+
 /// Semantic analysis state.
 enum Semantic {
-    /// symbol table, current function return type, function signatures, unsafe context depth
-    Semantic(SymTable, RAstType, StringMap<FnSignature>, usize),
+    /// global items, local symbol table, current function return type, unsafe context depth
+    Semantic(StringMap<Item>, StringMapStack<Variable>, RAstType, usize),
 }
 
-fn semantic_new() -> Semantic {
-    Semantic::Semantic(
-        symTable_new(),
-        RAstType::Unit,
-        stringMap_new::<FnSignature>(),
-        0,
-    )
+fn semantic_new(items: StringMap<Item>) -> Semantic {
+    Semantic::Semantic(items, stringMapStack_new::<Variable>(), RAstType::Unit, 0)
 }
 
-fn semantic_symtable(semantic: &Semantic) -> &SymTable {
-    let Semantic::Semantic(symtable, _, _, _): &Semantic = semantic;
-    symtable
+fn semantic_globals(semantic: &Semantic) -> &StringMap<Item> {
+    let Semantic::Semantic(globals, _, _, _): &Semantic = semantic;
+    globals
 }
 
-fn semantic_symtable_mut(semantic: &mut Semantic) -> &mut SymTable {
-    let Semantic::Semantic(symtable, _, _, _): &mut Semantic = semantic;
-    symtable
+fn semantic_into_globals(semantic: Semantic) -> StringMap<Item> {
+    let Semantic::Semantic(globals, _, _, _): Semantic = semantic;
+    globals
+}
+
+fn semantic_locals_mut(semantic: &mut Semantic) -> &mut StringMapStack<Variable> {
+    let Semantic::Semantic(_, locals, _, _): &mut Semantic = semantic;
+    locals
+}
+
+fn semantic_locals(semantic: &Semantic) -> &StringMapStack<Variable> {
+    let Semantic::Semantic(_, locals, _, _): &Semantic = semantic;
+    locals
 }
 
 fn semantic_current_fn_return_type(semantic: &Semantic) -> &RAstType {
-    let Semantic::Semantic(_, return_type, _, _): &Semantic = semantic;
+    let Semantic::Semantic(_, _, return_type, _): &Semantic = semantic;
     return_type
 }
 
 fn semantic_set_current_fn_return_type(semantic: &mut Semantic, ty: RAstType) {
-    let Semantic::Semantic(_, return_type, _, _): &mut Semantic = semantic;
+    let Semantic::Semantic(_, _, return_type, _): &mut Semantic = semantic;
     *return_type = ty;
-}
-
-fn semantic_function_signatures_mut(semantic: &mut Semantic) -> &mut StringMap<FnSignature> {
-    let Semantic::Semantic(_, _, signatures, _): &mut Semantic = semantic;
-    signatures
-}
-
-fn semantic_into_function_signatures(semantic: Semantic) -> StringMap<FnSignature> {
-    let Semantic::Semantic(_, _, signatures, _): Semantic = semantic;
-    signatures
 }
 
 /// Get the raw unsafe depth value.
@@ -1486,13 +1564,16 @@ fn semantic_is_unsafe_context(semantic: &Semantic) -> bool {
     semantic_unsafe_depth(semantic) > 0
 }
 
-/// Run semantic analysis and return collected function signatures.
-fn semantic_check(ast: &RAst) -> StringMap<FnSignature> {
-    let mut semantic: Semantic = semantic_new();
+/// Run semantic analysis and return collected items.
+fn semantic_check(ast: &RAst, items: StringMap<Item>) -> StringMap<Item> {
+    let mut semantic: Semantic = semantic_new(items);
     semantic_check_language(&mut semantic, ast);
-    semantic_into_function_signatures(semantic)
+    semantic_into_globals(semantic)
 }
 
+// TODO: I need to differentiate between "rough match" and "exact" match for different cases
+// E.g. in let binding, it should be exact match
+// for if branches, it should be rough matches
 fn semantic_expect_same_type(left: &RAstType, right: &RAstType) {
     if not(type_matches(left, right)) {
         semantic_check_error("type mismatch");
@@ -1511,24 +1592,9 @@ fn semantic_expect_bool_type(ty: &RAstType) {
     }
 }
 
-/// Data structure that manages global and local symbol tables.
-enum SymTable {
-    /// global symbol table, local symbol tables
-    Table(StringMap<SymTableGlobalEntry>, StringMapStack<Variable>),
-}
-
-/// Create an empty symbol table.
-fn symTable_new() -> SymTable {
-    SymTable::Table(
-        stringMap_new::<SymTableGlobalEntry>(),
-        stringMapStack_new::<Variable>(),
-    )
-}
-
 /// Lookup a variable in local scopes.
-fn symTable_lookup_variable(symtable: &SymTable, name: &String) -> Option<Variable> {
-    let SymTable::Table(_, local_scopes): &SymTable = symtable;
-    match stringMapStack_lookup::<Variable>(local_scopes, name) {
+fn semantic_lookup_variable(semantic: &Semantic, name: &String) -> Option<Variable> {
+    match stringMapStack_lookup::<Variable>(semantic_locals(semantic), name) {
         Option::Some(entry) => {
             let Variable::Variable(variable_type, mutable) = entry;
             Option::Some(Variable::Variable(rAstType_clone(variable_type), *mutable))
@@ -1537,86 +1603,50 @@ fn symTable_lookup_variable(symtable: &SymTable, name: &String) -> Option<Variab
     }
 }
 
-/// Lookup a function signature in the global symbol table.
-fn symTable_lookup_function_signature(symtable: &SymTable, name: &String) -> Option<FnSignature> {
-    let SymTable::Table(global, _): &SymTable = symtable;
-    match stringMap_get::<SymTableGlobalEntry>(global, name) {
-        Option::Some(entry) => match entry {
-            SymTableGlobalEntry::Function(signature) => Option::Some(fnSignature_clone(signature)),
-            SymTableGlobalEntry::Enum(_) => Option::None,
-        },
-        Option::None => Option::None,
+/// Lookup a function signature in the global item map.
+fn semantic_lookup_function_signature(semantic: &Semantic, name: &String) -> Option<FnSignature> {
+    match stringMap_get::<Item>(semantic_globals(semantic), name) {
+        Option::Some(Item::Function(signature)) => Option::Some(fnSignature_clone(signature)),
+        _ => Option::None,
     }
 }
 
 /// Enter a new local scope.
-fn symTable_enter_scope(symtable: &mut SymTable) {
-    let SymTable::Table(_, local_scopes): &mut SymTable = symtable;
-    stringMapStack_push_empty::<Variable>(local_scopes);
+fn semantic_enter_scope(semantic: &mut Semantic) {
+    stringMapStack_push_empty::<Variable>(semantic_locals_mut(semantic));
 }
 
 /// Leave the current local scope.
-fn symTable_leave_scope(symtable: &mut SymTable) -> bool {
-    let SymTable::Table(_, local_scopes): &mut SymTable = symtable;
-    stringMapStack_pop::<Variable>(local_scopes)
-}
-
-/// Insert a function into the global symbol table, returning false on duplicate name.
-fn symTable_insert_function(
-    symtable: &mut SymTable,
-    name: String,
-    parameter_types: Vec<RAstType>,
-    return_type: RAstType,
-    is_unsafe: bool,
-) -> bool {
-    let SymTable::Table(global, _) = symtable;
-    if stringMap_contains::<SymTableGlobalEntry>(global, &name) {
-        return false;
-    }
-
-    let signature: FnSignature = FnSignature::Fn(parameter_types, return_type, is_unsafe);
-    stringMap_insert::<SymTableGlobalEntry>(global, name, SymTableGlobalEntry::Function(signature));
-    true
-}
-
-/// Insert an enum into the global symbol table, returning false on duplicate name.
-fn symTable_insert_enum(symtable: &mut SymTable, name: String, variants: Vec<RAstType>) -> bool {
-    let SymTable::Table(global, _) = symtable;
-    if stringMap_contains::<SymTableGlobalEntry>(global, &name) {
-        return false;
-    }
-
-    stringMap_insert::<SymTableGlobalEntry>(global, name, SymTableGlobalEntry::Enum(variants));
-    true
+fn semantic_leave_scope(semantic: &mut Semantic) -> bool {
+    stringMapStack_pop::<Variable>(semantic_locals_mut(semantic))
 }
 
 /// Insert a variable into the current local scope.
 /// Returns true if the variable name is not already taken, else false.
 /// If the name is already taken, the variable is still inserted (= shadowing).
-fn symTable_insert_variable(
-    symtable: &mut SymTable,
+fn semantic_insert_variable(
+    semantic: &mut Semantic,
     name: String,
     variable_type: RAstType,
     mutable: bool,
 ) -> bool {
-    let SymTable::Table(_, local_scopes): &mut SymTable = symtable;
     stringMapStack_insert::<Variable>(
-        local_scopes,
+        semantic_locals_mut(semantic),
         name,
         Variable::Variable(variable_type, mutable),
     )
-}
-
-/// Global symbol table entries for functions and enums.
-enum SymTableGlobalEntry {
-    Function(FnSignature),
-    Enum(Vec<RAstType>),
 }
 
 /// Local variable entry.
 enum Variable {
     /// type, is mutable
     Variable(RAstType, bool),
+}
+
+/// A global item, i.e. either a function or an enum.
+enum Item {
+    Function(FnSignature),
+    Enum(RAstEnum),
 }
 
 /// A type that represents the (type) signature of a function.
@@ -1727,8 +1757,6 @@ fn rAstType_get_cast_operation(left_type: &RAstType, right_type: &RAstType) -> C
 
 /// Run semantic analysis on the full AST.
 fn semantic_check_language(semantic: &mut Semantic, ast: &RAst) {
-    semantic_check_collect_global_items(semantic, ast);
-
     let RAst::Language(items): &RAst = ast;
     let mut i: usize = 0;
     let len: usize = vec_len::<RAstItem>(items);
@@ -1736,73 +1764,7 @@ fn semantic_check_language(semantic: &mut Semantic, ast: &RAst) {
         let item: &RAstItem = vec_at::<RAstItem>(items, i);
         match item {
             RAstItem::Function(function) => semantic_check_function(semantic, function),
-            _ => {}
-        }
-        i = i + 1;
-    }
-}
-
-/// Collect globally visible item signatures/types.
-fn semantic_check_collect_global_items(semantic: &mut Semantic, ast: &RAst) {
-    let RAst::Language(items): &RAst = ast;
-
-    let mut i: usize = 0;
-    while i < vec_len::<RAstItem>(items) {
-        match vec_at::<RAstItem>(items, i) {
-            RAstItem::Function(RAstFunction::Function(is_unsafe, name, params, return_type, _)) => {
-                let mut param_types: Vec<RAstType> = vec_new::<RAstType>();
-                let mut param_index: usize = 0;
-                while param_index < vec_len::<RAstVariable>(params) {
-                    let RAstVariable::Variable(_, parameter_type): &RAstVariable =
-                        vec_at::<RAstVariable>(params, param_index);
-                    vec_push::<RAstType>(&mut param_types, rAstType_clone(parameter_type));
-                    param_index = param_index + 1;
-                }
-
-                if not(symTable_insert_function(
-                    semantic_symtable_mut(semantic),
-                    string_clone(name),
-                    param_types,
-                    rAstType_clone(return_type),
-                    *is_unsafe,
-                )) {
-                    semantic_check_error("duplicate function name");
-                }
-
-                match symTable_lookup_function_signature(semantic_symtable(semantic), name) {
-                    Option::Some(signature) => {
-                        stringMap_insert::<FnSignature>(
-                            semantic_function_signatures_mut(semantic),
-                            string_clone(name),
-                            signature,
-                        );
-                    }
-                    Option::None => {
-                        semantic_check_error("internal semantic signature collection error")
-                    }
-                }
-            }
-            RAstItem::Enum(RAstEnum::Enum(enum_name, variants)) => {
-                let mut lowered_variants: Vec<RAstType> = vec_new::<RAstType>();
-                let mut variant_index: usize = 0;
-                while variant_index < vec_len::<RAstVariant>(variants) {
-                    let variant: &RAstVariant = vec_at::<RAstVariant>(variants, variant_index);
-                    let RAstVariant::Variant(variant_name, _): &RAstVariant = variant;
-                    vec_push::<RAstType>(
-                        &mut lowered_variants,
-                        RAstType::Custom(string_clone(variant_name)),
-                    );
-                    variant_index = variant_index + 1;
-                }
-
-                if not(symTable_insert_enum(
-                    semantic_symtable_mut(semantic),
-                    string_clone(enum_name),
-                    lowered_variants,
-                )) {
-                    semantic_check_error("duplicate enum name");
-                }
-            }
+            _ => {} // TODO: enum checking
         }
         i = i + 1;
     }
@@ -1814,7 +1776,7 @@ fn semantic_check_function(semantic: &mut Semantic, function: &RAstFunction) {
         function;
 
     semantic_set_current_fn_return_type(semantic, rAstType_clone(return_type));
-    symTable_enter_scope(semantic_symtable_mut(semantic));
+    semantic_enter_scope(semantic);
 
     let mut i: usize = 0;
     let len: usize = vec_len::<RAstVariable>(parameters);
@@ -1824,8 +1786,8 @@ fn semantic_check_function(semantic: &mut Semantic, function: &RAstFunction) {
 
         match pattern {
             RAstPattern::Identifier(is_mutable, name) => {
-                let already_used: bool = symTable_insert_variable(
-                    semantic_symtable_mut(semantic),
+                let already_used: bool = semantic_insert_variable(
+                    semantic,
                     string_clone(name),
                     rAstType_clone(parameter_type),
                     *is_mutable,
@@ -1842,7 +1804,7 @@ fn semantic_check_function(semantic: &mut Semantic, function: &RAstFunction) {
     let block_type: RAstType = semantic_check_block(semantic, body, *is_unsafe);
     semantic_expect_same_type(&block_type, return_type);
 
-    symTable_leave_scope(semantic_symtable_mut(semantic));
+    semantic_leave_scope(semantic);
     semantic_set_current_fn_return_type(semantic, RAstType::Unit);
 }
 
@@ -1852,7 +1814,7 @@ fn semantic_check_block(semantic: &mut Semantic, block: &RAstBlock, is_unsafe: b
     if is_unsafe {
         semantic_push_unsafe_context(semantic);
     }
-    symTable_enter_scope(semantic_symtable_mut(semantic));
+    semantic_enter_scope(semantic);
 
     let mut statement_flow_type: RAstType = RAstType::Unit;
     let mut i: usize = 0;
@@ -1888,7 +1850,7 @@ fn semantic_check_block(semantic: &mut Semantic, block: &RAstBlock, is_unsafe: b
     if is_unsafe {
         semantic_pop_unsafe_context(semantic);
     }
-    symTable_leave_scope(semantic_symtable_mut(semantic));
+    semantic_leave_scope(semantic);
     block_type
 }
 
@@ -1901,8 +1863,8 @@ fn semantic_check_binding(semantic: &mut Semantic, variable: &RAstVariable, valu
     match pattern {
         RAstPattern::Identifier(is_mutable, lvalue_name) => {
             // allow shadowing of variables
-            let _ = symTable_insert_variable(
-                semantic_symtable_mut(semantic),
+            let _ = semantic_insert_variable(
+                semantic,
                 string_clone(lvalue_name),
                 rAstType_clone(binding_type),
                 *is_mutable,
@@ -1977,17 +1939,15 @@ fn semantic_check_assignment_lvalue_type(
     expression: &RAstExpr,
 ) -> RAstType {
     match expression {
-        RAstExpr::VariableUse(name) => {
-            match symTable_lookup_variable(semantic_symtable(semantic), name) {
-                Option::Some(Variable::Variable(variable_type, mutable)) => {
-                    if not(mutable) {
-                        semantic_check_error("invalid assignment to immutable variable");
-                    }
-                    variable_type
+        RAstExpr::VariableUse(name) => match semantic_lookup_variable(semantic, name) {
+            Option::Some(Variable::Variable(variable_type, mutable)) => {
+                if not(mutable) {
+                    semantic_check_error("invalid assignment to immutable variable");
                 }
-                Option::None => semantic_check_error("undefined variable"),
+                variable_type
             }
-        }
+            Option::None => semantic_check_error("undefined variable"),
+        },
         RAstExpr::Unary(RAstUnaryOp::Dereference, value) => {
             let pointer_type: RAstType =
                 semantic_check_expression(semantic, box_deref::<RAstExpr>(value));
@@ -2045,19 +2005,15 @@ fn semantic_check_unary_op(
 ) -> RAstType {
     match operator {
         RAstUnaryOp::Reference(mutable_ref) => match value {
-            RAstExpr::VariableUse(name) => {
-                match symTable_lookup_variable(semantic_symtable(semantic), name) {
-                    Option::Some(Variable::Variable(ty, mutable_var)) => {
-                        if and(*mutable_ref, not(mutable_var)) {
-                            semantic_check_error(
-                                "cannot take mutable reference to immutable variable",
-                            );
-                        }
-                        RAstType::Reference(box_new::<RAstType>(ty), *mutable_ref)
+            RAstExpr::VariableUse(name) => match semantic_lookup_variable(semantic, name) {
+                Option::Some(Variable::Variable(ty, mutable_var)) => {
+                    if and(*mutable_ref, not(mutable_var)) {
+                        semantic_check_error("cannot take mutable reference to immutable variable");
                     }
-                    _ => semantic_check_error("undefined variable"),
+                    RAstType::Reference(box_new::<RAstType>(ty), *mutable_ref)
                 }
-            }
+                _ => semantic_check_error("undefined variable"),
+            },
             _ => {
                 let ty: RAstType = semantic_check_expression(semantic, value);
                 RAstType::Reference(box_new::<RAstType>(ty), *mutable_ref)
@@ -2080,7 +2036,7 @@ fn semantic_check_unary_op(
 }
 
 fn semantic_check_variable_use(semantic: &mut Semantic, name: &String) -> RAstType {
-    match symTable_lookup_variable(semantic_symtable(semantic), name) {
+    match semantic_lookup_variable(semantic, name) {
         Option::Some(Variable::Variable(ty, _)) => ty,
         _ => semantic_check_error("undefined variable"),
     }
@@ -2092,11 +2048,11 @@ fn semantic_check_call(
     arguments: &Vec<RAstExpr>,
 ) -> RAstType {
     let function_name: String = rAstPath_to_string(callee);
-    let signature: FnSignature =
-        match symTable_lookup_function_signature(semantic_symtable(semantic), &function_name) {
-            Option::Some(signature) => signature,
-            Option::None => semantic_check_error("call to undefined function"),
-        };
+    let signature: FnSignature = match semantic_lookup_function_signature(semantic, &function_name)
+    {
+        Option::Some(signature) => signature,
+        Option::None => semantic_check_error("call to undefined function"),
+    };
 
     let mut argument_types: Vec<RAstType> = vec_new::<RAstType>();
     let mut i: usize = 0;
@@ -2140,7 +2096,7 @@ fn semantic_check_if(semantic: &mut Semantic, if_expression: &RAstIf) -> RAstTyp
             };
             semantic_expect_same_type(&then_type, &else_type);
 
-            rAstType_coalesce(then_type,else_type)
+            rAstType_coalesce(then_type, else_type)
         }
         Option::None => RAstType::Unit,
     }
@@ -2216,24 +2172,12 @@ fn semantic_check_literal(literal: &RAstLiteral) -> RAstType {
 
 /// Type that encapsulates the state during LLVM-IR code generation from an AST.
 enum Codegen {
-    /// llvm code, is main function, SSA numbering counter, local variable slots, function signatures
-    Codegen(
-        Code,
-        bool,
-        usize,
-        StringMapStack<STPair>,
-        StringMap<FnSignature>,
-    ),
+    /// llvm code, is main function, SSA numbering counter, local variable slots, global items
+    Codegen(Code, bool, usize, StringMapStack<STPair>, StringMap<Item>),
 }
 
-fn codegen_new(function_signatures: StringMap<FnSignature>) -> Codegen {
-    Codegen::Codegen(
-        code_new(),
-        false,
-        0,
-        stringMapStack_new::<STPair>(),
-        function_signatures,
-    )
+fn codegen_new(items: StringMap<Item>) -> Codegen {
+    Codegen::Codegen(code_new(), false, 0, stringMapStack_new::<STPair>(), items)
 }
 
 /// Get a shared reference to the code.
@@ -2289,10 +2233,10 @@ fn codegen_scope_lookup(codegen: &Codegen, name: &String) -> STPair {
 
 /// Lookup one function signature.
 fn codegen_function_signature(codegen: &Codegen, name: &String) -> Option<FnSignature> {
-    let Codegen::Codegen(_, _, _, _, signatures): &Codegen = codegen;
-    match stringMap_get::<FnSignature>(signatures, name) {
-        Option::Some(signature) => Option::Some(fnSignature_clone(signature)),
-        Option::None => Option::None,
+    let Codegen::Codegen(_, _, _, _, items): &Codegen = codegen;
+    match stringMap_get::<Item>(items, name) {
+        Option::Some(Item::Function(signature)) => Option::Some(fnSignature_clone(signature)),
+        _ => Option::None,
     }
 }
 
@@ -2331,11 +2275,6 @@ fn codegen_next_label(codegen: &mut Codegen, suffix: &str) -> String {
 /// Pair that contains a String and a Rust Type
 enum STPair {
     ST(String, RAstType),
-}
-
-fn stPair_get_type(pair: STPair) -> RAstType {
-    let STPair::ST(_, ty): STPair = pair;
-    ty
 }
 
 /// Emit LLVM-IR for a full Rust AST.
