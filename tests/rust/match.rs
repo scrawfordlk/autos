@@ -1,7 +1,7 @@
 fn main() -> usize {
     let n: u8 = 4 as u8;
 
-    match n as usize {
+    match n {
         10 => return 1,
         4 => match false {
             true => 2,

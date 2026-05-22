@@ -1578,10 +1578,20 @@ fn semantic_check_run(ast: &RAst, items: StringMap<Item>) -> StringMap<Item> {
     semantic_into_items(semantic)
 }
 
-// TODO: I need to differentiate between "rough match" and "exact" match for different cases
-// E.g. in let binding, it should be exact match
-// for if branches, it should be rough matches
+/// Check if the given types are equal, otherwise throw an error.
 fn semantic_expect_exact_type_match(left: &RAstType, right: &RAstType) {
+    if not(type_matches(left, right)) {
+        semantic_check_error("type mismatch");
+    }
+}
+
+/// Return true if the given types match.
+///
+/// Two types a, b match if:
+/// 1. a == b
+/// 2. a == Never
+/// 3. b == Never
+fn semantic_expect_rough_type_match(left: &RAstType, right: &RAstType) {
     if not(type_matches(left, right)) {
         semantic_check_error("type mismatch");
     }
@@ -2108,36 +2118,36 @@ fn semantic_check_match(
     arms: &Vec<RAstMatchArm>,
 ) -> RAstType {
     if vec_len::<RAstMatchArm>(arms) == 0 {
-        semantic_check_error("match expression requires at least one arm");
+        semantic_check_error("match requires at least one arm");
     }
 
-    let matched_type: RAstType = semantic_check_expression(semantic, value);
-    let first_arm: &RAstMatchArm = vec_at::<RAstMatchArm>(arms, 0);
-    let RAstMatchArm::Arm(first_pattern, first_expression): &RAstMatchArm = first_arm;
-    let first_pattern_type: RAstType =
-        semantic_check_pattern_type_for_expression(first_pattern, &matched_type);
-    semantic_expect_exact_type_match(&first_pattern_type, &matched_type);
-    let mut return_type: RAstType = semantic_check_expression(semantic, first_expression);
+    let expr_type: RAstType = semantic_check_expression(semantic, value);
+    let mut return_type: RAstType = RAstType::Never;
 
-    let mut i: usize = 1;
+    let mut i: usize = 0;
     while i < vec_len::<RAstMatchArm>(arms) {
         let arm: &RAstMatchArm = vec_at::<RAstMatchArm>(arms, i);
         let RAstMatchArm::Arm(pattern, expression): &RAstMatchArm = arm;
-        let pattern_type: RAstType =
-            semantic_check_pattern_type_for_expression(pattern, &matched_type);
-        semantic_expect_exact_type_match(&pattern_type, &matched_type);
+
+        let pattern_type: RAstType = semantic_check_pattern(pattern, &expr_type);
+        // matching numeric value on numeric pattern is valid
+        if not(and(
+            rAstType_is_numeric(&pattern_type),
+            rAstType_is_numeric(&expr_type),
+        )) {
+            semantic_expect_exact_type_match(&pattern_type, &expr_type);
+        }
+
         let arm_type: RAstType = semantic_check_expression(semantic, expression);
-        semantic_expect_exact_type_match(&return_type, &arm_type);
+        semantic_expect_rough_type_match(&return_type, &arm_type);
+
         return_type = rAstType_coalesce(return_type, arm_type);
         i = i + 1;
     }
     return_type
 }
 
-fn semantic_check_pattern_type_for_expression(
-    pattern: &RAstPattern,
-    expression_type: &RAstType,
-) -> RAstType {
+fn semantic_check_pattern(pattern: &RAstPattern, expression_type: &RAstType) -> RAstType {
     match pattern {
         RAstPattern::Literal(literal) => match literal {
             RAstPatternLiteral::Int(_) => RAstType::Usize,
