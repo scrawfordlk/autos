@@ -2173,7 +2173,7 @@ fn semantic_check_match(
     let first_pattern_type: RAstType =
         semantic_check_pattern_type_for_expression(first_pattern, &matched_type);
     semantic_expect_same_type(&first_pattern_type, &matched_type);
-    let return_type: RAstType = semantic_check_expression(semantic, first_expression);
+    let mut return_type: RAstType = semantic_check_expression(semantic, first_expression);
 
     let mut i: usize = 1;
     while i < vec_len::<RAstMatchArm>(arms) {
@@ -2184,6 +2184,7 @@ fn semantic_check_match(
         semantic_expect_same_type(&pattern_type, &matched_type);
         let arm_type: RAstType = semantic_check_expression(semantic, expression);
         semantic_expect_same_type(&return_type, &arm_type);
+        return_type = rAstType_coalesce(return_type, arm_type);
         i = i + 1;
     }
     return_type
