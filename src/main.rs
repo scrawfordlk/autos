@@ -106,6 +106,24 @@ fn main() {
 // -----------------------------------------------------------------
 // -----------------------------------------------------------------
 
+/// Compile source code into LLVM-IR.
+fn compile(source: &str, do_semantic_analysis: bool) -> String {
+    let mut lexer: Lexer = lexer_new(string_from_str(source));
+    let ast: RAst = parse_language(&mut lexer);
+
+    let items: StringMap<Item> = collect_items(&ast);
+    let items: StringMap<Item> = if do_semantic_analysis {
+        semantic_check_run(&ast, items)
+    } else {
+        items
+    };
+
+    let mut codegen: Codegen = codegen_new(items);
+    codegen_language(&mut codegen, &ast);
+
+    codegen_into_llvm(codegen)
+}
+
 // -----------------------------------------------------------------
 // ---------------------- Lexical Analysis -------------------------
 // -----------------------------------------------------------------
@@ -299,8 +317,8 @@ fn lexer_expect_char(lexer: &mut Lexer, expected: char) {
 
 /// Consume and return the next token.
 fn lexer_next_token(lexer: &mut Lexer) -> Token {
-    skip_attributes(lexer);
-    skip_whitespace(lexer);
+    lexer_skip_attributes(lexer);
+    lexer_skip_whitespace(lexer);
 
     let token: Token = match lexer_peek_char(lexer) {
         Option::Some(c) => {
@@ -487,7 +505,7 @@ fn lexer_scan_slash(lexer: &mut Lexer) -> Token {
     match lexer_peek_char(lexer) {
         Option::Some('/') => {
             lexer_consume_char(lexer);
-            skip_line_comment(lexer);
+            lexer_skip_line_comment(lexer);
             lexer_next_token(lexer)
         }
         _ => Token::Slash,
@@ -558,7 +576,7 @@ fn lexer_scan_greater(lexer: &mut Lexer) -> Token {
     }
 }
 
-fn skip_whitespace(lexer: &mut Lexer) {
+fn lexer_skip_whitespace(lexer: &mut Lexer) {
     while true {
         match lexer_peek_char(lexer) {
             Option::Some(c) => {
@@ -573,7 +591,7 @@ fn skip_whitespace(lexer: &mut Lexer) {
     }
 }
 
-fn skip_line_comment(lexer: &mut Lexer) {
+fn lexer_skip_line_comment(lexer: &mut Lexer) {
     while true {
         match lexer_consume_char(lexer) {
             Option::Some('\n') => return,
@@ -584,13 +602,13 @@ fn skip_line_comment(lexer: &mut Lexer) {
 }
 
 /// Skips attributes which are useful in Rust, but unsupported.
-fn skip_attributes(lexer: &mut Lexer) {
-    skip_whitespace(lexer);
+fn lexer_skip_attributes(lexer: &mut Lexer) {
+    lexer_skip_whitespace(lexer);
     while true {
         match lexer_peek_char(lexer) {
             Option::Some('#') => {
                 lexer_consume_char(lexer);
-                skip_whitespace(lexer);
+                lexer_skip_whitespace(lexer);
 
                 match lexer_consume_char(lexer) {
                     Option::Some('[') => {
@@ -613,52 +631,6 @@ fn skip_attributes(lexer: &mut Lexer) {
 }
 
 // -------------------------- Parser -------------------------------
-
-/// Compile source code into LLVM-IR.
-fn compile(source: &str, do_semantic_analysis: bool) -> String {
-    let mut lexer: Lexer = lexer_new(string_from_str(source));
-    let ast: RAst = parse_language(&mut lexer);
-
-    let items: StringMap<Item> = collect_items(&ast);
-    let items: StringMap<Item> = if do_semantic_analysis {
-        semantic_check(&ast, items)
-    } else {
-        items
-    };
-
-    let mut codegen: Codegen = codegen_new(items);
-    codegen_language(&mut codegen, &ast);
-
-    codegen_into_llvm(codegen)
-}
-
-/// Require and consume the given token.
-fn expect_token(lexer: &mut Lexer, token: &Token) {
-    if not(lexer_try_consume(lexer, token)) {
-        let bad_token: &Token = lexer_current_token(lexer);
-        let mut message: String = string_from_str("expected ");
-        string_push_string(&mut message, &token_to_string(token));
-        string_push_str(&mut message, ", but got: ");
-        string_push_string(&mut message, &token_to_string(bad_token));
-        parse_error(lexer, &message);
-    }
-}
-
-/// Read and consume the current identifier token.
-fn expect_identifier(lexer: &mut Lexer) -> String {
-    match lexer_current_token(lexer) {
-        Token::Identifier(name) => {
-            let name: String = string_clone(name);
-            lexer_next_token(lexer);
-            name
-        }
-        token => {
-            let mut message: String = string_from_str("expected identifier, but got: ");
-            string_push_string(&mut message, &token_to_string(token));
-            parse_error(lexer, &message);
-        }
-    }
-}
 
 /// Abstract Syntax Tree of a parsed Rust source.
 enum RAst {
@@ -859,6 +831,29 @@ fn rAstPatternLiteral_value(literal: &RAstPatternLiteral) -> usize {
     }
 }
 
+/// Convert Rust AST type into a simple LLVM-IR type name.
+fn rAstType_to_llvm_name(ty: &RAstType) -> String {
+    match ty {
+        RAstType::U8 => string_from_str("i8"),
+        RAstType::Usize => string_from_str("i64"), // assume 64-bit for now
+        RAstType::Bool => string_from_str("i1"),
+        RAstType::Char => string_from_str("i8"),
+        RAstType::Unit => string_from_str("void"),
+        RAstType::Never => string_from_str("void"),
+        RAstType::Custom(_) => string_from_str("i64"),
+        RAstType::Reference(_, _) => string_from_str("ptr"),
+        RAstType::RawPointerMut(_) => string_from_str("ptr"),
+    }
+}
+
+fn rAstType_is_numeric(ty: &RAstType) -> bool {
+    match ty {
+        RAstType::U8 => true,
+        RAstType::Usize => true,
+        _ => false,
+    }
+}
+
 /// Coalesce two types into a type that encompasses both.
 /// Assumes that only the following cases can occur:
 /// 1. left == right
@@ -891,6 +886,34 @@ fn type_matches(left: &RAstType, right: &RAstType) -> bool {
 /// This is true for all types, other than Unit and Never.
 fn type_has_value(ty: &RAstType) -> bool {
     not(type_matches(ty, &RAstType::Unit))
+}
+
+/// Require and consume the given token.
+fn expect_token(lexer: &mut Lexer, token: &Token) {
+    if not(lexer_try_consume(lexer, token)) {
+        let bad_token: &Token = lexer_current_token(lexer);
+        let mut message: String = string_from_str("expected ");
+        string_push_string(&mut message, &token_to_string(token));
+        string_push_str(&mut message, ", but got: ");
+        string_push_string(&mut message, &token_to_string(bad_token));
+        parse_error(lexer, &message);
+    }
+}
+
+/// Read and consume the current identifier token.
+fn expect_identifier(lexer: &mut Lexer) -> String {
+    match lexer_current_token(lexer) {
+        Token::Identifier(name) => {
+            let name: String = string_clone(name);
+            lexer_next_token(lexer);
+            name
+        }
+        token => {
+            let mut message: String = string_from_str("expected identifier, but got: ");
+            string_push_string(&mut message, &token_to_string(token));
+            parse_error(lexer, &message);
+        }
+    }
 }
 
 fn parse_language(lexer: &mut Lexer) -> RAst {
@@ -1234,16 +1257,10 @@ fn parse_factor(lexer: &mut Lexer) -> RAstExpr {
             let first_identifier: String = expect_identifier(lexer);
 
             if lexer_current_token_eq(lexer, &Token::DoubleColon) {
-                let mut segments: Vec<String> = vec_new::<String>();
-                vec_push::<String>(&mut segments, first_identifier);
-
-                while lexer_try_consume(lexer, &Token::DoubleColon) {
-                    let segment: String = expect_identifier(lexer);
-                    vec_push::<String>(&mut segments, segment);
-                }
+                let path: RAstPath = parse_path(lexer, first_identifier);
 
                 expect_token(lexer, &Token::LParen);
-                parse_call(lexer, RAstPath::Path(segments))
+                parse_call(lexer, path)
             } else if lexer_current_token_eq(lexer, &Token::LParen) {
                 let mut path_segments: Vec<String> = vec_new::<String>();
                 vec_push::<String>(&mut path_segments, first_identifier);
@@ -1399,9 +1416,8 @@ fn parse_call(lexer: &mut Lexer, callee: RAstPath) -> RAstExpr {
     RAstExpr::Call(callee, arguments)
 }
 
-fn parse_path(lexer: &mut Lexer) -> RAstPath {
+fn parse_path(lexer: &mut Lexer, first_segment: String) -> RAstPath {
     let mut segments: Vec<String> = vec_new::<String>();
-    let first_segment: String = expect_identifier(lexer);
     vec_push::<String>(&mut segments, first_segment);
     while lexer_try_consume(lexer, &Token::DoubleColon) {
         let segment: String = expect_identifier(lexer);
@@ -1431,15 +1447,13 @@ fn parse_literal(lexer: &mut Lexer) -> RAstLiteral {
 }
 
 fn collect_items(ast: &RAst) -> StringMap<Item> {
-    let mut item_map: StringMap<Item> = stringMap_new::<Item>();
     let RAst::Language(ast_items): &RAst = ast;
+    let mut items: StringMap<Item> = stringMap_new::<Item>();
+
     let mut i: usize = 0;
     while i < vec_len::<RAstItem>(ast_items) {
         match vec_at::<RAstItem>(ast_items, i) {
             RAstItem::Function(RAstFunction::Function(is_unsafe, name, params, return_type, _)) => {
-                if stringMap_contains::<Item>(&item_map, name) {
-                    semantic_check_error("duplicate function name");
-                }
                 let mut param_types: Vec<RAstType> = vec_new::<RAstType>();
                 let mut param_index: usize = 0;
                 while param_index < vec_len::<RAstVariable>(params) {
@@ -1451,22 +1465,18 @@ fn collect_items(ast: &RAst) -> StringMap<Item> {
 
                 let signature: FnSignature =
                     FnSignature::Fn(param_types, rAstType_clone(return_type), *is_unsafe);
-                stringMap_insert::<Item>(
-                    &mut item_map,
-                    string_clone(name),
-                    Item::Function(signature),
-                );
+                stringMap_insert::<Item>(&mut items, string_clone(name), Item::Function(signature));
             }
             RAstItem::Enum(enum_item) => {
                 let RAstEnum::Enum(name, variants): &RAstEnum = enum_item;
-                if stringMap_contains::<Item>(&item_map, name) {
-                    semantic_check_error("duplicate enum name");
-                }
+
                 let mut cloned_variants: Vec<RAstVariant> = vec_new::<RAstVariant>();
-                let mut variant_index: usize = 0;
-                while variant_index < vec_len::<RAstVariant>(variants) {
-                    let variant: &RAstVariant = vec_at::<RAstVariant>(variants, variant_index);
+                let mut i: usize = 0;
+                while i < vec_len::<RAstVariant>(variants) {
+                    let variant: &RAstVariant = vec_at::<RAstVariant>(variants, i);
                     let RAstVariant::Variant(variant_name, fields): &RAstVariant = variant;
+
+                    // TODO: create clone function for this
                     let mut cloned_fields: Vec<RAstType> = vec_new::<RAstType>();
                     let mut field_index: usize = 0;
                     while field_index < vec_len::<RAstType>(fields) {
@@ -1478,19 +1488,16 @@ fn collect_items(ast: &RAst) -> StringMap<Item> {
                         &mut cloned_variants,
                         RAstVariant::Variant(string_clone(variant_name), cloned_fields),
                     );
-                    variant_index = variant_index + 1;
+                    i = i + 1;
                 }
+
                 let cloned_enum: RAstEnum = RAstEnum::Enum(string_clone(name), cloned_variants);
-                stringMap_insert::<Item>(
-                    &mut item_map,
-                    string_clone(name),
-                    Item::Enum(cloned_enum),
-                );
+                stringMap_insert::<Item>(&mut items, string_clone(name), Item::Enum(cloned_enum));
             }
         }
         i = i + 1;
     }
-    item_map
+    items
 }
 
 /// Semantic analysis state.
@@ -1508,7 +1515,7 @@ fn semantic_globals(semantic: &Semantic) -> &StringMap<Item> {
     globals
 }
 
-fn semantic_into_globals(semantic: Semantic) -> StringMap<Item> {
+fn semantic_into_items(semantic: Semantic) -> StringMap<Item> {
     let Semantic::Semantic(globals, _, _, _): Semantic = semantic;
     globals
 }
@@ -1565,16 +1572,16 @@ fn semantic_is_unsafe_context(semantic: &Semantic) -> bool {
 }
 
 /// Run semantic analysis and return collected items.
-fn semantic_check(ast: &RAst, items: StringMap<Item>) -> StringMap<Item> {
+fn semantic_check_run(ast: &RAst, items: StringMap<Item>) -> StringMap<Item> {
     let mut semantic: Semantic = semantic_new(items);
     semantic_check_language(&mut semantic, ast);
-    semantic_into_globals(semantic)
+    semantic_into_items(semantic)
 }
 
 // TODO: I need to differentiate between "rough match" and "exact" match for different cases
 // E.g. in let binding, it should be exact match
 // for if branches, it should be rough matches
-fn semantic_expect_same_type(left: &RAstType, right: &RAstType) {
+fn semantic_expect_exact_type_match(left: &RAstType, right: &RAstType) {
     if not(type_matches(left, right)) {
         semantic_check_error("type mismatch");
     }
@@ -1655,34 +1662,11 @@ enum FnSignature {
     Fn(Vec<RAstType>, RAstType, bool),
 }
 
-fn rAstType_is_numeric(ty: &RAstType) -> bool {
-    match ty {
-        RAstType::U8 => true,
-        RAstType::Usize => true,
-        _ => false,
-    }
-}
-
-/// Convert Rust AST type into a simple LLVM-IR type name.
-fn rAstType_to_llvm_name(ty: &RAstType) -> String {
-    match ty {
-        RAstType::U8 => string_from_str("i8"),
-        RAstType::Usize => string_from_str("i64"), // assume 64-bit for now
-        RAstType::Bool => string_from_str("i1"),
-        RAstType::Char => string_from_str("i8"),
-        RAstType::Unit => string_from_str("void"),
-        RAstType::Never => string_from_str("void"),
-        RAstType::Custom(_) => string_from_str("i64"),
-        RAstType::Reference(_, _) => string_from_str("ptr"),
-        RAstType::RawPointerMut(_) => string_from_str("ptr"),
-    }
-}
-
 /// Different operations that can be done when casting a value.
 ///
 /// ZeroExtend: A type with smaller bitwidth is zero-extended to a larger bitwidth.
 /// Truncate: A type with larger bitwidth is truncated to a smaller bitwidth.
-/// None: Do not perform a cast (because the cast would be a no-op which is illegal in LLVM-IR).
+/// None: Do not perform a cast (because the cast would be a no-op which would be illegal in LLVM-IR).
 /// Invalid: The cast is illegal.
 enum CastOperation {
     /// A type with smaller bitwidth is zero-extended to a larger bitwidth.
@@ -1697,7 +1681,7 @@ enum CastOperation {
 
 /// Return the CastOperation that is applicable from `left_type` to `right_type` for Rust AST types.
 /// See documentation of CastOperation for more details.
-fn rAstType_get_cast_operation(left_type: &RAstType, right_type: &RAstType) -> CastOperation {
+fn castOperation_get_cast_operation(left_type: &RAstType, right_type: &RAstType) -> CastOperation {
     if rAstType_eq(left_type, right_type) {
         return CastOperation::None;
     }
@@ -1756,6 +1740,7 @@ fn rAstType_get_cast_operation(left_type: &RAstType, right_type: &RAstType) -> C
 // -----------------------------------------------------------------
 
 /// Run semantic analysis on the full AST.
+// TODO: check duplicate functions/enums
 fn semantic_check_language(semantic: &mut Semantic, ast: &RAst) {
     let RAst::Language(items): &RAst = ast;
     let mut i: usize = 0;
@@ -1802,7 +1787,7 @@ fn semantic_check_function(semantic: &mut Semantic, function: &RAstFunction) {
     }
 
     let block_type: RAstType = semantic_check_block(semantic, body, *is_unsafe);
-    semantic_expect_same_type(&block_type, return_type);
+    semantic_expect_exact_type_match(&block_type, return_type);
 
     semantic_leave_scope(semantic);
     semantic_set_current_fn_return_type(semantic, RAstType::Unit);
@@ -1858,7 +1843,7 @@ fn semantic_check_block(semantic: &mut Semantic, block: &RAstBlock, is_unsafe: b
 fn semantic_check_binding(semantic: &mut Semantic, variable: &RAstVariable, value: &RAstExpr) {
     let RAstVariable::Variable(pattern, binding_type): &RAstVariable = variable;
     let actual_type: RAstType = semantic_check_expression(semantic, value);
-    semantic_expect_same_type(binding_type, &actual_type);
+    semantic_expect_exact_type_match(binding_type, &actual_type);
 
     match pattern {
         RAstPattern::Identifier(is_mutable, lvalue_name) => {
@@ -1914,10 +1899,13 @@ fn semantic_check_return(semantic: &mut Semantic, returned: &Option<Box<RAstExpr
         Option::Some(expression) => {
             let ty: RAstType =
                 semantic_check_expression(semantic, box_deref::<RAstExpr>(expression));
-            semantic_expect_same_type(&ty, semantic_current_fn_return_type(semantic));
+            semantic_expect_exact_type_match(&ty, semantic_current_fn_return_type(semantic));
         }
         Option::None => {
-            semantic_expect_same_type(&RAstType::Unit, semantic_current_fn_return_type(semantic));
+            semantic_expect_exact_type_match(
+                &RAstType::Unit,
+                semantic_current_fn_return_type(semantic),
+            );
         }
     }
     RAstType::Never
@@ -1930,7 +1918,7 @@ fn semantic_check_assignment(
 ) -> RAstType {
     let right_type: RAstType = semantic_check_expression(semantic, right);
     let left_type: RAstType = semantic_check_assignment_lvalue_type(semantic, left);
-    semantic_expect_same_type(&left_type, &right_type);
+    semantic_expect_exact_type_match(&left_type, &right_type);
     RAstType::Unit
 }
 
@@ -1979,7 +1967,7 @@ fn semantic_check_binary_op(
 ) -> RAstType {
     let left_type: RAstType = semantic_check_expression(semantic, left);
     let right_type: RAstType = semantic_check_expression(semantic, right);
-    semantic_expect_same_type(&left_type, &right_type);
+    semantic_expect_exact_type_match(&left_type, &right_type);
 
     match operator {
         RAstBinaryOp::Arithmetic(_) => {
@@ -1992,7 +1980,7 @@ fn semantic_check_binary_op(
 
 fn semantic_check_cast(semantic: &mut Semantic, value: &RAstExpr, to_type: &RAstType) -> RAstType {
     let from_type: RAstType = semantic_check_expression(semantic, value);
-    match rAstType_get_cast_operation(&from_type, to_type) {
+    match castOperation_get_cast_operation(&from_type, to_type) {
         CastOperation::Invalid => semantic_check_error("invalid cast"),
         _ => rAstType_clone(to_type),
     }
@@ -2094,7 +2082,7 @@ fn semantic_check_if(semantic: &mut Semantic, if_expression: &RAstIf) -> RAstTyp
                 }
                 RAstElse::Block(block) => semantic_check_block(semantic, block, false),
             };
-            semantic_expect_same_type(&then_type, &else_type);
+            semantic_expect_exact_type_match(&then_type, &else_type);
 
             rAstType_coalesce(then_type, else_type)
         }
@@ -2110,7 +2098,7 @@ fn semantic_check_while(
     let condition_type: RAstType = semantic_check_expression(semantic, condition);
     semantic_expect_bool_type(&condition_type);
     let body_type: RAstType = semantic_check_block(semantic, body, false);
-    semantic_expect_same_type(&RAstType::Unit, &body_type);
+    semantic_expect_exact_type_match(&RAstType::Unit, &body_type);
     RAstType::Unit
 }
 
@@ -2128,7 +2116,7 @@ fn semantic_check_match(
     let RAstMatchArm::Arm(first_pattern, first_expression): &RAstMatchArm = first_arm;
     let first_pattern_type: RAstType =
         semantic_check_pattern_type_for_expression(first_pattern, &matched_type);
-    semantic_expect_same_type(&first_pattern_type, &matched_type);
+    semantic_expect_exact_type_match(&first_pattern_type, &matched_type);
     let mut return_type: RAstType = semantic_check_expression(semantic, first_expression);
 
     let mut i: usize = 1;
@@ -2137,9 +2125,9 @@ fn semantic_check_match(
         let RAstMatchArm::Arm(pattern, expression): &RAstMatchArm = arm;
         let pattern_type: RAstType =
             semantic_check_pattern_type_for_expression(pattern, &matched_type);
-        semantic_expect_same_type(&pattern_type, &matched_type);
+        semantic_expect_exact_type_match(&pattern_type, &matched_type);
         let arm_type: RAstType = semantic_check_expression(semantic, expression);
-        semantic_expect_same_type(&return_type, &arm_type);
+        semantic_expect_exact_type_match(&return_type, &arm_type);
         return_type = rAstType_coalesce(return_type, arm_type);
         i = i + 1;
     }
@@ -2539,7 +2527,7 @@ fn codegen_cast(codegen: &mut Codegen, value: &RAstExpr, to_type: &RAstType) -> 
     let STPair::ST(from_name, from_type): STPair = codegen_expression(codegen, value);
     let to_type: RAstType = rAstType_clone(to_type);
 
-    match rAstType_get_cast_operation(&from_type, &to_type) {
+    match castOperation_get_cast_operation(&from_type, &to_type) {
         CastOperation::ZeroExtend => {
             let name: String = codegen_emit_zext(codegen, &from_type, &to_type, &from_name);
             STPair::ST(name, to_type)
@@ -2855,11 +2843,6 @@ fn code_new() -> Code {
 fn codegen_emit_line(codegen: &mut Codegen, line: String) {
     let Code::Code(lines): &mut Code = codegen_code_mut(codegen);
     vec_push::<String>(lines, line);
-}
-
-/// Emit a line that serves as a placeholder
-fn codegen_emit_placeholder(codegen: &mut Codegen) {
-    codegen_emit_line(codegen, string_new());
 }
 
 /// Get the line index of the last emitted line.

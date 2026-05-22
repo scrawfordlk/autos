@@ -269,14 +269,14 @@ fn test_scan_greater_direct() {
 #[test]
 fn test_skip_whitespace_direct() {
     let mut lexer = make_lexer("  \n\tabc");
-    skip_whitespace(&mut lexer);
+    lexer_skip_whitespace(&mut lexer);
     assert!(matches!(lexer_peek_char(&lexer), Option::Some('a')));
 }
 
 #[test]
 fn test_skip_line_comment_direct() {
     let mut lexer = make_lexer("comment text\nz");
-    skip_line_comment(&mut lexer);
+    lexer_skip_line_comment(&mut lexer);
     assert!(matches!(lexer_peek_char(&lexer), Option::Some('z')));
 }
 
