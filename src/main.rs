@@ -153,7 +153,7 @@ enum Token {
     Assign,          // "="
     Bang,            // "!"
     Cmp(Comparison), // ==, !=, <, <=, >, >=
-    ArmArrow,        // "=>"
+    FatArrow,        // "=>"
     Plus,            // "+"
     Minus,           // "-"
     Star,            // "*"
@@ -164,7 +164,7 @@ enum Token {
     Bool,            // "bool"
     Char,            // "char"
     Str,             // "str"
-    TypeArrow,       // "->"
+    Arrow,           // "->"
     Literal(Literal),
     Identifier(String),
     Eof,
@@ -530,7 +530,7 @@ fn lexer_scan_equals(lexer: &mut Lexer) -> Token {
         }
         Option::Some('>') => {
             lexer_consume_char(lexer);
-            Token::ArmArrow
+            Token::FatArrow
         }
         _ => Token::Assign,
     }
@@ -540,7 +540,7 @@ fn lexer_scan_minus(lexer: &mut Lexer) -> Token {
     match lexer_peek_char(lexer) {
         Option::Some('>') => {
             lexer_consume_char(lexer);
-            Token::TypeArrow
+            Token::Arrow
         }
         _ => Token::Minus,
     }
@@ -737,7 +737,7 @@ enum RAstExpr {
     Block(bool, RAstBlock),
     If(RAstIf),
     While(Box<RAstExpr>, RAstBlock),
-    Match(Box<RAstExpr>, Vec<RAstMatchArm>),
+    Match(Box<RAstExpr>, Vec<RAstArm>),
 }
 
 /// Binary operators.
@@ -787,7 +787,7 @@ enum RAstElse {
 }
 
 /// A match arm.
-enum RAstMatchArm {
+enum RAstArm {
     /// "... => ...,"
     Arm(RAstPattern, RAstExpr),
 }
@@ -962,7 +962,7 @@ fn parse_function(lexer: &mut Lexer) -> RAstFunction {
     }
     expect_token(lexer, &Token::RParen);
 
-    let return_type: RAstType = if lexer_try_consume(lexer, &Token::TypeArrow) {
+    let return_type: RAstType = if lexer_try_consume(lexer, &Token::Arrow) {
         parse_type(lexer)
     } else {
         RAstType::Unit
@@ -1323,22 +1323,22 @@ fn parse_match(lexer: &mut Lexer) -> RAstExpr {
     let value: RAstExpr = parse_expression(lexer);
     expect_token(lexer, &Token::LBrace);
 
-    let mut arms: Vec<RAstMatchArm> = vec_new::<RAstMatchArm>();
+    let mut arms: Vec<RAstArm> = vec_new::<RAstArm>();
     while not(lexer_current_token_eq(lexer, &Token::RBrace)) {
-        let arm: RAstMatchArm = parse_arm(lexer);
-        vec_push::<RAstMatchArm>(&mut arms, arm);
+        let arm: RAstArm = parse_arm(lexer);
+        vec_push::<RAstArm>(&mut arms, arm);
     }
     expect_token(lexer, &Token::RBrace);
 
     RAstExpr::Match(box_new::<RAstExpr>(value), arms)
 }
 
-fn parse_arm(lexer: &mut Lexer) -> RAstMatchArm {
+fn parse_arm(lexer: &mut Lexer) -> RAstArm {
     let pattern: RAstPattern = parse_pattern(lexer);
-    expect_token(lexer, &Token::ArmArrow);
+    expect_token(lexer, &Token::FatArrow);
     let expression: RAstExpr = parse_expression(lexer);
     expect_token(lexer, &Token::Comma);
-    RAstMatchArm::Arm(pattern, expression)
+    RAstArm::Arm(pattern, expression)
 }
 
 fn parse_pattern(lexer: &mut Lexer) -> RAstPattern {
@@ -2115,9 +2115,9 @@ fn semantic_check_while(
 fn semantic_check_match(
     semantic: &mut Semantic,
     value: &RAstExpr,
-    arms: &Vec<RAstMatchArm>,
+    arms: &Vec<RAstArm>,
 ) -> RAstType {
-    if vec_len::<RAstMatchArm>(arms) == 0 {
+    if vec_len::<RAstArm>(arms) == 0 {
         semantic_check_error("match requires at least one arm");
     }
 
@@ -2125,9 +2125,9 @@ fn semantic_check_match(
     let mut return_type: RAstType = RAstType::Never;
 
     let mut i: usize = 0;
-    while i < vec_len::<RAstMatchArm>(arms) {
-        let arm: &RAstMatchArm = vec_at::<RAstMatchArm>(arms, i);
-        let RAstMatchArm::Arm(pattern, expression): &RAstMatchArm = arm;
+    while i < vec_len::<RAstArm>(arms) {
+        let arm: &RAstArm = vec_at::<RAstArm>(arms, i);
+        let RAstArm::Arm(pattern, expression): &RAstArm = arm;
 
         let pattern_type: RAstType = semantic_check_pattern(pattern, &expr_type);
         // matching numeric value on numeric pattern is valid
@@ -2746,7 +2746,7 @@ fn codegen_while(codegen: &mut Codegen, condition: &RAstExpr, body: &RAstBlock) 
 }
 
 /// Emit LLVM-IR for a match expression.
-fn codegen_match(codegen: &mut Codegen, value: &RAstExpr, arms: &Vec<RAstMatchArm>) -> STPair {
+fn codegen_match(codegen: &mut Codegen, value: &RAstExpr, arms: &Vec<RAstArm>) -> STPair {
     let STPair::ST(expr_name, expr_type): STPair = codegen_expression(codegen, value);
 
     let end_label: String = codegen_next_label(codegen, "match.end");
@@ -2759,14 +2759,14 @@ fn codegen_match(codegen: &mut Codegen, value: &RAstExpr, arms: &Vec<RAstMatchAr
     let mut return_type: RAstType = RAstType::Never; // still unknown, coalescing arm types yields correct type
 
     let mut i: usize = 0;
-    while i < vec_len::<RAstMatchArm>(arms) {
+    while i < vec_len::<RAstArm>(arms) {
         codegen_push_scope(codegen);
 
-        let is_last_arm: bool = i == vec_len::<RAstMatchArm>(arms) - 1;
+        let is_last_arm: bool = i == vec_len::<RAstArm>(arms) - 1;
         let arm_label: String = codegen_next_label(codegen, "match.arm");
         let else_label: String = codegen_next_label(codegen, "match.else");
 
-        let RAstMatchArm::Arm(pattern, arm_expr): &RAstMatchArm = vec_at::<RAstMatchArm>(arms, i);
+        let RAstArm::Arm(pattern, arm_expr): &RAstArm = vec_at::<RAstArm>(arms, i);
 
         match pattern {
             RAstPattern::Literal(literal) => {
@@ -3633,14 +3633,14 @@ fn llvmLexer_skip_line(lexer: &mut LlvmLexer) {
 
 /// Type that encapsulates the LLVM Parser's state
 enum LlvmParser {
-    Parser(LlvmLexer, LlvmAST, LlvmLocalSymTable),
+    Parser(LlvmLexer, LlvmAst, LlvmLocalSymTable),
 }
 
 /// Create an LLVM parser and prime the first token.
 fn llvmParser_new(source: String) -> LlvmParser {
     LlvmParser::Parser(
         llvmLexer_new(source),
-        llvmAST_new(),
+        llvmAst_new(),
         llvmLocalSymTable_new(),
     )
 }
@@ -3658,7 +3658,7 @@ fn llvmParser_lexer_mut(parser: &mut LlvmParser) -> &mut LlvmLexer {
 }
 
 /// Get mutable parser AST access.
-fn llvmParser_ast_mut(parser: &mut LlvmParser) -> &mut LlvmAST {
+fn llvmParser_ast_mut(parser: &mut LlvmParser) -> &mut LlvmAst {
     let LlvmParser::Parser(_, ast, _): &mut LlvmParser = parser;
     ast
 }
@@ -3674,7 +3674,7 @@ fn llvmParser_local_mut(parser: &mut LlvmParser) -> &mut LlvmLocalSymTable {
 }
 
 /// Parse LLVM source into LLVM AST.
-fn llvmParser_parse_to_ast(source: String) -> LlvmAST {
+fn llvmParser_parse_to_ast(source: String) -> LlvmAst {
     let mut parser: LlvmParser = llvmParser_new(source);
     llvmParser_parse_language(&mut parser);
     let LlvmParser::Parser(_, ast, _): LlvmParser = parser;
@@ -3774,40 +3774,40 @@ fn llvmParser_is_instruction_start(parser: &mut LlvmParser) -> bool {
     }
 }
 
-enum LlvmAST {
+enum LlvmAst {
     AST(StringMap<LlvmFunction>),
 }
 
 /// Create an empty LLVM AST.
-fn llvmAST_new() -> LlvmAST {
-    LlvmAST::AST(stringMap_new::<LlvmFunction>())
+fn llvmAst_new() -> LlvmAst {
+    LlvmAst::AST(stringMap_new::<LlvmFunction>())
 }
 
 /// Get immutable access to the top-level function map.
-fn llvmAST_functions(ast: &LlvmAST) -> &StringMap<LlvmFunction> {
-    let LlvmAST::AST(functions): &LlvmAST = ast;
+fn llvmAst_functions(ast: &LlvmAst) -> &StringMap<LlvmFunction> {
+    let LlvmAst::AST(functions): &LlvmAst = ast;
     functions
 }
 
 /// Get mutable access to the top-level function map.
-fn llvmAST_functions_mut(ast: &mut LlvmAST) -> &mut StringMap<LlvmFunction> {
-    let LlvmAST::AST(functions): &mut LlvmAST = ast;
+fn llvmAst_functions_mut(ast: &mut LlvmAst) -> &mut StringMap<LlvmFunction> {
+    let LlvmAst::AST(functions): &mut LlvmAst = ast;
     functions
 }
 
 /// Insert a function entry into the AST. Returns false on duplicate name.
-fn llvmAST_insert_function(ast: &mut LlvmAST, name: String, function: LlvmFunction) -> bool {
-    if stringMap_contains::<LlvmFunction>(llvmAST_functions(ast), &name) {
+fn llvmAst_insert_function(ast: &mut LlvmAst, name: String, function: LlvmFunction) -> bool {
+    if stringMap_contains::<LlvmFunction>(llvmAst_functions(ast), &name) {
         false
     } else {
-        stringMap_insert::<LlvmFunction>(llvmAST_functions_mut(ast), name, function);
+        stringMap_insert::<LlvmFunction>(llvmAst_functions_mut(ast), name, function);
         true
     }
 }
 
 /// Lookup a function in the AST by name.
-fn llvmAST_lookup_function(ast: &LlvmAST, name: String) -> &LlvmFunction {
-    match stringMap_get::<LlvmFunction>(llvmAST_functions(ast), &name) {
+fn llvmAst_lookup_function(ast: &LlvmAst, name: String) -> &LlvmFunction {
+    match stringMap_get::<LlvmFunction>(llvmAst_functions(ast), &name) {
         Option::Some(function) => function,
         Option::None => panic!("unknown LLVM function"),
     }
@@ -4082,7 +4082,7 @@ fn llvmParser_parse_function(parser: &mut LlvmParser) {
     llvmParser_expect_token(parser, &LlvmToken::RBrace);
 
     let function: LlvmFunction = LlvmFunction::Function(return_type, parameters, blocks);
-    if not(llvmAST_insert_function(
+    if not(llvmAst_insert_function(
         llvmParser_ast_mut(parser),
         function_name,
         function,
@@ -4626,7 +4626,7 @@ fn emu_load_double(emulator: &mut Emu, address: usize) -> Option<usize> {
 
 /// Parse and emulate LLVM source and return the return value of @main.
 fn emu_execute_llvm(source: String) -> usize {
-    let ast: LlvmAST = llvmParser_parse_to_ast(source);
+    let ast: LlvmAst = llvmParser_parse_to_ast(source);
 
     let main_name: String = string_from_str("main");
     let empty_args: Vec<usize> = vec_new::<usize>();
@@ -4639,18 +4639,18 @@ fn emu_execute_llvm(source: String) -> usize {
 /// Lookup a function by name and execute it.
 fn emu_execute_function_named(
     emulator: &mut Emu,
-    ast: &LlvmAST,
+    ast: &LlvmAst,
     function_name: &String,
     arguments: &Vec<usize>,
 ) -> usize {
-    let function: &LlvmFunction = llvmAST_lookup_function(ast, string_clone(function_name));
+    let function: &LlvmFunction = llvmAst_lookup_function(ast, string_clone(function_name));
     emu_execute_function(emulator, ast, function, arguments)
 }
 
 /// Execute the given function's body.
 fn emu_execute_function(
     emulator: &mut Emu,
-    ast: &LlvmAST,
+    ast: &LlvmAst,
     function: &LlvmFunction,
     arguments: &Vec<usize>,
 ) -> usize {
@@ -4696,7 +4696,7 @@ fn emu_execute_function(
 /// Execute a given list of instructions.
 fn emu_execute_instructions(
     emulator: &mut Emu,
-    ast: &LlvmAST,
+    ast: &LlvmAst,
     registers: &mut StringMap<usize>,
     instructions: &Vec<Instruction>,
 ) -> LlvmExecFlow {
@@ -4755,7 +4755,7 @@ fn emu_execute_instructions(
 /// Execute the given assignment instruction.
 fn emu_execute_assignment(
     emulator: &mut Emu,
-    ast: &LlvmAST,
+    ast: &LlvmAst,
     registers: &mut StringMap<usize>,
     instruction: &AssignInstruction,
 ) {
@@ -4767,7 +4767,7 @@ fn emu_execute_assignment(
 /// Evaluate the value of the assignment operation.
 fn emu_evaluate_assign_op(
     emulator: &mut Emu,
-    ast: &LlvmAST,
+    ast: &LlvmAst,
     registers: &StringMap<usize>,
     operation: &AssignOp,
 ) -> usize {
@@ -4850,7 +4850,7 @@ fn emu_evaluate_assign_op(
 /// Execute an LLVM call and return the raw result value.
 fn emu_execute_call(
     emulator: &mut Emu,
-    ast: &LlvmAST,
+    ast: &LlvmAst,
     registers: &StringMap<usize>,
     call_type: &LlvmType,
     callee: &String,
@@ -4927,6 +4927,18 @@ fn llvm_eval_value(
 // ------------------------- Library -------------------------------
 // -----------------------------------------------------------------
 // -----------------------------------------------------------------
+
+// -------------------------- Math ---------------------------------
+
+/// Return the maximum of two values.
+fn max(n: usize, m: usize) -> usize {
+    if n > m { n } else { m }
+}
+
+/// Return the minimum of two values.
+fn min(n: usize, m: usize) -> usize {
+    if n < m { n } else { m }
+}
 
 // -------------------------- Error --------------------------------
 
@@ -5618,8 +5630,8 @@ fn token_eq(a: &Token, b: &Token) -> bool {
             Token::Cmp(right_comparison) => comparison_eq(left_comparison, right_comparison),
             _ => false,
         },
-        Token::ArmArrow => match b {
-            Token::ArmArrow => true,
+        Token::FatArrow => match b {
+            Token::FatArrow => true,
             _ => false,
         },
         Token::Plus => match b {
@@ -5662,8 +5674,8 @@ fn token_eq(a: &Token, b: &Token) -> bool {
             Token::Str => true,
             _ => false,
         },
-        Token::TypeArrow => match b {
-            Token::TypeArrow => true,
+        Token::Arrow => match b {
+            Token::Arrow => true,
             _ => false,
         },
         Token::Literal(left_literal) => match b {
@@ -6017,7 +6029,7 @@ fn token_clone(token: &Token) -> Token {
         Token::Assign => Token::Assign,
         Token::Bang => Token::Bang,
         Token::Cmp(comparison) => Token::Cmp(comparison_clone(comparison)),
-        Token::ArmArrow => Token::ArmArrow,
+        Token::FatArrow => Token::FatArrow,
         Token::Plus => Token::Plus,
         Token::Minus => Token::Minus,
         Token::Star => Token::Star,
@@ -6028,7 +6040,7 @@ fn token_clone(token: &Token) -> Token {
         Token::Bool => Token::Bool,
         Token::Char => Token::Char,
         Token::Str => Token::Str,
-        Token::TypeArrow => Token::TypeArrow,
+        Token::Arrow => Token::Arrow,
         Token::Literal(literal) => Token::Literal(literalToken_clone(literal)),
         Token::Identifier(value) => Token::Identifier(string_clone(value)),
         Token::Eof => Token::Eof,
@@ -6379,7 +6391,7 @@ fn token_to_string(token: &Token) -> String {
         Token::Assign => string_from_str("="),
         Token::Bang => string_from_str("!"),
         Token::Cmp(comparison) => comparison_to_string(comparison),
-        Token::ArmArrow => string_from_str("=>"),
+        Token::FatArrow => string_from_str("=>"),
         Token::Plus => string_from_str("+"),
         Token::Minus => string_from_str("-"),
         Token::Star => string_from_str("*"),
@@ -6390,7 +6402,7 @@ fn token_to_string(token: &Token) -> String {
         Token::Bool => string_from_str("bool"),
         Token::Char => string_from_str("char"),
         Token::Str => string_from_str("str"),
-        Token::TypeArrow => string_from_str("->"),
+        Token::Arrow => string_from_str("->"),
         Token::Literal(literal) => literal_to_string(literal),
         Token::Identifier(name) => string_clone(name),
         Token::Eof => string_from_str("<eof>"),

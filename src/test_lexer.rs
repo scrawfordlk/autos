@@ -230,13 +230,13 @@ fn test_scan_colon_direct() {
 #[test]
 fn test_scan_equals_direct() {
     let mut lexer = make_lexer(">");
-    assert!(matches!(lexer_scan_equals(&mut lexer), Token::ArmArrow));
+    assert!(matches!(lexer_scan_equals(&mut lexer), Token::FatArrow));
 }
 
 #[test]
 fn test_scan_minus_direct() {
     let mut lexer = make_lexer(">");
-    assert!(matches!(lexer_scan_minus(&mut lexer), Token::TypeArrow));
+    assert!(matches!(lexer_scan_minus(&mut lexer), Token::Arrow));
 }
 
 #[test]
@@ -592,17 +592,14 @@ fn test_symbol_arm_arrow() {
     let mut lexer = make_lexer("=>");
     assert_tokens(
         collect_tokens(&mut lexer),
-        vec![Token::ArmArrow, Token::Eof],
+        vec![Token::FatArrow, Token::Eof],
     );
 }
 
 #[test]
 fn test_symbol_type_arrow() {
     let mut lexer = make_lexer("->");
-    assert_tokens(
-        collect_tokens(&mut lexer),
-        vec![Token::TypeArrow, Token::Eof],
-    );
+    assert_tokens(collect_tokens(&mut lexer), vec![Token::Arrow, Token::Eof]);
 }
 
 #[test]
@@ -752,7 +749,7 @@ fn test_function_signature() {
             Token::Colon,
             Token::Usize,
             Token::RParen,
-            Token::TypeArrow,
+            Token::Arrow,
             Token::U8,
             Token::Eof,
         ],
@@ -787,7 +784,7 @@ fn test_match_arm() {
             ident("x"),
             Token::LBrace,
             int_lit(1),
-            Token::ArmArrow,
+            Token::FatArrow,
             int_lit(2),
             Token::Comma,
             Token::RBrace,
@@ -930,7 +927,7 @@ fn unwrap(opt: Option) -> usize {
             Token::Colon,
             ident("Option"),
             Token::RParen,
-            Token::TypeArrow,
+            Token::Arrow,
             Token::Usize,
             Token::LBrace,
             // match opt {
@@ -944,14 +941,14 @@ fn unwrap(opt: Option) -> usize {
             Token::LParen,
             ident("x"),
             Token::RParen,
-            Token::ArmArrow,
+            Token::FatArrow,
             ident("x"),
             Token::Comma,
             // Option::None => 0,
             ident("Option"),
             Token::DoubleColon,
             ident("None"),
-            Token::ArmArrow,
+            Token::FatArrow,
             int_lit(0),
             Token::Comma,
             // closing braces
@@ -987,7 +984,7 @@ fn factorial(n: usize) -> usize {
             Token::Colon,
             Token::Usize,
             Token::RParen,
-            Token::TypeArrow,
+            Token::Arrow,
             Token::Usize,
             Token::LBrace,
             // let mut result: usize = 1;
@@ -1067,7 +1064,7 @@ fn max(a: usize, b: usize) -> usize {
             Token::Colon,
             Token::Usize,
             Token::RParen,
-            Token::TypeArrow,
+            Token::Arrow,
             Token::Usize,
             Token::LBrace,
             // if a > b {
@@ -1180,7 +1177,7 @@ fn add(a: usize, b: usize) -> usize {
             Token::Colon,
             Token::Usize,
             Token::RParen,
-            Token::TypeArrow,
+            Token::Arrow,
             Token::Usize,
             Token::LBrace,
             Token::Return,
@@ -1213,7 +1210,7 @@ unsafe fn flag(x: bool) -> bool {
             Token::Colon,
             Token::Bool,
             Token::RParen,
-            Token::TypeArrow,
+            Token::Arrow,
             Token::Bool,
             Token::LBrace,
             Token::Return,
