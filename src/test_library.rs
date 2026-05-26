@@ -124,7 +124,7 @@ fn test_memcopy_zero() {
 
 #[test]
 fn test_alloc() {
-    let ptr = alloc(16, 1);
+    let ptr = alloc::<u8>(16);
     assert!(!ptr.is_null());
     // Verify zeroed allocation
     unsafe {

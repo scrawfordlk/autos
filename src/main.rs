@@ -5136,8 +5136,7 @@ enum Box<T> {
 
 /// Allocate and box a value on the heap.
 fn box_new<T>(value: T) -> Box<T> {
-    let ptr_u8: *mut u8 = alloc(size_of::<T>(), align_of::<T>());
-    let ptr: *mut T = ptr_u8 as *mut T;
+    let ptr: *mut T = alloc::<T>(1);
     unsafe { *ptr = value };
     Box::Ptr(ptr)
 }
@@ -5171,18 +5170,8 @@ fn vec_new<T>() -> Vec<T> {
 
 /// Create a vector with fixed starting capacity.
 fn vec_with_capacity<T>(initial_capacity: usize) -> Vec<T> {
-    let capacity: usize = if initial_capacity == 0 {
-        1
-    } else {
-        initial_capacity
-    };
-    let elem_size: usize = size_of::<T>();
-    let byte_len: usize = if elem_size == 0 {
-        capacity
-    } else {
-        capacity * elem_size
-    };
-    let ptr: *mut T = alloc(byte_len, align_of::<T>()) as *mut T;
+    let capacity: usize = max(initial_capacity, 1);
+    let ptr: *mut T = alloc::<T>(capacity);
     Vec::Vec(ptr, 0, capacity)
 }
 
@@ -5218,17 +5207,11 @@ fn vec_accomodate_extra_space<T>(vec: &mut Vec<T>, space: usize) {
         let Vec::Vec(ptr, len_ref, capacity_ref): &mut Vec<T> = vec;
         *capacity_ref = *capacity_ref * 2;
 
-        let elem_size: usize = size_of::<T>();
-        let new_byte_len: usize = if elem_size == 0 {
-            *capacity_ref
-        } else {
-            *capacity_ref * elem_size
-        };
-
-        let new_ptr: *mut T = alloc(new_byte_len, align_of::<T>()) as *mut T;
+        let new_ptr: *mut T = alloc::<T>(*capacity_ref) as *mut T;
         unsafe { memcopy::<T>(new_ptr, *ptr, *len_ref) };
         *ptr = new_ptr;
-        vec_accomodate_extra_space::<T>(vec, space); // if doubling was not enough, double again
+        // TODO: change this
+        vec_accomodate_extra_space::<T>(vec, space); // if doubling was not enough, double again,
     }
 }
 
@@ -6530,14 +6513,30 @@ fn ptr_add<T>(ptr: *mut T, n: usize) -> *mut T {
     (ptr as usize + n * size_of::<T>()) as *mut T
 }
 
-/// Heap-allocate memory for the given size and alignment.
-///
+/// Heap-allocate memory for the given size and return a pointer to the beginning of the memory block.
+/// The returned pointer is never null and the memory is always zeroed.
 /// The caller should cast the returned pointer to the desired type.
-fn alloc(size: usize, align: usize) -> *mut u8 {
-    // TODO:
-    // is power of 2
-    // isize::MAX as usize + 1
-    unsafe { std::alloc::alloc_zeroed(std::alloc::Layout::from_size_align_unchecked(size, align)) }
+fn alloc<T>(count: usize) -> *mut T {
+    unsafe {
+        let p: *mut u8 = malloc(size_of::<T>() * count);
+
+        if p as usize == 0 {
+            eprintln!("Heap Memory Allocation Error!");
+            std::process::exit(1);
+        }
+
+        let mut i = 0;
+        while i < size_of::<T>() * count {
+            *ptr_add(p, i) = 0;
+            i = i + 1;
+        }
+
+        p as *mut T
+    }
+}
+
+unsafe extern "C" {
+    fn malloc(size: usize) -> *mut u8;
 }
 
 // -----------------------------------------------------------------
