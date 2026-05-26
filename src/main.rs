@@ -12,7 +12,7 @@ fn main() {
         eprintln!(
             "Usage: <program> ( -c <input> [ -o <output> ] [ -e ] [ --unsafe ] | -e <inputllvm> )"
         );
-        std::process::exit(1);
+        exit_process(1);
     }
 
     if args[1] == "-c" {
@@ -20,7 +20,7 @@ fn main() {
             eprintln!(
                 "Usage: <program> ( -c <input> [ -o <output> ] [ -e ] [ --unsafe ] | -e <inputllvm> )"
             );
-            std::process::exit(1);
+            exit_process(1);
         }
         let input = args[2].clone();
         let mut file: StdOption<StdString> = StdOption::None;
@@ -34,7 +34,7 @@ fn main() {
                     eprintln!(
                         "Usage: <program> ( -c <input> [ -o <output> ] [ -e ] [ --unsafe ] | -e <inputllvm> )"
                     );
-                    std::process::exit(1);
+                    exit_process(1);
                 }
                 file = StdOption::Some(args[i + 1].clone());
                 i += 2;
@@ -76,7 +76,7 @@ fn main() {
 
         if emulate_after {
             let exit_code: usize = emu_execute_llvm(code_clone);
-            std::process::exit((exit_code % 256) as i32);
+            exit_process(exit_code);
         }
 
         return;
@@ -87,17 +87,17 @@ fn main() {
             eprintln!(
                 "Usage: <program> ( -c <input> [ -o <output> ] [ -e ] [ --unsafe ] | -e <inputllvm> )"
             );
-            std::process::exit(1);
+            exit_process(1);
         }
         let llvm_ir: StdString = std::fs::read_to_string(&args[2]).expect("no llvm file found");
         let exit_code: usize = emu_execute_llvm(string_from_str(&llvm_ir));
-        std::process::exit((exit_code % 256) as i32);
+        exit_process(exit_code);
     }
 
     eprintln!(
         "Usage: <program> ( -c <input> [ -o <output> ] [ -e ] [ --unsafe ] | -e <inputllvm> )"
     );
-    std::process::exit(1);
+    exit_process(1);
 }
 
 // -----------------------------------------------------------------
@@ -4971,7 +4971,7 @@ fn report_error(file: &SourceFile, message: &String) -> ! {
     eprint_string(message);
     eprintln!();
 
-    std::process::exit(1);
+    exit_process(1);
 }
 
 fn lexer_error(lexer: &Lexer, message: &String) -> ! {
@@ -6513,7 +6513,7 @@ fn ptr_add<T>(ptr: *mut T, n: usize) -> *mut T {
     (ptr as usize + n * size_of::<T>()) as *mut T
 }
 
-/// Heap-allocate memory for the given size and return a pointer to the beginning of the memory block.
+/// Heap-allocate memory for `count` T and return a pointer to the beginning of the memory block.
 /// The returned pointer is never null and the memory is always zeroed.
 /// The caller should cast the returned pointer to the desired type.
 fn alloc<T>(count: usize) -> *mut T {
@@ -6522,7 +6522,7 @@ fn alloc<T>(count: usize) -> *mut T {
 
         if p as usize == 0 {
             eprintln!("Heap Memory Allocation Error!");
-            std::process::exit(1);
+            exit(1);
         }
 
         let mut i = 0;
@@ -6535,8 +6535,14 @@ fn alloc<T>(count: usize) -> *mut T {
     }
 }
 
+/// Exit the current process.
+fn exit_process(code: usize) -> ! {
+    unsafe { exit(code) }
+}
+
 unsafe extern "C" {
     fn malloc(size: usize) -> *mut u8;
+    fn exit(code: usize) -> !;
 }
 
 // -----------------------------------------------------------------
