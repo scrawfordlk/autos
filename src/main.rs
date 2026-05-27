@@ -2469,10 +2469,8 @@ fn codegen_function(codegen: &mut Codegen, function: &RAstFunction) {
                 codegen_emit_ret_void(codegen);
             }
         }
-        RAstType::Never => {} // if Never, the block never evaluates to the end, so we can ignore its result
-        _ => {
-            codegen_emit_ret_value(codegen, &block_type, &value_name);
-        }
+        RAstType::Never => codegen_emit_unreachable(codegen),
+        _ => codegen_emit_ret_value(codegen, &block_type, &value_name),
     }
     codegen_emit_line(codegen, string_from_str("}"));
 
@@ -3098,6 +3096,11 @@ fn codegen_emit_ret_value(codegen: &mut Codegen, ty: &RAstType, value: &String) 
 /// ret void
 fn codegen_emit_ret_void(codegen: &mut Codegen) {
     codegen_emit_line(codegen, string_from_str("  ret void"));
+}
+
+/// Emit an unreachable terminator.
+fn codegen_emit_unreachable(codegen: &mut Codegen) {
+    codegen_emit_line(codegen, string_from_str("  unreachable"));
 }
 
 /// Emit a label:
