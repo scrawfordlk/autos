@@ -132,6 +132,7 @@ fn compile(source: &str, do_semantic_analysis: bool) -> String {
 enum Token {
     Fn,              // "fn"
     Enum,            // "enum"
+    Extern,          // "extern"
     Let,             // "let"
     If,              // "if"
     Else,            // "else"
@@ -370,6 +371,8 @@ fn identifier_to_token(ident: String) -> Token {
         Token::Fn
     } else if string_eq(&ident, &string_from_str("enum")) {
         Token::Enum
+    } else if string_eq(&ident, &string_from_str("extern")) {
+        Token::Extern
     } else if string_eq(&ident, &string_from_str("let")) {
         Token::Let
     } else if string_eq(&ident, &string_from_str("if")) {
@@ -641,6 +644,7 @@ enum RAst {
 enum RAstItem {
     Function(RAstFunction),
     Enum(RAstEnum),
+    ExternBlock(Vec<RAstExternFunction>),
 }
 
 /// Function definition.
@@ -653,6 +657,12 @@ enum RAstFunction {
 enum RAstEnum {
     /// name, variants
     Enum(String, Vec<RAstVariant>),
+}
+
+/// Extern function declaration.
+enum RAstExternFunction {
+    /// name, parameters, return type
+    ExternFunction(String, Vec<RAstVariable>, RAstType),
 }
 
 /// Enum variant.
@@ -921,8 +931,23 @@ fn parse_language(lexer: &mut Lexer) -> RAst {
 
     while not(lexer_current_token_eq(lexer, &Token::Eof)) {
         match lexer_current_token(lexer) {
-            Token::Fn | Token::Unsafe => {
-                let function: RAstItem = RAstItem::Function(parse_function(lexer));
+            Token::Unsafe => match lexer_next_token(lexer) {
+                Token::Extern => {
+                    let extern_block: RAstItem = RAstItem::ExternBlock(parse_extern_block(lexer));
+                    vec_push::<RAstItem>(&mut items, extern_block);
+                }
+                Token::Fn => {
+                    let function: RAstItem = RAstItem::Function(parse_function(lexer, true));
+                    vec_push::<RAstItem>(&mut items, function);
+                }
+                token => {
+                    let mut message: String = string_from_str("expected fn or extern, but got: ");
+                    string_push_string(&mut message, &token_to_string(&token));
+                    parse_error(lexer, &message);
+                }
+            },
+            Token::Fn => {
+                let function: RAstItem = RAstItem::Function(parse_function(lexer, false));
                 vec_push::<RAstItem>(&mut items, function);
             }
             Token::Enum => {
@@ -930,7 +955,8 @@ fn parse_language(lexer: &mut Lexer) -> RAst {
                 vec_push::<RAstItem>(&mut items, enumeration);
             }
             token => {
-                let mut message: String = string_from_str("expected function or enum, but got: ");
+                let mut message: String =
+                    string_from_str("expected function, enum, or extern block, but got: ");
                 string_push_string(&mut message, &token_to_string(token));
                 parse_error(lexer, &message);
             }
@@ -940,8 +966,68 @@ fn parse_language(lexer: &mut Lexer) -> RAst {
     RAst::Language(items)
 }
 
-fn parse_function(lexer: &mut Lexer) -> RAstFunction {
-    let is_unsafe: bool = lexer_try_consume(lexer, &Token::Unsafe);
+fn parse_extern_block(lexer: &mut Lexer) -> Vec<RAstExternFunction> {
+    expect_token(lexer, &Token::Extern);
+
+    match lexer_current_token(lexer) {
+        Token::Literal(Literal::String(value)) => {
+            if not(string_eq(value, &string_from_str("C"))) {
+                let mut message: String = string_from_str("expected \"C\", but got: ");
+                string_push_string(&mut message, &token_to_string(lexer_current_token(lexer)));
+                parse_error(lexer, &message);
+            }
+            lexer_next_token(lexer);
+        }
+        _ => {
+            let mut message: String = string_from_str("expected \"C\", but got: ");
+            string_push_string(&mut message, &token_to_string(lexer_current_token(lexer)));
+            parse_error(lexer, &message);
+        }
+    }
+
+    expect_token(lexer, &Token::LBrace);
+
+    let mut functions: Vec<RAstExternFunction> = vec_new::<RAstExternFunction>();
+    while not(lexer_current_token_eq(lexer, &Token::RBrace)) {
+        let function: RAstExternFunction = parse_function_declaration(lexer);
+        vec_push::<RAstExternFunction>(&mut functions, function);
+    }
+    expect_token(lexer, &Token::RBrace);
+
+    functions
+}
+
+fn parse_function_declaration(lexer: &mut Lexer) -> RAstExternFunction {
+    expect_token(lexer, &Token::Fn);
+    let name: String = expect_identifier(lexer);
+    expect_token(lexer, &Token::LParen);
+
+    let mut parameters: Vec<RAstVariable> = vec_new::<RAstVariable>();
+    if not(lexer_current_token_eq(lexer, &Token::RParen)) {
+        let variable: RAstVariable = parse_variable(lexer);
+        vec_push::<RAstVariable>(&mut parameters, variable);
+
+        while and(
+            lexer_try_consume(lexer, &Token::Comma),
+            not(lexer_current_token_eq(lexer, &Token::RParen)),
+        ) {
+            let variable: RAstVariable = parse_variable(lexer);
+            vec_push::<RAstVariable>(&mut parameters, variable);
+        }
+    }
+    expect_token(lexer, &Token::RParen);
+
+    let return_type: RAstType = if lexer_try_consume(lexer, &Token::Arrow) {
+        parse_type(lexer)
+    } else {
+        RAstType::Unit
+    };
+
+    expect_token(lexer, &Token::SemiColon);
+    RAstExternFunction::ExternFunction(name, parameters, return_type)
+}
+
+fn parse_function(lexer: &mut Lexer, is_unsafe: bool) -> RAstFunction {
     expect_token(lexer, &Token::Fn);
 
     let name: String = expect_identifier(lexer);
@@ -1446,6 +1532,7 @@ fn parse_literal(lexer: &mut Lexer) -> RAstLiteral {
     }
 }
 
+// TODO: This should be shorter. E.g. add a name to FnSignature, which can be used in the AST.
 fn collect_items(ast: &RAst) -> StringMap<Item> {
     let RAst::Language(ast_items): &RAst = ast;
     let mut items: StringMap<Item> = stringMap_new::<Item>();
@@ -1493,6 +1580,32 @@ fn collect_items(ast: &RAst) -> StringMap<Item> {
 
                 let cloned_enum: RAstEnum = RAstEnum::Enum(string_clone(name), cloned_variants);
                 stringMap_insert::<Item>(&mut items, string_clone(name), Item::Enum(cloned_enum));
+            }
+            RAstItem::ExternBlock(functions) => {
+                let mut i: usize = 0;
+                while i < vec_len::<RAstExternFunction>(functions) {
+                    let function: &RAstExternFunction = vec_at::<RAstExternFunction>(functions, i);
+                    let RAstExternFunction::ExternFunction(name, params, return_type): &RAstExternFunction =
+                        function;
+
+                    let mut param_types: Vec<RAstType> = vec_new::<RAstType>();
+                    let mut param_index: usize = 0;
+                    while param_index < vec_len::<RAstVariable>(params) {
+                        let RAstVariable::Variable(_, parameter_type): &RAstVariable =
+                            vec_at::<RAstVariable>(params, param_index);
+                        vec_push::<RAstType>(&mut param_types, rAstType_clone(parameter_type));
+                        param_index = param_index + 1;
+                    }
+
+                    let signature: FnSignature =
+                        FnSignature::Fn(param_types, rAstType_clone(return_type), true);
+                    stringMap_insert::<Item>(
+                        &mut items,
+                        string_clone(name),
+                        Item::Function(signature),
+                    );
+                    i = i + 1;
+                }
             }
         }
         i = i + 1;
@@ -1759,7 +1872,7 @@ fn semantic_check_language(semantic: &mut Semantic, ast: &RAst) {
         let item: &RAstItem = vec_at::<RAstItem>(items, i);
         match item {
             RAstItem::Function(function) => semantic_check_function(semantic, function),
-            _ => {} // TODO: enum checking
+            _ => {} // TODO: enum/extern checking
         }
         i = i + 1;
     }
@@ -2279,9 +2392,22 @@ fn codegen_language(codegen: &mut Codegen, ast: &RAst) {
     while i < len {
         let item: &RAstItem = vec_at::<RAstItem>(items, i);
         match item {
+            RAstItem::ExternBlock(block) => codegen_extern_block(codegen, block),
             RAstItem::Enum(enum_item) => codegen_enum(codegen, enum_item),
             RAstItem::Function(function) => codegen_function(codegen, function),
         }
+        i = i + 1;
+    }
+}
+
+/// Emit LLVM-IR for one extern block.
+fn codegen_extern_block(codegen: &mut Codegen, functions: &Vec<RAstExternFunction>) {
+    let mut i: usize = 0;
+    while i < vec_len::<RAstExternFunction>(functions) {
+        let function: &RAstExternFunction = vec_at::<RAstExternFunction>(functions, i);
+        let RAstExternFunction::ExternFunction(name, parameters, return_type): &RAstExternFunction =
+            function;
+        codegen_emit_declare(codegen, name, parameters, return_type);
         i = i + 1;
     }
 }
@@ -2629,10 +2755,7 @@ fn codegen_call(codegen: &mut Codegen, callee: &RAstPath, arguments: &Vec<RAstEx
 
     match codegen_function_signature(codegen, &function_name) {
         Option::Some(FnSignature::Fn(_, return_type, _)) => {
-            let result_name: String = if rAstType_eq(&return_type, &RAstType::Unit) {
-                codegen_emit_call_void(codegen, &function_name, &arg_types, &arg_values);
-                string_new()
-            } else {
+            let result_name: String = if type_has_value(&return_type) {
                 codegen_emit_call_value(
                     codegen,
                     &function_name,
@@ -2640,6 +2763,9 @@ fn codegen_call(codegen: &mut Codegen, callee: &RAstPath, arguments: &Vec<RAstEx
                     &arg_types,
                     &arg_values,
                 )
+            } else {
+                codegen_emit_call_void(codegen, &function_name, &arg_types, &arg_values);
+                string_new()
             };
             STPair::ST(result_name, return_type)
         }
@@ -3228,6 +3354,38 @@ fn codegen_emit_function_header(
         }
     }
     string_push_str(&mut line, ") {\nentry:");
+
+    codegen_emit_line(codegen, line);
+}
+
+/// Emit an LLVM declare for the given extern function.
+fn codegen_emit_declare(
+    codegen: &mut Codegen,
+    fn_name: &String,
+    parameters: &Vec<RAstVariable>,
+    return_type: &RAstType,
+) {
+    let mut line: String = string_new();
+    string_push_str(&mut line, "declare ");
+    string_push_string(&mut line, &rAstType_to_llvm_name(return_type));
+    string_push_str(&mut line, " @");
+    string_push_string(&mut line, fn_name);
+    string_push_str(&mut line, "(");
+
+    let mut i: usize = 0;
+    let len: usize = vec_len::<RAstVariable>(parameters);
+    while i < len {
+        let RAstVariable::Variable(_, parameter_type): &RAstVariable =
+            vec_at::<RAstVariable>(parameters, i);
+
+        string_push_string(&mut line, &rAstType_to_llvm_name(parameter_type));
+
+        i = i + 1;
+        if i < len {
+            string_push_str(&mut line, ", ");
+        }
+    }
+    string_push_str(&mut line, ")");
 
     codegen_emit_line(codegen, line);
 }
@@ -5533,6 +5691,10 @@ fn token_eq(a: &Token, b: &Token) -> bool {
             Token::Enum => true,
             _ => false,
         },
+        Token::Extern => match b {
+            Token::Extern => true,
+            _ => false,
+        },
         Token::Let => match b {
             Token::Let => true,
             _ => false,
@@ -5992,6 +6154,7 @@ fn token_clone(token: &Token) -> Token {
         Token::Unsafe => Token::Unsafe,
         Token::Fn => Token::Fn,
         Token::Enum => Token::Enum,
+        Token::Extern => Token::Extern,
         Token::Let => Token::Let,
         Token::If => Token::If,
         Token::Else => Token::Else,
@@ -6353,6 +6516,7 @@ fn token_to_string(token: &Token) -> String {
     match token {
         Token::Fn => string_from_str("fn"),
         Token::Enum => string_from_str("enum"),
+        Token::Extern => string_from_str("extern"),
         Token::Let => string_from_str("let"),
         Token::If => string_from_str("if"),
         Token::Else => string_from_str("else"),
