@@ -1841,17 +1841,8 @@ fn castOperation_get_cast_operation(left_type: &RAstType, right_type: &RAstType)
             }
             _ => CastOperation::Invalid,
         },
-        RAstType::RawPointerMut(left_inner) => match right_type {
-            RAstType::RawPointerMut(right_inner) => {
-                if rAstType_eq(
-                    box_deref::<RAstType>(left_inner),
-                    box_deref::<RAstType>(right_inner),
-                ) {
-                    CastOperation::None
-                } else {
-                    CastOperation::Invalid
-                }
-            }
+        RAstType::RawPointerMut(_) => match right_type {
+            RAstType::RawPointerMut(_) => CastOperation::None,
             _ => CastOperation::Invalid,
         },
         _ => CastOperation::Invalid,
