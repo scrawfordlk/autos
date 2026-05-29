@@ -3441,7 +3441,9 @@ fn codegen_fixup_alloca(
 /// Tokens produced by the LLVM lexer.
 enum LlvmToken {
     Define,          // "define"
+    Declare,         // "declare"
     Ret,             // "ret"
+    Unreachable,     // "unreachable"
     Br,              // "br"
     Label,           // "label"
     Add,             // "add"
@@ -3661,8 +3663,12 @@ fn llvmLexer_scan_identifier_or_keyword(lexer: &mut LlvmLexer) -> String {
 fn llvm_identifier_to_token(identifier: String) -> LlvmToken {
     if string_eq(&identifier, &string_from_str("define")) {
         LlvmToken::Define
+    } else if string_eq(&identifier, &string_from_str("declare")) {
+        LlvmToken::Declare
     } else if string_eq(&identifier, &string_from_str("ret")) {
         LlvmToken::Ret
+    } else if string_eq(&identifier, &string_from_str("unreachable")) {
+        LlvmToken::Unreachable
     } else if string_eq(&identifier, &string_from_str("br")) {
         LlvmToken::Br
     } else if string_eq(&identifier, &string_from_str("label")) {
@@ -4017,9 +4023,19 @@ fn llvmLocalSymTable_lookup_register_type<'a>(
     stringMap_get::<LlvmType>(registers, name)
 }
 
+/// An executable LLVM-IR function.
 enum LlvmFunction {
     /// return type, parameters, basic blocks
+    // TODO: use StringMap for InstructionBlocks
     Function(LlvmType, Vec<LlvmParameter>, Vec<InstructionBlock>),
+    /// return type, parameters, builtin
+    BuiltIn(LlvmBuiltIn, LlvmType, Vec<LlvmParameter>),
+}
+
+/// Supported LLVM-IR declared functions.
+enum LlvmBuiltIn {
+    Exit,
+    Malloc,
 }
 
 /// Represents a parameter of an LLVM function.
@@ -4103,6 +4119,7 @@ enum Instruction {
     Call(Call),
     /// return type, optional value
     Ret(LlvmType, Option<LlvmValue>),
+    Unreachable,
     Br(Branch),
 }
 
@@ -4201,6 +4218,7 @@ fn llvmParser_parse_language(parser: &mut LlvmParser) {
         match llvmParser_current_token(parser) {
             LlvmToken::At => llvmParser_parse_string(parser),
             LlvmToken::Define => llvmParser_parse_function(parser),
+            LlvmToken::Declare => llvmParser_parse_declare(parser),
             _ => {
                 let message: String =
                     llvmParser_expected_message(parser, &string_from_str("LLVM top-level item"));
@@ -4236,7 +4254,7 @@ fn llvmParser_parse_function(parser: &mut LlvmParser) {
 
     llvmLocalSymTable_clear(llvmParser_local_mut(parser));
 
-    let parameters: Vec<LlvmParameter> = llvmParser_parse_parameters(parser);
+    let parameters: Vec<LlvmParameter> = llvmParser_parse_parameters(parser, true);
 
     llvmParser_expect_token(parser, &LlvmToken::LBrace);
     let blocks: Vec<InstructionBlock> = llvmParser_parse_blocks(parser);
@@ -4255,14 +4273,48 @@ fn llvmParser_parse_function(parser: &mut LlvmParser) {
     }
 }
 
-fn llvmParser_parse_parameters(parser: &mut LlvmParser) -> Vec<LlvmParameter> {
+fn llvmParser_parse_declare(parser: &mut LlvmParser) {
+    llvmParser_expect_token(parser, &LlvmToken::Declare);
+    let return_type: LlvmType = llvmParser_parse_type(parser);
+    let function_name: String = llvmParser_parse_global_name(parser);
+
+    llvmLocalSymTable_clear(llvmParser_local_mut(parser));
+    let parameters: Vec<LlvmParameter> = llvmParser_parse_parameters(parser, false);
+
+    let builtin: LlvmBuiltIn = if string_eq(&function_name, &string_from_str("malloc")) {
+        LlvmBuiltIn::Malloc
+    } else if string_eq(&function_name, &string_from_str("exit")) {
+        LlvmBuiltIn::Exit
+    } else {
+        llvmParser_error(parser, &string_from_str("unknown declared function"));
+    };
+
+    let function: LlvmFunction = LlvmFunction::BuiltIn(builtin, return_type, parameters);
+    if not(llvmAst_insert_function(
+        llvmParser_ast_mut(parser),
+        function_name,
+        function,
+    )) {
+        llvmParser_error(
+            parser,
+            &string_from_str("duplicate LLVM function declaration"),
+        );
+    }
+}
+
+/// Parse parameters of a function.
+///
+/// * `parser`: The parser state
+/// * `require_names`: True, if the parameters are named (function definition). False, if they are
+/// not (function declaration).
+fn llvmParser_parse_parameters(parser: &mut LlvmParser, named: bool) -> Vec<LlvmParameter> {
     let mut parameters: Vec<LlvmParameter> = vec_new::<LlvmParameter>();
 
     llvmParser_expect_token(parser, &LlvmToken::LParen);
 
     if not(llvmParser_current_token_eq(parser, &LlvmToken::RParen)) {
         let parameter_type: LlvmType = llvmParser_parse_type(parser);
-        let param_name: String = llvmParser_parse_register(parser);
+        let param_name: String = llvmParser_parse_parameter_name(parser, 0);
         llvmLocalSymTable_insert_register(
             llvmParser_local_mut(parser),
             string_clone(&param_name),
@@ -4276,17 +4328,20 @@ fn llvmParser_parse_parameters(parser: &mut LlvmParser) -> Vec<LlvmParameter> {
             llvmParser_next_token(parser);
 
             let parameter_type: LlvmType = llvmParser_parse_type(parser);
-            let param_name: String = llvmParser_parse_register(parser);
+            let param_name: String =
+                llvmParser_parse_parameter_name(parser, vec_len::<LlvmParameter>(&parameters));
 
-            if not(llvmLocalSymTable_insert_register(
-                llvmParser_local_mut(parser),
-                string_clone(&param_name),
-                llvmType_clone(&parameter_type),
-            )) {
-                llvmParser_error(
-                    parser,
-                    &string_from_str("duplicate parameters in LLVM function"),
-                );
+            if named {
+                if not(llvmLocalSymTable_insert_register(
+                    llvmParser_local_mut(parser),
+                    string_clone(&param_name),
+                    llvmType_clone(&parameter_type),
+                )) {
+                    llvmParser_error(
+                        parser,
+                        &string_from_str("duplicate parameters in LLVM function"),
+                    );
+                }
             }
 
             let parameter: LlvmParameter = LlvmParameter::Parameter(param_name, parameter_type);
@@ -4295,6 +4350,16 @@ fn llvmParser_parse_parameters(parser: &mut LlvmParser) -> Vec<LlvmParameter> {
     }
     llvmParser_expect_token(parser, &LlvmToken::RParen);
     parameters
+}
+
+fn llvmParser_parse_parameter_name(parser: &mut LlvmParser, index: usize) -> String {
+    if llvmParser_current_token_eq(parser, &LlvmToken::Percent) {
+        llvmParser_parse_register(parser)
+    } else {
+        let mut name: String = string_from_str("arg");
+        string_push_string(&mut name, &integer_to_string(index));
+        name
+    }
 }
 
 fn llvmParser_parse_global_name(parser: &mut LlvmParser) -> String {
@@ -4333,6 +4398,10 @@ fn llvmParser_parse_register(parser: &mut LlvmParser) -> String {
 fn llvmParser_parse_instruction(parser: &mut LlvmParser) -> Instruction {
     match llvmParser_current_token(parser) {
         LlvmToken::Ret => llvmParser_parse_return(parser),
+        LlvmToken::Unreachable => {
+            llvmParser_next_token(parser);
+            Instruction::Unreachable
+        }
         LlvmToken::Br => llvmParser_parse_branch(parser),
         LlvmToken::Percent => Instruction::Assignment(llvmParser_parse_assignment(parser)),
         LlvmToken::Store => llvmParser_parse_store(parser),
@@ -4674,8 +4743,10 @@ enum Emu {
         usize,
         /// current frame size,
         usize,
-        /// global pointer
+        /// heap pointer
         usize,
+        /// exit code, if the program exited
+        Option<usize>,
     ),
 }
 
@@ -4689,37 +4760,75 @@ fn emu_new(memory_size: usize, global_pointer: usize) -> Emu {
         stack_pointer,
         0,
         global_pointer,
+        Option::None,
     )
 }
 
 /// Get a shared reference to the global values.
 fn emu_globals(emulator: &Emu) -> &StringMap<usize> {
-    let Emu::Emu(globals, _, _, _, _): &Emu = emulator;
+    let Emu::Emu(globals, _, _, _, _, _): &Emu = emulator;
     globals
 }
 
 /// Get the current value of the stack pointer.
 fn emu_get_sp(emulator: &Emu) -> usize {
-    let Emu::Emu(_, _, stack_pointer, _, _): &Emu = emulator;
+    let Emu::Emu(_, _, stack_pointer, _, _, _): &Emu = emulator;
     *stack_pointer
 }
 
 /// Set the value of the stack pointer.
 fn emu_set_sp(emulator: &mut Emu, value: usize) {
-    let Emu::Emu(_, _, stack_pointer, _, _): &mut Emu = emulator;
+    let Emu::Emu(_, _, stack_pointer, _, _, _): &mut Emu = emulator;
     *stack_pointer = value;
 }
 
 /// Get the size of the active stack frame in bytes.
 fn emu_get_frame_size(emulator: &Emu) -> usize {
-    let Emu::Emu(_, _, _, frame_size, _): &Emu = emulator;
+    let Emu::Emu(_, _, _, frame_size, _, _): &Emu = emulator;
     *frame_size
 }
 
 /// Set the size of the active stack frame.
 fn emu_set_frame_size(emulator: &mut Emu, value: usize) {
-    let Emu::Emu(_, _, _, frame_size, _): &mut Emu = emulator;
+    let Emu::Emu(_, _, _, frame_size, _, _): &mut Emu = emulator;
     *frame_size = value;
+}
+
+/// Get the current heap pointer.
+fn emu_get_heap_pointer(emulator: &Emu) -> usize {
+    let Emu::Emu(_, _, _, _, heap_pointer, _): &Emu = emulator;
+    *heap_pointer
+}
+
+/// Set the current heap pointer.
+fn emu_set_heap_pointer(emulator: &mut Emu, value: usize) {
+    let Emu::Emu(_, _, _, _, heap_pointer, _): &mut Emu = emulator;
+    *heap_pointer = value;
+}
+
+/// Return true if exit was requested and return the code.
+fn emu_exit_code(emulator: &Emu) -> Option<usize> {
+    let Emu::Emu(_, _, _, _, _, exit_code): &Emu = emulator;
+    match exit_code {
+        Option::Some(code) => Option::Some(*code),
+        Option::None => Option::None,
+    }
+}
+
+/// Set the exit code and mark the program as exited.
+fn emu_set_exit_code(emulator: &mut Emu, code: usize) {
+    let Emu::Emu(_, _, _, _, _, exit_code): &mut Emu = emulator;
+    *exit_code = Option::Some(code);
+}
+
+/// Align the given address or size to a double-word boundary.
+fn emu_align_to_double(value: usize) -> usize {
+    let align: usize = size_of::<usize>();
+    if value % align == 0 {
+        value
+    } else {
+        value + (align - (value % align))
+    }
 }
 
 /// Allocate `size` many double words on the stack and return the address.
@@ -4734,6 +4843,22 @@ fn emu_allocate_stack(emulator: &mut Emu, size: usize) -> Option<usize> {
     Option::Some(new_sp)
 }
 
+/// Allocate `size` bytes on the heap and return the address.
+fn emu_allocate_heap(emulator: &mut Emu, size: usize) -> Option<usize> {
+    let size: usize = max(size, size_of::<usize>());
+    let aligned_size: usize = emu_align_to_double(size);
+    let heap_pointer: usize = emu_get_heap_pointer(emulator);
+    let new_heap_pointer: usize = heap_pointer + aligned_size;
+    let stack_pointer: usize = emu_get_sp(emulator);
+
+    if new_heap_pointer >= stack_pointer {
+        Option::None
+    } else {
+        emu_set_heap_pointer(emulator, new_heap_pointer);
+        Option::Some(heap_pointer)
+    }
+}
+
 /// Deallocates the top stack frame by resetting the frame size to 0 and moving the stack pointer up by the frame size.
 fn emu_deallocate_stack_frame(emulator: &mut Emu) {
     let stack_pointer: usize = emu_get_sp(emulator);
@@ -4744,7 +4869,7 @@ fn emu_deallocate_stack_frame(emulator: &mut Emu) {
 
 /// Store one double word at `address`.
 fn emu_store_double(emulator: &mut Emu, address: usize, value: usize) -> bool {
-    let Emu::Emu(_, memory, _, _, _): &mut Emu = emulator;
+    let Emu::Emu(_, memory, _, _, _, _): &mut Emu = emulator;
     let bytes: usize = size_of::<usize>();
 
     let mut remaining: usize = value;
@@ -4764,7 +4889,7 @@ fn emu_store_double(emulator: &mut Emu, address: usize, value: usize) -> bool {
 
 /// Load one double word from `address`.
 fn emu_load_double(emulator: &mut Emu, address: usize) -> Option<usize> {
-    let Emu::Emu(_, memory, _, _, _): &mut Emu = emulator;
+    let Emu::Emu(_, memory, _, _, _, _): &mut Emu = emulator;
     let byte_size: usize = size_of::<usize>();
 
     let mut value: usize = 0;
@@ -4815,43 +4940,71 @@ fn emu_execute_function(
     function: &LlvmFunction,
     arguments: &Vec<usize>,
 ) -> usize {
-    let mut virtual_registers: StringMap<usize> = stringMap_new::<usize>();
     let previous_frame_size: usize = emu_get_frame_size(emulator);
     emu_set_frame_size(emulator, 0);
 
-    let LlvmFunction::Function(_, parameters, blocks): &LlvmFunction = function;
+    match function {
+        LlvmFunction::BuiltIn(builtin, _, _) => {
+            let value: usize = emu_execute_builtin(emulator, builtin, arguments);
+            emu_set_frame_size(emulator, previous_frame_size);
+            return value;
+        }
+        LlvmFunction::Function(_, parameters, blocks) => {
+            let mut virtual_registers: StringMap<usize> = stringMap_new::<usize>();
 
-    let mut i: usize = 0;
-    while i < vec_len::<LlvmParameter>(parameters) {
-        let parameter: &LlvmParameter = vec_at::<LlvmParameter>(parameters, i);
-        let value: &usize = vec_at::<usize>(arguments, i);
-        let LlvmParameter::Parameter(name, _): &LlvmParameter = parameter;
-        stringMap_insert::<usize>(&mut virtual_registers, string_clone(name), *value);
+            let mut i: usize = 0;
+            while i < vec_len::<LlvmParameter>(parameters) {
+                let parameter: &LlvmParameter = vec_at::<LlvmParameter>(parameters, i);
+                let LlvmParameter::Parameter(name, _): &LlvmParameter = parameter;
 
-        i = i + 1;
-    }
+                let value: &usize = vec_at::<usize>(arguments, i);
+                stringMap_insert::<usize>(&mut virtual_registers, string_clone(name), *value);
 
-    let mut current_label: String = string_clone(instructionBlock_label(
-        vec_at::<InstructionBlock>(blocks, 0),
-    ));
-    while true {
-        let instructions: &Vec<Instruction> =
-            instructionBlock_fetch_instructions(blocks, string_clone(&current_label));
-
-        let flow: LlvmExecFlow =
-            emu_execute_instructions(emulator, ast, &mut virtual_registers, instructions);
-
-        match flow {
-            LlvmExecFlow::Continue => panic!("LLVM block did not terminate"),
-            LlvmExecFlow::Jump(next_label) => current_label = next_label,
-            LlvmExecFlow::Return(value) => {
-                emu_deallocate_stack_frame(emulator);
-                emu_set_frame_size(emulator, previous_frame_size);
-                return value;
+                i = i + 1;
             }
+
+            let mut current_label: String =
+                string_clone(instructionBlock_label(vec_at::<InstructionBlock>(
+                    blocks, 0,
+                )));
+            while true {
+                let instructions: &Vec<Instruction> =
+                    instructionBlock_fetch_instructions(blocks, string_clone(&current_label));
+
+                let flow: LlvmExecFlow =
+                    emu_execute_instructions(emulator, ast, &mut virtual_registers, instructions);
+
+                match flow {
+                    LlvmExecFlow::Continue => panic!("LLVM block did not terminate"),
+                    LlvmExecFlow::Jump(next_label) => current_label = next_label,
+                    LlvmExecFlow::Return(value) => {
+                        emu_deallocate_stack_frame(emulator);
+                        emu_set_frame_size(emulator, previous_frame_size);
+                        return value;
+                    }
+                }
+            }
+            0 // satisfy compiler
         }
     }
-    0 // satisfy compiler
+}
+
+/// Execute one builtin function and return its value.
+fn emu_execute_builtin(emulator: &mut Emu, builtin: &LlvmBuiltIn, arguments: &Vec<usize>) -> usize {
+    match builtin {
+        LlvmBuiltIn::Malloc => {
+            let value: usize = *vec_at::<usize>(arguments, 0);
+            match emu_allocate_heap(emulator, value) {
+                Option::Some(address) => address,
+                Option::None => panic!("heap overflow of emu"),
+            }
+        }
+        LlvmBuiltIn::Exit => {
+            let value: usize = *vec_at::<usize>(arguments, 0);
+            emu_set_exit_code(emulator, value);
+            value
+        }
+    }
 }
 
 /// Execute a given list of instructions.
@@ -4886,6 +5039,7 @@ fn emu_execute_instructions(
                     Option::None => 0,
                 });
             }
+            Instruction::Unreachable => panic!("LLVM unreachable executed"),
 
             Instruction::Br(branch) => {
                 return match branch {
@@ -4906,6 +5060,11 @@ fn emu_execute_instructions(
                     }
                 };
             }
+        }
+
+        match emu_exit_code(emulator) {
+            Option::Some(code) => return LlvmExecFlow::Return(code),
+            Option::None => {}
         }
 
         i = i + 1;
@@ -5947,8 +6106,16 @@ fn llvmToken_eq(left: &LlvmToken, right: &LlvmToken) -> bool {
             LlvmToken::Define => true,
             _ => false,
         },
+        LlvmToken::Declare => match right {
+            LlvmToken::Declare => true,
+            _ => false,
+        },
         LlvmToken::Ret => match right {
             LlvmToken::Ret => true,
+            _ => false,
+        },
+        LlvmToken::Unreachable => match right {
+            LlvmToken::Unreachable => true,
             _ => false,
         },
         LlvmToken::Br => match right {
@@ -6262,7 +6429,9 @@ fn stPair_clone(STPair::ST(string, ty): &STPair) -> STPair {
 fn llvmToken_clone(token: &LlvmToken) -> LlvmToken {
     match token {
         LlvmToken::Define => LlvmToken::Define,
+        LlvmToken::Declare => LlvmToken::Declare,
         LlvmToken::Ret => LlvmToken::Ret,
+        LlvmToken::Unreachable => LlvmToken::Unreachable,
         LlvmToken::Br => LlvmToken::Br,
         LlvmToken::Label => LlvmToken::Label,
         LlvmToken::Add => LlvmToken::Add,
@@ -6563,7 +6732,9 @@ fn token_to_string(token: &Token) -> String {
 fn llvmToken_to_string(token: &LlvmToken) -> String {
     match token {
         LlvmToken::Define => string_from_str("define"),
+        LlvmToken::Declare => string_from_str("declare"),
         LlvmToken::Ret => string_from_str("ret"),
+        LlvmToken::Unreachable => string_from_str("unreachable"),
         LlvmToken::Br => string_from_str("br"),
         LlvmToken::Label => string_from_str("label"),
         LlvmToken::Add => string_from_str("add"),
