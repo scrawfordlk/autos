@@ -3466,7 +3466,6 @@ enum LlvmToken {
     Define,          // "define"
     Declare,         // "declare"
     Ret,             // "ret"
-    Unreachable,     // "unreachable"
     IntToPtr,        // "inttoptr"
     PtrToInt,        // "ptrtoint"
     Br,              // "br"
@@ -3692,8 +3691,6 @@ fn llvm_identifier_to_token(identifier: String) -> LlvmToken {
         LlvmToken::Declare
     } else if string_eq(&identifier, &string("ret")) {
         LlvmToken::Ret
-    } else if string_eq(&identifier, &string("unreachable")) {
-        LlvmToken::Unreachable
     } else if string_eq(&identifier, &string("inttoptr")) {
         LlvmToken::IntToPtr
     } else if string_eq(&identifier, &string("ptrtoint")) {
@@ -4143,7 +4140,6 @@ enum Instruction {
     Call(Call),
     /// return type, optional value
     Ret(LlvmType, Option<LlvmValue>),
-    Unreachable,
     Br(Branch),
 }
 
@@ -4415,10 +4411,6 @@ fn llvmParser_parse_register(parser: &mut LlvmParser) -> String {
 fn llvmParser_parse_instruction(parser: &mut LlvmParser) -> Instruction {
     match llvmParser_current_token(parser) {
         LlvmToken::Ret => llvmParser_parse_return(parser),
-        LlvmToken::Unreachable => {
-            llvmParser_next_token(parser);
-            Instruction::Unreachable
-        }
         LlvmToken::Br => llvmParser_parse_branch(parser),
         LlvmToken::Percent => Instruction::Assignment(llvmParser_parse_assignment(parser)),
         LlvmToken::Store => llvmParser_parse_store(parser),
@@ -5077,8 +5069,6 @@ fn emu_execute_instructions(
                     Option::None => 0,
                 });
             }
-            Instruction::Unreachable => panic!("LLVM unreachable executed"),
-
             Instruction::Br(branch) => {
                 return match branch {
                     Branch::Unconditional(target_label) => {
@@ -6162,10 +6152,6 @@ fn llvmToken_eq(left: &LlvmToken, right: &LlvmToken) -> bool {
             LlvmToken::Ret => true,
             _ => false,
         },
-        LlvmToken::Unreachable => match right {
-            LlvmToken::Unreachable => true,
-            _ => false,
-        },
         LlvmToken::IntToPtr => match right {
             LlvmToken::IntToPtr => true,
             _ => false,
@@ -6487,7 +6473,6 @@ fn llvmToken_clone(token: &LlvmToken) -> LlvmToken {
         LlvmToken::Define => LlvmToken::Define,
         LlvmToken::Declare => LlvmToken::Declare,
         LlvmToken::Ret => LlvmToken::Ret,
-        LlvmToken::Unreachable => LlvmToken::Unreachable,
         LlvmToken::IntToPtr => LlvmToken::IntToPtr,
         LlvmToken::PtrToInt => LlvmToken::PtrToInt,
         LlvmToken::Br => LlvmToken::Br,
@@ -6774,7 +6759,6 @@ fn llvmToken_to_string(token: &LlvmToken) -> String {
         LlvmToken::Define => string("define"),
         LlvmToken::Declare => string("declare"),
         LlvmToken::Ret => string("ret"),
-        LlvmToken::Unreachable => string("unreachable"),
         LlvmToken::IntToPtr => string("inttoptr"),
         LlvmToken::PtrToInt => string("ptrtoint"),
         LlvmToken::Br => string("br"),
