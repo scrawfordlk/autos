@@ -1796,6 +1796,10 @@ enum CastOperation {
     ZeroExtend,
     /// A type with larger bitwidth is truncated to a smaller bitwidth.
     Truncate,
+    /// Cast integer to pointer.
+    IntToPtr,
+    /// Cast pointer to integer.
+    PtrToInt,
     /// Do not perform a cast.
     None,
     /// The cast is illegal.
@@ -1817,6 +1821,7 @@ fn castOperation_get_cast_operation(left_type: &RAstType, right_type: &RAstType)
         },
         RAstType::Usize => match right_type {
             RAstType::U8 => CastOperation::Truncate,
+            RAstType::RawPointerMut(_) => CastOperation::IntToPtr,
             _ => CastOperation::Invalid,
         },
         RAstType::Bool => match right_type {
@@ -1843,6 +1848,7 @@ fn castOperation_get_cast_operation(left_type: &RAstType, right_type: &RAstType)
         },
         RAstType::RawPointerMut(_) => match right_type {
             RAstType::RawPointerMut(_) => CastOperation::None,
+            RAstType::Usize => CastOperation::PtrToInt,
             _ => CastOperation::Invalid,
         },
         _ => CastOperation::Invalid,
@@ -2657,6 +2663,14 @@ fn codegen_cast(codegen: &mut Codegen, value: &RAstExpr, to_type: &RAstType) -> 
             let name: String = codegen_emit_trunc(codegen, &from_type, &to_type, &from_name);
             STPair::ST(name, to_type)
         }
+        CastOperation::IntToPtr => {
+            let name: String = codegen_emit_inttoptr(codegen, &from_type, &to_type, &from_name);
+            STPair::ST(name, to_type)
+        }
+        CastOperation::PtrToInt => {
+            let name: String = codegen_emit_ptrtoint(codegen, &from_type, &to_type, &from_name);
+            STPair::ST(name, to_type)
+        }
         CastOperation::None => STPair::ST(from_name, to_type),
         CastOperation::Invalid => STPair::ST(from_name, to_type), // should be unreachable
     }
@@ -3187,6 +3201,30 @@ fn codegen_emit_trunc(
     value: &String,
 ) -> String {
     codegen_emit_cast(codegen, "trunc", from_type, to_type, value)
+}
+
+/// Emit an inttoptr instruction:
+/// `name` = inttoptr `from_type` `value` to `to_type`
+/// and return `name`.
+fn codegen_emit_inttoptr(
+    codegen: &mut Codegen,
+    from_type: &RAstType,
+    to_type: &RAstType,
+    value: &String,
+) -> String {
+    codegen_emit_cast(codegen, "inttoptr", from_type, to_type, value)
+}
+
+/// Emit a ptrtoint instruction:
+/// `name` = ptrtoint `from_type` `value` to `to_type`
+/// and return `name`.
+fn codegen_emit_ptrtoint(
+    codegen: &mut Codegen,
+    from_type: &RAstType,
+    to_type: &RAstType,
+    value: &String,
+) -> String {
+    codegen_emit_cast(codegen, "ptrtoint", from_type, to_type, value)
 }
 
 /// Emit an alloca instruction:
