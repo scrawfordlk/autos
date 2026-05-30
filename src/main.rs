@@ -5334,6 +5334,11 @@ fn min(n: usize, m: usize) -> usize {
     if n < m { n } else { m }
 }
 
+/// Return true if the number is negative (Two's Complement).
+fn is_negative(number: usize) -> bool {
+    number >= 9223372036854775808
+}
+
 // -------------------------- Error --------------------------------
 
 /// Report an error message with source location and exit.
