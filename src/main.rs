@@ -2453,17 +2453,23 @@ fn codegen_function(codegen: &mut Codegen, function: &RAstFunction) {
     }
 
     let STPair::ST(value_name, block_type): STPair = codegen_block(codegen, body);
-
-    match &block_type {
-        RAstType::Unit => {
+    match &return_type {
+        RAstType::Unit | RAstType::Never => {
             if codegen_is_main(codegen) {
-                codegen_emit_ret_value(codegen, &RAstType::Usize, &string("0"));
+                // exit with success
+                codegen_emit_ret_value(codegen, &RAstType::Usize, &integer_to_string(0));
             } else {
                 codegen_emit_ret_void(codegen);
             }
         }
-        RAstType::Never => codegen_emit_unreachable(codegen),
-        _ => codegen_emit_ret_value(codegen, &block_type, &value_name),
+        _ => {
+            if rAstType_eq(&block_type, &RAstType::Never) {
+                // return dummy value, it is never reached anyway
+                codegen_emit_ret_value(codegen, &return_type, &integer_to_string(0));
+            } else {
+                codegen_emit_ret_value(codegen, &return_type, &value_name);
+            }
+        }
     }
     codegen_emit_line(codegen, string("}"));
 
@@ -3094,11 +3100,6 @@ fn codegen_emit_ret_value(codegen: &mut Codegen, ty: &RAstType, value: &String) 
 /// ret void
 fn codegen_emit_ret_void(codegen: &mut Codegen) {
     codegen_emit_line(codegen, string("  ret void"));
-}
-
-/// Emit an unreachable terminator.
-fn codegen_emit_unreachable(codegen: &mut Codegen) {
-    codegen_emit_line(codegen, string("  unreachable"));
 }
 
 /// Emit a label:
