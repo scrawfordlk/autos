@@ -6651,11 +6651,11 @@ fn string_push(string: &mut String, character: char) {
 
 /// Append a string slice to the string.
 fn string_push_str(string: &mut String, str: &str) {
-    let str_len: usize = str.len();
+    let str_len: usize = str::len(str);
     let String::Inner(bytes): &mut String = string;
     vec_accomodate_extra_space::<u8>(bytes, str_len);
 
-    let str_ptr: *mut u8 = str.as_ptr() as *mut u8;
+    let str_ptr: *mut u8 = str::as_ptr(str) as *mut u8;
     let len: usize = vec_len::<u8>(bytes);
     let dest: *mut u8 = ptr_add::<u8>(vec_ptr::<u8>(bytes), len);
 
