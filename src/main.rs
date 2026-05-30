@@ -3473,6 +3473,8 @@ enum LlvmToken {
     Declare,         // "declare"
     Ret,             // "ret"
     Unreachable,     // "unreachable"
+    IntToPtr,        // "inttoptr"
+    PtrToInt,        // "ptrtoint"
     Br,              // "br"
     Label,           // "label"
     Add,             // "add"
@@ -3698,6 +3700,10 @@ fn llvm_identifier_to_token(identifier: String) -> LlvmToken {
         LlvmToken::Ret
     } else if string_eq(&identifier, &string_from_str("unreachable")) {
         LlvmToken::Unreachable
+    } else if string_eq(&identifier, &string_from_str("inttoptr")) {
+        LlvmToken::IntToPtr
+    } else if string_eq(&identifier, &string_from_str("ptrtoint")) {
+        LlvmToken::PtrToInt
     } else if string_eq(&identifier, &string_from_str("br")) {
         LlvmToken::Br
     } else if string_eq(&identifier, &string_from_str("label")) {
@@ -4211,6 +4217,8 @@ enum IcmpOp {
 enum CastOp {
     Zext,
     Trunc,
+    IntToPtr,
+    PtrToInt,
 }
 
 fn assignOp_get_type(operation: &AssignOp) -> LlvmType {
@@ -4492,6 +4500,8 @@ fn llvmParser_parse_assignment(parser: &mut LlvmParser) -> AssignInstruction {
         LlvmToken::Icmp => llvmParser_parse_icmp_assign(parser),
         LlvmToken::Zext => llvmParser_parse_cast_assign(parser, CastOp::Zext),
         LlvmToken::Trunc => llvmParser_parse_cast_assign(parser, CastOp::Trunc),
+        LlvmToken::IntToPtr => llvmParser_parse_cast_assign(parser, CastOp::IntToPtr),
+        LlvmToken::PtrToInt => llvmParser_parse_cast_assign(parser, CastOp::PtrToInt),
         LlvmToken::Alloca => llvmParser_parse_alloca_assign(parser),
         LlvmToken::Load => llvmParser_parse_load_assign(parser),
         LlvmToken::Call => llvmParser_parse_call_assign(parser),
@@ -4571,10 +4581,10 @@ fn llvmParser_parse_cast_assign(parser: &mut LlvmParser, operator: CastOp) -> As
     llvmParser_expect_token(parser, &LlvmToken::To);
     let to_type: LlvmType = llvmParser_parse_type(parser);
 
-    let from_bits: usize = llvmType_bitwidth(parser, &from_type);
-    let to_bits: usize = llvmType_bitwidth(parser, &to_type);
     match &operator {
         CastOp::Zext => {
+            let from_bits: usize = llvmType_bitwidth(parser, &from_type);
+            let to_bits: usize = llvmType_bitwidth(parser, &to_type);
             if not(from_bits < to_bits) {
                 llvmParser_error(
                     parser,
@@ -4585,12 +4595,42 @@ fn llvmParser_parse_cast_assign(parser: &mut LlvmParser, operator: CastOp) -> As
             }
         }
         CastOp::Trunc => {
+            let from_bits: usize = llvmType_bitwidth(parser, &from_type);
+            let to_bits: usize = llvmType_bitwidth(parser, &to_type);
             if not(from_bits > to_bits) {
                 llvmParser_error(
                     parser,
                     &string_from_str(
                         "invalid LLVM trunc: source type must be larger than target type",
                     ),
+                );
+            }
+        }
+        CastOp::IntToPtr => {
+            if not(llvmType_eq(&from_type, &LlvmType::I64)) {
+                llvmParser_error(
+                    parser,
+                    &string_from_str("invalid LLVM inttoptr: source type must be i64"),
+                );
+            }
+            if not(llvmType_eq(&to_type, &LlvmType::Ptr)) {
+                llvmParser_error(
+                    parser,
+                    &string_from_str("invalid LLVM inttoptr: target type must be ptr"),
+                );
+            }
+        }
+        CastOp::PtrToInt => {
+            if not(llvmType_eq(&from_type, &LlvmType::Ptr)) {
+                llvmParser_error(
+                    parser,
+                    &string_from_str("invalid LLVM ptrtoint: source type must be ptr"),
+                );
+            }
+            if not(llvmType_eq(&to_type, &LlvmType::I64)) {
+                llvmParser_error(
+                    parser,
+                    &string_from_str("invalid LLVM ptrtoint: target type must be i64"),
                 );
             }
         }
@@ -5157,9 +5197,14 @@ fn emu_evaluate_assign_op(
             result as usize
         }
 
-        AssignOp::Cast(_cast_op, to_type, value) => {
+        AssignOp::Cast(cast_op, to_type, value) => {
             let evaluated_value: usize = llvm_eval_value(global_values, registers, value);
-            llvm_overflow_value(evaluated_value, to_type)
+            match cast_op {
+                CastOp::Zext => llvm_overflow_value(evaluated_value, to_type),
+                CastOp::Trunc => llvm_overflow_value(evaluated_value, to_type),
+                CastOp::IntToPtr => evaluated_value, // only interpretation changes
+                CastOp::PtrToInt => evaluated_value, // only interpretation changes
+            }
         }
 
         AssignOp::Alloca(_, num_elements) => {
@@ -6147,6 +6192,14 @@ fn llvmToken_eq(left: &LlvmToken, right: &LlvmToken) -> bool {
             LlvmToken::Unreachable => true,
             _ => false,
         },
+        LlvmToken::IntToPtr => match right {
+            LlvmToken::IntToPtr => true,
+            _ => false,
+        },
+        LlvmToken::PtrToInt => match right {
+            LlvmToken::PtrToInt => true,
+            _ => false,
+        },
         LlvmToken::Br => match right {
             LlvmToken::Br => true,
             _ => false,
@@ -6461,6 +6514,8 @@ fn llvmToken_clone(token: &LlvmToken) -> LlvmToken {
         LlvmToken::Declare => LlvmToken::Declare,
         LlvmToken::Ret => LlvmToken::Ret,
         LlvmToken::Unreachable => LlvmToken::Unreachable,
+        LlvmToken::IntToPtr => LlvmToken::IntToPtr,
+        LlvmToken::PtrToInt => LlvmToken::PtrToInt,
         LlvmToken::Br => LlvmToken::Br,
         LlvmToken::Label => LlvmToken::Label,
         LlvmToken::Add => LlvmToken::Add,
@@ -6764,6 +6819,8 @@ fn llvmToken_to_string(token: &LlvmToken) -> String {
         LlvmToken::Declare => string_from_str("declare"),
         LlvmToken::Ret => string_from_str("ret"),
         LlvmToken::Unreachable => string_from_str("unreachable"),
+        LlvmToken::IntToPtr => string_from_str("inttoptr"),
+        LlvmToken::PtrToInt => string_from_str("ptrtoint"),
         LlvmToken::Br => string_from_str("br"),
         LlvmToken::Label => string_from_str("label"),
         LlvmToken::Add => string_from_str("add"),
