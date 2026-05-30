@@ -6675,26 +6675,6 @@ fn string_push_string(string: &mut String, other: &String) {
     vec_extend::<u8>(bytes, other_bytes);
 }
 
-/// Print a string stdout.
-fn print_string(string: &String) {
-    let mut i: usize = 0;
-    while i < string_len(string) {
-        let character: char = string_at(string, i);
-        print!("{}", character);
-        i = i + 1;
-    }
-}
-
-/// Print a string to stderr.
-fn eprint_string(string: &String) {
-    let mut i: usize = 0;
-    while i < string_len(string) {
-        let character: char = string_at(string, i);
-        eprint!("{}", character);
-        i = i + 1;
-    }
-}
-
 /// Converts a string into an integer given the base.
 /// Returns None if the integer contained in the string is invalid for 64-bit integers.
 fn string_to_integer(string: &String, base: usize) -> Option<usize> {
@@ -6721,26 +6701,6 @@ fn string_to_integer(string: &String, base: usize) -> Option<usize> {
         i = i + 1;
     }
     Option::Some(value)
-}
-
-/// Convert an integer into a string.
-fn integer_to_string(mut integer: usize) -> String {
-    let mut string: String = string_new();
-
-    if integer == 0 {
-        string_push(&mut string, '0');
-        return string;
-    }
-
-    while integer > 0 {
-        let digit: u8 = (integer % 10) as u8;
-        let character: char = ('0' as u8 + digit) as char;
-        string_push(&mut string, character);
-        integer = integer / 10;
-    }
-
-    string_reverse(&mut string);
-    string
 }
 
 /// Reverse a String in place.
@@ -6770,6 +6730,28 @@ fn string_hash(string: &String, bucket_count: usize) -> usize {
         i = i + 1;
     }
     hash % bucket_count
+}
+
+// -------------------- Display (to_string()) ----------------------
+
+/// Convert an integer into a string.
+fn integer_to_string(mut integer: usize) -> String {
+    let mut string: String = string_new();
+
+    if integer == 0 {
+        string_push(&mut string, '0');
+        return string;
+    }
+
+    while integer > 0 {
+        let digit: u8 = (integer % 10) as u8;
+        let character: char = ('0' as u8 + digit) as char;
+        string_push(&mut string, character);
+        integer = integer / 10;
+    }
+
+    string_reverse(&mut string);
+    string
 }
 
 /// Convert a token into a string.
@@ -6918,6 +6900,79 @@ fn literal_to_string(literal: &Literal) -> String {
     }
 }
 
+// --------------------------- I/O ---------------------------------
+
+enum IOResult {
+    Success,
+    OpenFailure,
+    WriteFailure,
+}
+
+/// Print a string to stdout.
+fn print_string(string: &String) {
+    let String::Inner(bytes): &String = string;
+    let len: usize = vec_len::<u8>(bytes);
+    let ptr: *mut u8 = vec_ptr::<u8>(bytes);
+    unsafe { io_write_report_error("/dev/stdout\0", ptr, len) }
+}
+
+/// Print a string to stderr.
+fn eprint_string(string: &String) {
+    let String::Inner(bytes): &String = string;
+    let len: usize = vec_len::<u8>(bytes);
+    let ptr: *mut u8 = vec_ptr::<u8>(bytes);
+    unsafe { io_write_report_error("/dev/stderr\0", ptr, len) }
+}
+
+/// Print a string slice to stdout.
+fn print_str(text: &str) {
+    let len: usize = str::len(text);
+    let ptr: *mut u8 = str::as_ptr(text) as *mut u8;
+    unsafe { io_write_report_error("/dev/stdout\0", ptr, len) }
+}
+
+/// Print a string slice to stderr.
+fn eprint_str(text: &str) {
+    let len: usize = str::len(text);
+    let ptr: *mut u8 = str::as_ptr(text) as *mut u8;
+    unsafe { io_write_report_error("/dev/stderr\0", ptr, len) }
+}
+
+/// Write the given `buffer` to `path` and report an error if there was one.
+/// `path` must be a NULL-terminated string.
+unsafe fn io_write_report_error(path: &str, buffer_ptr: *mut u8, len: usize) {
+    let path_ptr: *mut u8 = str::as_ptr(path) as *mut u8;
+    match unsafe { io_write(path_ptr, buffer_ptr, len) } {
+        IOResult::OpenFailure => eprint_str("Could not open \n"),
+        IOResult::WriteFailure => eprint_str("Could not write to \n"),
+        _ => return,
+    };
+    eprint_str(path);
+    eprint_str("\n");
+    exit_process(1);
+}
+
+/// Write the given `buffer` to `path` and return an IOResult.
+/// `path` must be a NULL-terminated string.
+unsafe fn io_write(path: *mut u8, buffer: *mut u8, len: usize) -> IOResult {
+    let fd: usize = unsafe { open(path, 1) };
+    if is_negative(fd) {
+        return IOResult::OpenFailure;
+    }
+
+    let mut offset: usize = 0;
+    while offset < len {
+        let remaining: usize = len - offset;
+        let written: usize = unsafe { write(fd, ptr_add::<u8>(buffer, offset), remaining) };
+        if or(is_negative(written), written == 0) {
+            return IOResult::WriteFailure;
+        }
+        offset = offset + written;
+    }
+
+    IOResult::Success
+}
+
 // ------------------------- Memory -------------------------------
 
 /// Copy n bytes from src to dest.
@@ -6972,6 +7027,8 @@ fn exit_process(code: usize) -> ! {
 unsafe extern "C" {
     fn malloc(size: usize) -> *mut u8;
     fn exit(code: usize) -> !;
+    fn open(path: *mut u8, flags: usize) -> usize;
+    fn write(fd: usize, buf: *mut u8, count: usize) -> usize;
 }
 
 // -----------------------------------------------------------------
