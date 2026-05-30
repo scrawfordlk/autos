@@ -158,21 +158,21 @@ fn test_lexer_expect_char_success() {
 fn test_scan_identifier_direct() {
     let mut lexer = make_lexer("hello_42!");
     let ident = lexer_scan_identifier(&mut lexer);
-    assert!(string_eq(&ident, &string_from_str("hello_42")));
+    assert!(string_eq(&ident, &string("hello_42")));
     assert!(matches!(lexer_peek_char(&lexer), Option::Some('!')));
 }
 
 #[test]
 fn test_identifier_to_token_direct_keyword() {
-    let tok = identifier_to_token(string_from_str("usize"));
+    let tok = identifier_to_token(string("usize"));
     assert!(matches!(tok, Token::Usize));
 }
 
 #[test]
 fn test_identifier_to_token_direct_identifier() {
-    let tok = identifier_to_token(string_from_str("my_var"));
+    let tok = identifier_to_token(string("my_var"));
     match tok {
-        Token::Identifier(s) => assert!(string_eq(&s, &string_from_str("my_var"))),
+        Token::Identifier(s) => assert!(string_eq(&s, &string("my_var"))),
         _ => assert!(false, "expected identifier token"),
     }
 }
@@ -196,7 +196,7 @@ fn test_scan_char_literal_direct() {
 fn test_scan_string_literal_direct() {
     let mut lexer = make_lexer("\"ab\\n\"");
     let s = lexer_scan_string_literal(&mut lexer);
-    assert!(string_eq(&s, &string_from_str("ab\n")));
+    assert!(string_eq(&s, &string("ab\n")));
     assert!(matches!(lexer_peek_char(&lexer), Option::None));
 }
 

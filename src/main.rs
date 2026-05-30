@@ -90,7 +90,7 @@ fn main() {
             exit_process(1);
         }
         let llvm_ir: StdString = std::fs::read_to_string(&args[2]).expect("no llvm file found");
-        let exit_code: usize = emu_execute_llvm(string_from_str(&llvm_ir));
+        let exit_code: usize = emu_execute_llvm(string(&llvm_ir));
         exit_process(exit_code);
     }
 
@@ -108,7 +108,7 @@ fn main() {
 
 /// Compile source code into LLVM-IR.
 fn compile(source: &str, do_semantic_analysis: bool) -> String {
-    let mut lexer: Lexer = lexer_new(string_from_str(source));
+    let mut lexer: Lexer = lexer_new(string(source));
     let ast: RAst = parse_language(&mut lexer);
 
     let items: StringMap<Item> = collect_items(&ast);
@@ -305,12 +305,12 @@ fn lexer_expect_char(lexer: &mut Lexer, expected: char) {
     match lexer_consume_char(lexer) {
         Option::Some(c) => {
             if c != expected {
-                let mut message: String = string_from_str("unexpected character: ");
+                let mut message: String = string("unexpected character: ");
                 string_push_string(&mut message, &literal_to_string(&Literal::Char(c)));
                 lexer_error(lexer, &message);
             }
         }
-        Option::None => lexer_error(lexer, &string_from_str("unexpected end of input")),
+        Option::None => lexer_error(lexer, &string("unexpected end of input")),
     }
 }
 
@@ -367,43 +367,43 @@ fn lexer_scan_identifier(lexer: &mut Lexer) -> String {
 
 /// Convert an identifier to a keyword token if applicable.
 fn identifier_to_token(ident: String) -> Token {
-    if string_eq(&ident, &string_from_str("fn")) {
+    if string_eq(&ident, &string("fn")) {
         Token::Fn
-    } else if string_eq(&ident, &string_from_str("enum")) {
+    } else if string_eq(&ident, &string("enum")) {
         Token::Enum
-    } else if string_eq(&ident, &string_from_str("extern")) {
+    } else if string_eq(&ident, &string("extern")) {
         Token::Extern
-    } else if string_eq(&ident, &string_from_str("let")) {
+    } else if string_eq(&ident, &string("let")) {
         Token::Let
-    } else if string_eq(&ident, &string_from_str("if")) {
+    } else if string_eq(&ident, &string("if")) {
         Token::If
-    } else if string_eq(&ident, &string_from_str("else")) {
+    } else if string_eq(&ident, &string("else")) {
         Token::Else
-    } else if string_eq(&ident, &string_from_str("while")) {
+    } else if string_eq(&ident, &string("while")) {
         Token::While
-    } else if string_eq(&ident, &string_from_str("return")) {
+    } else if string_eq(&ident, &string("return")) {
         Token::Return
-    } else if string_eq(&ident, &string_from_str("match")) {
+    } else if string_eq(&ident, &string("match")) {
         Token::Match
-    } else if string_eq(&ident, &string_from_str("as")) {
+    } else if string_eq(&ident, &string("as")) {
         Token::As
-    } else if string_eq(&ident, &string_from_str("unsafe")) {
+    } else if string_eq(&ident, &string("unsafe")) {
         Token::Unsafe
-    } else if string_eq(&ident, &string_from_str("mut")) {
+    } else if string_eq(&ident, &string("mut")) {
         Token::Mut
-    } else if string_eq(&ident, &string_from_str("usize")) {
+    } else if string_eq(&ident, &string("usize")) {
         Token::Usize
-    } else if string_eq(&ident, &string_from_str("u8")) {
+    } else if string_eq(&ident, &string("u8")) {
         Token::U8
-    } else if string_eq(&ident, &string_from_str("bool")) {
+    } else if string_eq(&ident, &string("bool")) {
         Token::Bool
-    } else if string_eq(&ident, &string_from_str("char")) {
+    } else if string_eq(&ident, &string("char")) {
         Token::Char
-    } else if string_eq(&ident, &string_from_str("str")) {
+    } else if string_eq(&ident, &string("str")) {
         Token::Str
-    } else if string_eq(&ident, &string_from_str("true")) {
+    } else if string_eq(&ident, &string("true")) {
         Token::Literal(Literal::Bool(true))
-    } else if string_eq(&ident, &string_from_str("false")) {
+    } else if string_eq(&ident, &string("false")) {
         Token::Literal(Literal::Bool(false))
     } else {
         Token::Identifier(ident)
@@ -431,7 +431,7 @@ fn lexer_scan_integer(lexer: &mut Lexer) -> usize {
     match string_to_integer(&value, 10) {
         Option::Some(int) => int,
         _ => {
-            let mut message: String = string_from_str("invalid integer literal: ");
+            let mut message: String = string("invalid integer literal: ");
             string_push_string(&mut message, &value);
             lexer_error(lexer, &message);
         }
@@ -443,7 +443,7 @@ fn lexer_scan_char_literal(lexer: &mut Lexer) -> char {
     let c: char = match lexer_consume_char(lexer) {
         Option::Some('\\') => lexer_scan_escape_char(lexer),
         Option::Some(ch) => ch,
-        Option::None => lexer_error(lexer, &string_from_str("unexpected end of file")),
+        Option::None => lexer_error(lexer, &string("unexpected end of file")),
     };
     lexer_expect_char(lexer, '\'');
     c
@@ -457,9 +457,7 @@ fn lexer_scan_string_literal(lexer: &mut Lexer) -> String {
             Option::Some('"') => return s,
             Option::Some('\\') => string_push(&mut s, lexer_scan_escape_char(lexer)),
             Option::Some(c) => string_push(&mut s, c),
-            Option::None => {
-                lexer_error(lexer, &string_from_str("unexpected end of string literal"))
-            }
+            Option::None => lexer_error(lexer, &string("unexpected end of string literal")),
         }
     }
     s // satisfy compiler
@@ -473,7 +471,7 @@ fn lexer_scan_escape_char(lexer: &mut Lexer) -> char {
         Option::Some('r') => '\r',
         Option::Some('0') => '\0',
         Option::Some(c) => c,
-        Option::None => lexer_error(lexer, &string_from_str("unexpected end of escape sequence")),
+        Option::None => lexer_error(lexer, &string("unexpected end of escape sequence")),
     }
 }
 
@@ -497,7 +495,7 @@ fn lexer_scan_symbol(lexer: &mut Lexer) -> Token {
         '<' => lexer_scan_less(lexer),
         '>' => lexer_scan_greater(lexer),
         c => {
-            let mut message: String = string_from_str("unexpected character: ");
+            let mut message: String = string("unexpected character: ");
             string_push_string(&mut message, &literal_to_string(&Literal::Char(c)));
             lexer_error(lexer, &message);
         }
@@ -624,7 +622,7 @@ fn lexer_skip_attributes(lexer: &mut Lexer) {
                         }
                     }
                     _ => {
-                        lexer_error(lexer, &string_from_str("expected '[' after '#'"));
+                        lexer_error(lexer, &string("expected '[' after '#'"));
                     }
                 }
             }
@@ -825,10 +823,9 @@ fn rastLiteral_type(literal: &RAstLiteral) -> RAstType {
         RAstLiteral::Int(_) => RAstType::Usize,
         RAstLiteral::Char(_) => RAstType::Char,
         RAstLiteral::Bool(_) => RAstType::Bool,
-        RAstLiteral::String(_) => RAstType::Reference(
-            box_new::<RAstType>(RAstType::Custom(string_from_str("str"))),
-            false,
-        ),
+        RAstLiteral::String(_) => {
+            RAstType::Reference(box_new::<RAstType>(RAstType::Custom(string("str"))), false)
+        }
     }
 }
 
@@ -844,15 +841,15 @@ fn rAstPatternLiteral_value(literal: &RAstPatternLiteral) -> usize {
 /// Convert Rust AST type into a simple LLVM-IR type name.
 fn rAstType_to_llvm_name(ty: &RAstType) -> String {
     match ty {
-        RAstType::U8 => string_from_str("i8"),
-        RAstType::Usize => string_from_str("i64"), // assume 64-bit for now
-        RAstType::Bool => string_from_str("i1"),
-        RAstType::Char => string_from_str("i8"),
-        RAstType::Unit => string_from_str("void"),
-        RAstType::Never => string_from_str("void"),
-        RAstType::Custom(_) => string_from_str("i64"),
-        RAstType::Reference(_, _) => string_from_str("ptr"),
-        RAstType::RawPointerMut(_) => string_from_str("ptr"),
+        RAstType::U8 => string("i8"),
+        RAstType::Usize => string("i64"), // assume 64-bit for now
+        RAstType::Bool => string("i1"),
+        RAstType::Char => string("i8"),
+        RAstType::Unit => string("void"),
+        RAstType::Never => string("void"),
+        RAstType::Custom(_) => string("i64"),
+        RAstType::Reference(_, _) => string("ptr"),
+        RAstType::RawPointerMut(_) => string("ptr"),
     }
 }
 
@@ -902,7 +899,7 @@ fn type_has_value(ty: &RAstType) -> bool {
 fn expect_token(lexer: &mut Lexer, token: &Token) {
     if not(lexer_try_consume(lexer, token)) {
         let bad_token: &Token = lexer_current_token(lexer);
-        let mut message: String = string_from_str("expected ");
+        let mut message: String = string("expected ");
         string_push_string(&mut message, &token_to_string(token));
         string_push_str(&mut message, ", but got: ");
         string_push_string(&mut message, &token_to_string(bad_token));
@@ -919,7 +916,7 @@ fn expect_identifier(lexer: &mut Lexer) -> String {
             name
         }
         token => {
-            let mut message: String = string_from_str("expected identifier, but got: ");
+            let mut message: String = string("expected identifier, but got: ");
             string_push_string(&mut message, &token_to_string(token));
             parse_error(lexer, &message);
         }
@@ -941,7 +938,7 @@ fn parse_language(lexer: &mut Lexer) -> RAst {
                     vec_push::<RAstItem>(&mut items, function);
                 }
                 token => {
-                    let mut message: String = string_from_str("expected fn or extern, but got: ");
+                    let mut message: String = string("expected fn or extern, but got: ");
                     string_push_string(&mut message, &token_to_string(&token));
                     parse_error(lexer, &message);
                 }
@@ -956,7 +953,7 @@ fn parse_language(lexer: &mut Lexer) -> RAst {
             }
             token => {
                 let mut message: String =
-                    string_from_str("expected function, enum, or extern block, but got: ");
+                    string("expected function, enum, or extern block, but got: ");
                 string_push_string(&mut message, &token_to_string(token));
                 parse_error(lexer, &message);
             }
@@ -971,15 +968,15 @@ fn parse_extern_block(lexer: &mut Lexer) -> Vec<RAstExternFunction> {
 
     match lexer_current_token(lexer) {
         Token::Literal(Literal::String(value)) => {
-            if not(string_eq(value, &string_from_str("C"))) {
-                let mut message: String = string_from_str("expected \"C\", but got: ");
+            if not(string_eq(value, &string("C"))) {
+                let mut message: String = string("expected \"C\", but got: ");
                 string_push_string(&mut message, &token_to_string(lexer_current_token(lexer)));
                 parse_error(lexer, &message);
             }
             lexer_next_token(lexer);
         }
         _ => {
-            let mut message: String = string_from_str("expected \"C\", but got: ");
+            let mut message: String = string("expected \"C\", but got: ");
             string_push_string(&mut message, &token_to_string(lexer_current_token(lexer)));
             parse_error(lexer, &message);
         }
@@ -1173,7 +1170,7 @@ fn parse_type(lexer: &mut Lexer) -> RAstType {
             if lexer_try_consume(lexer, &Token::Str) {
                 // TODO: remove this and handle like a user-defined type
                 return RAstType::Reference(
-                    box_new::<RAstType>(RAstType::Custom(string_from_str("str"))),
+                    box_new::<RAstType>(RAstType::Custom(string("str"))),
                     false,
                 );
             }
@@ -1193,7 +1190,7 @@ fn parse_type(lexer: &mut Lexer) -> RAstType {
             RAstType::Custom(enum_name)
         }
         token => {
-            let mut message: String = string_from_str("expected a type, but got: ");
+            let mut message: String = string("expected a type, but got: ");
             string_push_string(&mut message, &token_to_string(token));
             parse_error(lexer, &message);
         }
@@ -1370,7 +1367,7 @@ fn parse_factor(lexer: &mut Lexer) -> RAstExpr {
         Token::While => parse_while(lexer),
         Token::Match => parse_match(lexer),
         token => {
-            let mut message: String = string_from_str("unexpected token: ");
+            let mut message: String = string("unexpected token: ");
             string_push_string(&mut message, &token_to_string(token));
             parse_error(lexer, &message);
         }
@@ -1433,10 +1430,9 @@ fn parse_pattern(lexer: &mut Lexer) -> RAstPattern {
             RAstLiteral::Int(value) => RAstPatternLiteral::Int(value),
             RAstLiteral::Char(value) => RAstPatternLiteral::Char(value),
             RAstLiteral::Bool(value) => RAstPatternLiteral::Bool(value),
-            RAstLiteral::String(_) => parse_error(
-                lexer,
-                &string_from_str("matching on string literals is unsupported"),
-            ),
+            RAstLiteral::String(_) => {
+                parse_error(lexer, &string("matching on string literals is unsupported"))
+            }
         }),
         Token::Mut => {
             lexer_next_token(lexer);
@@ -1446,7 +1442,7 @@ fn parse_pattern(lexer: &mut Lexer) -> RAstPattern {
         Token::Identifier(_) => {
             let identifier: String = expect_identifier(lexer);
 
-            if string_eq(&identifier, &string_from_str("_")) {
+            if string_eq(&identifier, &string("_")) {
                 RAstPattern::Wildcard
             } else if lexer_try_consume(lexer, &Token::DoubleColon) {
                 let variant_name: String = expect_identifier(lexer);
@@ -1474,7 +1470,7 @@ fn parse_pattern(lexer: &mut Lexer) -> RAstPattern {
             }
         }
         token => {
-            let mut message: String = string_from_str("expected pattern, but got: ");
+            let mut message: String = string("expected pattern, but got: ");
             string_push_string(&mut message, &token_to_string(token));
             parse_error(lexer, &message);
         }
@@ -1525,7 +1521,7 @@ fn parse_literal(lexer: &mut Lexer) -> RAstLiteral {
             literal
         }
         token => {
-            let mut message: String = string_from_str("expected literal, but got: ");
+            let mut message: String = string("expected literal, but got: ");
             string_push_string(&mut message, &token_to_string(token));
             parse_error(lexer, &message);
         }
@@ -2360,7 +2356,7 @@ fn codegen_increment_ssa_counter(codegen: &mut Codegen) {
 fn codegen_next_register(codegen: &mut Codegen) -> String {
     let id: usize = codegen_ssa_counter(codegen);
     codegen_increment_ssa_counter(codegen);
-    let mut name: String = string_from_str("%t");
+    let mut name: String = string("%t");
     string_push_string(&mut name, &integer_to_string(id));
     name
 }
@@ -2369,7 +2365,7 @@ fn codegen_next_register(codegen: &mut Codegen) -> String {
 fn codegen_next_label(codegen: &mut Codegen, suffix: &str) -> String {
     let id: usize = codegen_ssa_counter(codegen);
     codegen_increment_ssa_counter(codegen);
-    let mut label: String = string_from_str("l");
+    let mut label: String = string("l");
     string_push_string(&mut label, &integer_to_string(id));
     string_push(&mut label, '.');
     string_push_str(&mut label, suffix);
@@ -2419,11 +2415,11 @@ fn codegen_function(codegen: &mut Codegen, function: &RAstFunction) {
     let RAstFunction::Function(_, function_name, parameters, return_type, body): &RAstFunction =
         function;
 
-    let llvm_return_type: String = if string_eq(function_name, &string_from_str("main")) {
+    let llvm_return_type: String = if string_eq(function_name, &string("main")) {
         codegen_mark_as_main(codegen, true);
 
         if rAstType_eq(&return_type, &RAstType::Unit) {
-            string_from_str("i64")
+            string("i64")
         } else {
             rAstType_to_llvm_name(&return_type)
         }
@@ -2443,7 +2439,7 @@ fn codegen_function(codegen: &mut Codegen, function: &RAstFunction) {
             RAstPattern::Identifier(_, name) => {
                 // SSA: all variables (including parameters) are stored on the stack
                 let param_ptr: String = codegen_emit_alloca(codegen, param_type, 1);
-                let mut param_register: String = string_from_str("%");
+                let mut param_register: String = string("%");
                 string_push_string(&mut param_register, name);
                 codegen_emit_store(codegen, param_type, &param_register, &param_ptr);
 
@@ -2461,7 +2457,7 @@ fn codegen_function(codegen: &mut Codegen, function: &RAstFunction) {
     match &block_type {
         RAstType::Unit => {
             if codegen_is_main(codegen) {
-                codegen_emit_ret_value(codegen, &RAstType::Usize, &string_from_str("0"));
+                codegen_emit_ret_value(codegen, &RAstType::Usize, &string("0"));
             } else {
                 codegen_emit_ret_void(codegen);
             }
@@ -2469,7 +2465,7 @@ fn codegen_function(codegen: &mut Codegen, function: &RAstFunction) {
         RAstType::Never => codegen_emit_unreachable(codegen),
         _ => codegen_emit_ret_value(codegen, &block_type, &value_name),
     }
-    codegen_emit_line(codegen, string_from_str("}"));
+    codegen_emit_line(codegen, string("}"));
 
     codegen_mark_as_main(codegen, false);
     codegen_pop_scope(codegen);
@@ -2584,7 +2580,7 @@ fn codegen_return(codegen: &mut Codegen, returned: &Option<Box<RAstExpr>>) -> ST
         // return;
         Option::None => {
             if codegen_is_main(codegen) {
-                codegen_emit_ret_value(codegen, &RAstType::Usize, &string_from_str("0"));
+                codegen_emit_ret_value(codegen, &RAstType::Usize, &string("0"));
             } else {
                 codegen_emit_ret_void(codegen);
             }
@@ -2719,10 +2715,7 @@ fn codegen_literal(literal: &RAstLiteral) -> STPair {
         RAstLiteral::Bool(value) => STPair::ST(integer_to_string(*value as usize), RAstType::Bool),
         RAstLiteral::String(_) => STPair::ST(
             string_new(),
-            RAstType::Reference(
-                box_new::<RAstType>(RAstType::Custom(string_from_str("str"))),
-                false,
-            ),
+            RAstType::Reference(box_new::<RAstType>(RAstType::Custom(string("str"))), false),
         ),
     }
 }
@@ -3100,12 +3093,12 @@ fn codegen_emit_ret_value(codegen: &mut Codegen, ty: &RAstType, value: &String) 
 /// Emit a ret void instruction:
 /// ret void
 fn codegen_emit_ret_void(codegen: &mut Codegen) {
-    codegen_emit_line(codegen, string_from_str("  ret void"));
+    codegen_emit_line(codegen, string("  ret void"));
 }
 
 /// Emit an unreachable terminator.
 fn codegen_emit_unreachable(codegen: &mut Codegen) {
-    codegen_emit_line(codegen, string_from_str("  unreachable"));
+    codegen_emit_line(codegen, string("  unreachable"));
 }
 
 /// Emit a label:
@@ -3373,7 +3366,7 @@ fn codegen_emit_function_header(
         // TODO: what if wildcards are used? Duplicate register names?
         let parameter_name: String = match pattern {
             RAstPattern::Identifier(_, name) => string_clone(name),
-            _ => string_from_str("arg"),
+            _ => string("arg"),
         };
 
         string_push_string(&mut line, &rAstType_to_llvm_name(parameter_type));
@@ -3692,73 +3685,73 @@ fn llvmLexer_scan_identifier_or_keyword(lexer: &mut LlvmLexer) -> String {
 }
 
 fn llvm_identifier_to_token(identifier: String) -> LlvmToken {
-    if string_eq(&identifier, &string_from_str("define")) {
+    if string_eq(&identifier, &string("define")) {
         LlvmToken::Define
-    } else if string_eq(&identifier, &string_from_str("declare")) {
+    } else if string_eq(&identifier, &string("declare")) {
         LlvmToken::Declare
-    } else if string_eq(&identifier, &string_from_str("ret")) {
+    } else if string_eq(&identifier, &string("ret")) {
         LlvmToken::Ret
-    } else if string_eq(&identifier, &string_from_str("unreachable")) {
+    } else if string_eq(&identifier, &string("unreachable")) {
         LlvmToken::Unreachable
-    } else if string_eq(&identifier, &string_from_str("inttoptr")) {
+    } else if string_eq(&identifier, &string("inttoptr")) {
         LlvmToken::IntToPtr
-    } else if string_eq(&identifier, &string_from_str("ptrtoint")) {
+    } else if string_eq(&identifier, &string("ptrtoint")) {
         LlvmToken::PtrToInt
-    } else if string_eq(&identifier, &string_from_str("br")) {
+    } else if string_eq(&identifier, &string("br")) {
         LlvmToken::Br
-    } else if string_eq(&identifier, &string_from_str("label")) {
+    } else if string_eq(&identifier, &string("label")) {
         LlvmToken::Label
-    } else if string_eq(&identifier, &string_from_str("add")) {
+    } else if string_eq(&identifier, &string("add")) {
         LlvmToken::Add
-    } else if string_eq(&identifier, &string_from_str("sub")) {
+    } else if string_eq(&identifier, &string("sub")) {
         LlvmToken::Sub
-    } else if string_eq(&identifier, &string_from_str("mul")) {
+    } else if string_eq(&identifier, &string("mul")) {
         LlvmToken::Mul
-    } else if string_eq(&identifier, &string_from_str("udiv")) {
+    } else if string_eq(&identifier, &string("udiv")) {
         LlvmToken::Udiv
-    } else if string_eq(&identifier, &string_from_str("urem")) {
+    } else if string_eq(&identifier, &string("urem")) {
         LlvmToken::Urem
-    } else if string_eq(&identifier, &string_from_str("icmp")) {
+    } else if string_eq(&identifier, &string("icmp")) {
         LlvmToken::Icmp
-    } else if string_eq(&identifier, &string_from_str("zext")) {
+    } else if string_eq(&identifier, &string("zext")) {
         LlvmToken::Zext
-    } else if string_eq(&identifier, &string_from_str("trunc")) {
+    } else if string_eq(&identifier, &string("trunc")) {
         LlvmToken::Trunc
-    } else if string_eq(&identifier, &string_from_str("alloca")) {
+    } else if string_eq(&identifier, &string("alloca")) {
         LlvmToken::Alloca
-    } else if string_eq(&identifier, &string_from_str("store")) {
+    } else if string_eq(&identifier, &string("store")) {
         LlvmToken::Store
-    } else if string_eq(&identifier, &string_from_str("load")) {
+    } else if string_eq(&identifier, &string("load")) {
         LlvmToken::Load
-    } else if string_eq(&identifier, &string_from_str("to")) {
+    } else if string_eq(&identifier, &string("to")) {
         LlvmToken::To
-    } else if string_eq(&identifier, &string_from_str("call")) {
+    } else if string_eq(&identifier, &string("call")) {
         LlvmToken::Call
-    } else if string_eq(&identifier, &string_from_str("getelementptr")) {
+    } else if string_eq(&identifier, &string("getelementptr")) {
         LlvmToken::Gep
-    } else if string_eq(&identifier, &string_from_str("constant")) {
+    } else if string_eq(&identifier, &string("constant")) {
         LlvmToken::Constant
-    } else if string_eq(&identifier, &string_from_str("eq")) {
+    } else if string_eq(&identifier, &string("eq")) {
         LlvmToken::Eq
-    } else if string_eq(&identifier, &string_from_str("ne")) {
+    } else if string_eq(&identifier, &string("ne")) {
         LlvmToken::Ne
-    } else if string_eq(&identifier, &string_from_str("ugt")) {
+    } else if string_eq(&identifier, &string("ugt")) {
         LlvmToken::Ugt
-    } else if string_eq(&identifier, &string_from_str("uge")) {
+    } else if string_eq(&identifier, &string("uge")) {
         LlvmToken::Uge
-    } else if string_eq(&identifier, &string_from_str("ult")) {
+    } else if string_eq(&identifier, &string("ult")) {
         LlvmToken::Ult
-    } else if string_eq(&identifier, &string_from_str("ule")) {
+    } else if string_eq(&identifier, &string("ule")) {
         LlvmToken::Ule
-    } else if string_eq(&identifier, &string_from_str("ptr")) {
+    } else if string_eq(&identifier, &string("ptr")) {
         LlvmToken::Ptr
-    } else if string_eq(&identifier, &string_from_str("i64")) {
+    } else if string_eq(&identifier, &string("i64")) {
         LlvmToken::I64
-    } else if string_eq(&identifier, &string_from_str("i8")) {
+    } else if string_eq(&identifier, &string("i8")) {
         LlvmToken::I8
-    } else if string_eq(&identifier, &string_from_str("i1")) {
+    } else if string_eq(&identifier, &string("i1")) {
         LlvmToken::I1
-    } else if string_eq(&identifier, &string_from_str("void")) {
+    } else if string_eq(&identifier, &string("void")) {
         LlvmToken::Void
     } else {
         LlvmToken::Identifier(identifier)
@@ -3933,8 +3926,7 @@ fn llvmParser_expect_identifier(parser: &mut LlvmParser) -> String {
             value
         }
         _ => {
-            let message: String =
-                llvmParser_expected_message(parser, &string_from_str("LLVM identifier"));
+            let message: String = llvmParser_expected_message(parser, &string("LLVM identifier"));
             llvmParser_error(parser, &message)
         }
     }
@@ -3942,10 +3934,7 @@ fn llvmParser_expect_identifier(parser: &mut LlvmParser) -> String {
 
 fn llvmParser_expect_value_type(parser: &LlvmParser, value: &LlvmValue, expected: &LlvmType) {
     if not(llvmParser_value_has_type(parser, value, expected)) {
-        llvmParser_error(
-            parser,
-            &string_from_str("LLVM value does not match expected type"),
-        );
+        llvmParser_error(parser, &string("LLVM value does not match expected type"));
     }
 }
 
@@ -4096,8 +4085,7 @@ fn llvmType_bitwidth(parser: &LlvmParser, ty: &LlvmType) -> usize {
         LlvmType::I8 => 8,
         LlvmType::I64 => 64,
         _ => {
-            let message: String =
-                llvmParser_expected_message(parser, &string_from_str("LLVM integer type"));
+            let message: String = llvmParser_expected_message(parser, &string("LLVM integer type"));
             llvmParser_error(parser, &message)
         }
     }
@@ -4258,7 +4246,7 @@ fn llvmParser_parse_language(parser: &mut LlvmParser) {
             LlvmToken::Declare => llvmParser_parse_declare(parser),
             _ => {
                 let message: String =
-                    llvmParser_expected_message(parser, &string_from_str("LLVM top-level item"));
+                    llvmParser_expected_message(parser, &string("LLVM top-level item"));
                 llvmParser_error(parser, &message)
             }
         }
@@ -4278,7 +4266,7 @@ fn llvmParser_parse_string(parser: &mut LlvmParser) {
         }
         _ => {
             let message: String =
-                llvmParser_expected_message(parser, &string_from_str("LLVM c-string literal"));
+                llvmParser_expected_message(parser, &string("LLVM c-string literal"));
             llvmParser_error(parser, &message)
         }
     }
@@ -4303,10 +4291,7 @@ fn llvmParser_parse_function(parser: &mut LlvmParser) {
         function_name,
         function,
     )) {
-        llvmParser_error(
-            parser,
-            &string_from_str("duplicate LLVM function definition"),
-        );
+        llvmParser_error(parser, &string("duplicate LLVM function definition"));
     }
 }
 
@@ -4318,12 +4303,12 @@ fn llvmParser_parse_declare(parser: &mut LlvmParser) {
     llvmLocalSymTable_clear(llvmParser_local_mut(parser));
     let parameters: Vec<LlvmParameter> = llvmParser_parse_parameters(parser, false);
 
-    let builtin: LlvmBuiltIn = if string_eq(&function_name, &string_from_str("malloc")) {
+    let builtin: LlvmBuiltIn = if string_eq(&function_name, &string("malloc")) {
         LlvmBuiltIn::Malloc
-    } else if string_eq(&function_name, &string_from_str("exit")) {
+    } else if string_eq(&function_name, &string("exit")) {
         LlvmBuiltIn::Exit
     } else {
-        llvmParser_error(parser, &string_from_str("unknown declared function"));
+        llvmParser_error(parser, &string("unknown declared function"));
     };
 
     let function: LlvmFunction = LlvmFunction::BuiltIn(builtin, return_type, parameters);
@@ -4332,10 +4317,7 @@ fn llvmParser_parse_declare(parser: &mut LlvmParser) {
         function_name,
         function,
     )) {
-        llvmParser_error(
-            parser,
-            &string_from_str("duplicate LLVM function declaration"),
-        );
+        llvmParser_error(parser, &string("duplicate LLVM function declaration"));
     }
 }
 
@@ -4374,10 +4356,7 @@ fn llvmParser_parse_parameters(parser: &mut LlvmParser, named: bool) -> Vec<Llvm
                     string_clone(&param_name),
                     llvmType_clone(&parameter_type),
                 )) {
-                    llvmParser_error(
-                        parser,
-                        &string_from_str("duplicate parameters in LLVM function"),
-                    );
+                    llvmParser_error(parser, &string("duplicate parameters in LLVM function"));
                 }
             }
 
@@ -4393,7 +4372,7 @@ fn llvmParser_parse_parameter_name(parser: &mut LlvmParser, index: usize) -> Str
     if llvmParser_current_token_eq(parser, &LlvmToken::Percent) {
         llvmParser_parse_register(parser)
     } else {
-        let mut name: String = string_from_str("arg");
+        let mut name: String = string("arg");
         string_push_string(&mut name, &integer_to_string(index));
         name
     }
@@ -4447,8 +4426,7 @@ fn llvmParser_parse_instruction(parser: &mut LlvmParser) -> Instruction {
             Instruction::Call(llvmParser_parse_call(parser))
         }
         _ => {
-            let message: String =
-                llvmParser_expected_message(parser, &string_from_str("LLVM instruction"));
+            let message: String = llvmParser_expected_message(parser, &string("LLVM instruction"));
             llvmParser_error(parser, &message)
         }
     }
@@ -4508,7 +4486,7 @@ fn llvmParser_parse_assignment(parser: &mut LlvmParser) -> AssignInstruction {
         LlvmToken::Gep => llvmParser_parse_gep_assign(parser),
         _ => {
             let message: String =
-                llvmParser_expected_message(parser, &string_from_str("LLVM assignment operation"));
+                llvmParser_expected_message(parser, &string("LLVM assignment operation"));
             llvmParser_error(parser, &message)
         }
     };
@@ -4520,7 +4498,7 @@ fn llvmParser_parse_assignment(parser: &mut LlvmParser) -> AssignInstruction {
     )) {
         llvmParser_error(
             parser,
-            &string_from_str("SSA violation: duplicate virtual register assignment"),
+            &string("SSA violation: duplicate virtual register assignment"),
         );
     }
 
@@ -4545,7 +4523,7 @@ fn llvmParser_parse_icmp_assign(parser: &mut LlvmParser) -> AssignOp {
         LlvmToken::Ule => IcmpOp::Ule,
         _ => {
             let message: String =
-                llvmParser_expected_message(parser, &string_from_str("LLVM icmp operator"));
+                llvmParser_expected_message(parser, &string("LLVM icmp operator"));
             llvmParser_error(parser, &message)
         }
     };
@@ -4566,7 +4544,7 @@ fn llvmParser_parse_call_assign(parser: &mut LlvmParser) -> AssignOp {
 
     let Call::Call(return_type, _, _): &Call = &call;
     if llvmType_eq(return_type, &LlvmType::Void) {
-        llvmParser_error(parser, &string_from_str("cannot assign void to a register"));
+        llvmParser_error(parser, &string("cannot assign void to a register"));
     }
 
     AssignOp::Call(call)
@@ -4588,9 +4566,7 @@ fn llvmParser_parse_cast_assign(parser: &mut LlvmParser, operator: CastOp) -> As
             if not(from_bits < to_bits) {
                 llvmParser_error(
                     parser,
-                    &string_from_str(
-                        "invalid LLVM zext: source type must be smaller than target type",
-                    ),
+                    &string("invalid LLVM zext: source type must be smaller than target type"),
                 );
             }
         }
@@ -4600,9 +4576,7 @@ fn llvmParser_parse_cast_assign(parser: &mut LlvmParser, operator: CastOp) -> As
             if not(from_bits > to_bits) {
                 llvmParser_error(
                     parser,
-                    &string_from_str(
-                        "invalid LLVM trunc: source type must be larger than target type",
-                    ),
+                    &string("invalid LLVM trunc: source type must be larger than target type"),
                 );
             }
         }
@@ -4610,13 +4584,13 @@ fn llvmParser_parse_cast_assign(parser: &mut LlvmParser, operator: CastOp) -> As
             if not(llvmType_eq(&from_type, &LlvmType::I64)) {
                 llvmParser_error(
                     parser,
-                    &string_from_str("invalid LLVM inttoptr: source type must be i64"),
+                    &string("invalid LLVM inttoptr: source type must be i64"),
                 );
             }
             if not(llvmType_eq(&to_type, &LlvmType::Ptr)) {
                 llvmParser_error(
                     parser,
-                    &string_from_str("invalid LLVM inttoptr: target type must be ptr"),
+                    &string("invalid LLVM inttoptr: target type must be ptr"),
                 );
             }
         }
@@ -4624,13 +4598,13 @@ fn llvmParser_parse_cast_assign(parser: &mut LlvmParser, operator: CastOp) -> As
             if not(llvmType_eq(&from_type, &LlvmType::Ptr)) {
                 llvmParser_error(
                     parser,
-                    &string_from_str("invalid LLVM ptrtoint: source type must be ptr"),
+                    &string("invalid LLVM ptrtoint: source type must be ptr"),
                 );
             }
             if not(llvmType_eq(&to_type, &LlvmType::I64)) {
                 llvmParser_error(
                     parser,
-                    &string_from_str("invalid LLVM ptrtoint: target type must be i64"),
+                    &string("invalid LLVM ptrtoint: target type must be i64"),
                 );
             }
         }
@@ -4737,20 +4711,16 @@ fn llvmParser_parse_type(parser: &mut LlvmParser) -> LlvmType {
             let len: usize = llvmParser_parse_integer(parser);
             match llvmParser_current_token(parser) {
                 LlvmToken::Identifier(separator) => {
-                    if not(string_eq(separator, &string_from_str("x"))) {
-                        let message: String = llvmParser_expected_message(
-                            parser,
-                            &string_from_str("x in LLVM array type"),
-                        );
+                    if not(string_eq(separator, &string("x"))) {
+                        let message: String =
+                            llvmParser_expected_message(parser, &string("x in LLVM array type"));
                         llvmParser_error(parser, &message);
                     }
                     llvmParser_next_token(parser);
                 }
                 _ => {
-                    let message: String = llvmParser_expected_message(
-                        parser,
-                        &string_from_str("x in LLVM array type"),
-                    );
+                    let message: String =
+                        llvmParser_expected_message(parser, &string("x in LLVM array type"));
                     llvmParser_error(parser, &message)
                 }
             }
@@ -4759,8 +4729,7 @@ fn llvmParser_parse_type(parser: &mut LlvmParser) -> LlvmType {
             LlvmType::Array(len, box_new::<LlvmType>(inner))
         }
         _ => {
-            let message: String =
-                llvmParser_expected_message(parser, &string_from_str("LLVM type"));
+            let message: String = llvmParser_expected_message(parser, &string("LLVM type"));
             llvmParser_error(parser, &message)
         }
     }
@@ -4772,8 +4741,7 @@ fn llvmParser_parse_value(parser: &mut LlvmParser) -> LlvmValue {
         LlvmToken::At => LlvmValue::Global(llvmParser_parse_global_name(parser)),
         LlvmToken::Integer(_) => LlvmValue::Literal(llvmParser_parse_integer(parser)),
         _ => {
-            let message: String =
-                llvmParser_expected_message(parser, &string_from_str("LLVM value"));
+            let message: String = llvmParser_expected_message(parser, &string("LLVM value"));
             llvmParser_error(parser, &message)
         }
     }
@@ -4784,7 +4752,7 @@ fn llvmParser_parse_integer(parser: &mut LlvmParser) -> usize {
         LlvmToken::Integer(value) => value,
         _ => {
             let message: String =
-                llvmParser_expected_message(parser, &string_from_str("LLVM integer literal"));
+                llvmParser_expected_message(parser, &string("LLVM integer literal"));
             llvmParser_error(parser, &message)
         }
     }
@@ -4983,7 +4951,7 @@ fn emu_load_double(emulator: &mut Emu, address: usize) -> Option<usize> {
 fn emu_execute_llvm(source: String) -> usize {
     let ast: LlvmAst = llvmParser_parse_to_ast(source);
 
-    let main_name: String = string_from_str("main");
+    let main_name: String = string("main");
     let empty_args: Vec<usize> = vec_new::<usize>();
 
     // TODO: parameterise memory size, set correct global pointer after parsing
@@ -5397,7 +5365,7 @@ fn llvmParser_error(parser: &LlvmParser, message: &String) -> ! {
 }
 
 fn llvmParser_expected_message(parser: &LlvmParser, expected: &String) -> String {
-    let mut message: String = string_from_str("expected ");
+    let mut message: String = string("expected ");
     string_push_string(&mut message, expected);
     let token: &LlvmToken = llvmParser_current_token(parser);
     string_push_str(&mut message, ", but got: ");
@@ -6614,8 +6582,8 @@ fn string_with_capacity(initial_capacity: usize) -> String {
     String::Inner(vec_with_capacity::<u8>(initial_capacity))
 }
 
-/// Create a string from a string slice.
-fn string_from_str(str: &str) -> String {
+/// Create an owned string from a string slice.
+fn string(str: &str) -> String {
     let mut s: String = string_new();
     string_push_str(&mut s, str);
     s
@@ -6757,96 +6725,96 @@ fn integer_to_string(mut integer: usize) -> String {
 /// Convert a token into a string.
 fn token_to_string(token: &Token) -> String {
     match token {
-        Token::Fn => string_from_str("fn"),
-        Token::Enum => string_from_str("enum"),
-        Token::Extern => string_from_str("extern"),
-        Token::Let => string_from_str("let"),
-        Token::If => string_from_str("if"),
-        Token::Else => string_from_str("else"),
-        Token::While => string_from_str("while"),
-        Token::Return => string_from_str("return"),
-        Token::Match => string_from_str("match"),
-        Token::As => string_from_str("as"),
-        Token::Unsafe => string_from_str("unsafe"),
-        Token::Mut => string_from_str("mut"),
-        Token::Ampersand => string_from_str("&"),
-        Token::LBrace => string_from_str("{"),
-        Token::RBrace => string_from_str("}"),
-        Token::LParen => string_from_str("("),
-        Token::RParen => string_from_str(")"),
-        Token::Colon => string_from_str(":"),
-        Token::DoubleColon => string_from_str("::"),
-        Token::SemiColon => string_from_str(";"),
-        Token::Comma => string_from_str(","),
-        Token::Assign => string_from_str("="),
-        Token::Bang => string_from_str("!"),
+        Token::Fn => string("fn"),
+        Token::Enum => string("enum"),
+        Token::Extern => string("extern"),
+        Token::Let => string("let"),
+        Token::If => string("if"),
+        Token::Else => string("else"),
+        Token::While => string("while"),
+        Token::Return => string("return"),
+        Token::Match => string("match"),
+        Token::As => string("as"),
+        Token::Unsafe => string("unsafe"),
+        Token::Mut => string("mut"),
+        Token::Ampersand => string("&"),
+        Token::LBrace => string("{"),
+        Token::RBrace => string("}"),
+        Token::LParen => string("("),
+        Token::RParen => string(")"),
+        Token::Colon => string(":"),
+        Token::DoubleColon => string("::"),
+        Token::SemiColon => string(";"),
+        Token::Comma => string(","),
+        Token::Assign => string("="),
+        Token::Bang => string("!"),
         Token::Cmp(comparison) => comparison_to_string(comparison),
-        Token::FatArrow => string_from_str("=>"),
-        Token::Plus => string_from_str("+"),
-        Token::Minus => string_from_str("-"),
-        Token::Star => string_from_str("*"),
-        Token::Slash => string_from_str("/"),
-        Token::Remainder => string_from_str("%"),
-        Token::Usize => string_from_str("usize"),
-        Token::U8 => string_from_str("u8"),
-        Token::Bool => string_from_str("bool"),
-        Token::Char => string_from_str("char"),
-        Token::Str => string_from_str("str"),
-        Token::Arrow => string_from_str("->"),
+        Token::FatArrow => string("=>"),
+        Token::Plus => string("+"),
+        Token::Minus => string("-"),
+        Token::Star => string("*"),
+        Token::Slash => string("/"),
+        Token::Remainder => string("%"),
+        Token::Usize => string("usize"),
+        Token::U8 => string("u8"),
+        Token::Bool => string("bool"),
+        Token::Char => string("char"),
+        Token::Str => string("str"),
+        Token::Arrow => string("->"),
         Token::Literal(literal) => literal_to_string(literal),
         Token::Identifier(name) => string_clone(name),
-        Token::Eof => string_from_str("<eof>"),
+        Token::Eof => string("<eof>"),
     }
 }
 
 /// Convert an LLVM token into a string.
 fn llvmToken_to_string(token: &LlvmToken) -> String {
     match token {
-        LlvmToken::Define => string_from_str("define"),
-        LlvmToken::Declare => string_from_str("declare"),
-        LlvmToken::Ret => string_from_str("ret"),
-        LlvmToken::Unreachable => string_from_str("unreachable"),
-        LlvmToken::IntToPtr => string_from_str("inttoptr"),
-        LlvmToken::PtrToInt => string_from_str("ptrtoint"),
-        LlvmToken::Br => string_from_str("br"),
-        LlvmToken::Label => string_from_str("label"),
-        LlvmToken::Add => string_from_str("add"),
-        LlvmToken::Sub => string_from_str("sub"),
-        LlvmToken::Mul => string_from_str("mul"),
-        LlvmToken::Udiv => string_from_str("udiv"),
-        LlvmToken::Urem => string_from_str("urem"),
-        LlvmToken::Icmp => string_from_str("icmp"),
-        LlvmToken::Zext => string_from_str("zext"),
-        LlvmToken::Trunc => string_from_str("trunc"),
-        LlvmToken::Alloca => string_from_str("alloca"),
-        LlvmToken::Store => string_from_str("store"),
-        LlvmToken::Load => string_from_str("load"),
-        LlvmToken::To => string_from_str("to"),
-        LlvmToken::Call => string_from_str("call"),
-        LlvmToken::Gep => string_from_str("getelementptr"),
-        LlvmToken::Constant => string_from_str("constant"),
-        LlvmToken::Eq => string_from_str("eq"),
-        LlvmToken::Ne => string_from_str("ne"),
-        LlvmToken::Ugt => string_from_str("ugt"),
-        LlvmToken::Uge => string_from_str("uge"),
-        LlvmToken::Ult => string_from_str("ult"),
-        LlvmToken::Ule => string_from_str("ule"),
-        LlvmToken::Ptr => string_from_str("ptr"),
-        LlvmToken::I64 => string_from_str("i64"),
-        LlvmToken::I8 => string_from_str("i8"),
-        LlvmToken::I1 => string_from_str("i1"),
-        LlvmToken::Void => string_from_str("void"),
-        LlvmToken::At => string_from_str("@"),
-        LlvmToken::Percent => string_from_str("%"),
-        LlvmToken::LParen => string_from_str("("),
-        LlvmToken::RParen => string_from_str(")"),
-        LlvmToken::LBrace => string_from_str("{"),
-        LlvmToken::RBrace => string_from_str("}"),
-        LlvmToken::LBracket => string_from_str("["),
-        LlvmToken::RBracket => string_from_str("]"),
-        LlvmToken::Comma => string_from_str(","),
-        LlvmToken::Assign => string_from_str("="),
-        LlvmToken::Colon => string_from_str(":"),
+        LlvmToken::Define => string("define"),
+        LlvmToken::Declare => string("declare"),
+        LlvmToken::Ret => string("ret"),
+        LlvmToken::Unreachable => string("unreachable"),
+        LlvmToken::IntToPtr => string("inttoptr"),
+        LlvmToken::PtrToInt => string("ptrtoint"),
+        LlvmToken::Br => string("br"),
+        LlvmToken::Label => string("label"),
+        LlvmToken::Add => string("add"),
+        LlvmToken::Sub => string("sub"),
+        LlvmToken::Mul => string("mul"),
+        LlvmToken::Udiv => string("udiv"),
+        LlvmToken::Urem => string("urem"),
+        LlvmToken::Icmp => string("icmp"),
+        LlvmToken::Zext => string("zext"),
+        LlvmToken::Trunc => string("trunc"),
+        LlvmToken::Alloca => string("alloca"),
+        LlvmToken::Store => string("store"),
+        LlvmToken::Load => string("load"),
+        LlvmToken::To => string("to"),
+        LlvmToken::Call => string("call"),
+        LlvmToken::Gep => string("getelementptr"),
+        LlvmToken::Constant => string("constant"),
+        LlvmToken::Eq => string("eq"),
+        LlvmToken::Ne => string("ne"),
+        LlvmToken::Ugt => string("ugt"),
+        LlvmToken::Uge => string("uge"),
+        LlvmToken::Ult => string("ult"),
+        LlvmToken::Ule => string("ule"),
+        LlvmToken::Ptr => string("ptr"),
+        LlvmToken::I64 => string("i64"),
+        LlvmToken::I8 => string("i8"),
+        LlvmToken::I1 => string("i1"),
+        LlvmToken::Void => string("void"),
+        LlvmToken::At => string("@"),
+        LlvmToken::Percent => string("%"),
+        LlvmToken::LParen => string("("),
+        LlvmToken::RParen => string(")"),
+        LlvmToken::LBrace => string("{"),
+        LlvmToken::RBrace => string("}"),
+        LlvmToken::LBracket => string("["),
+        LlvmToken::RBracket => string("]"),
+        LlvmToken::Comma => string(","),
+        LlvmToken::Assign => string("="),
+        LlvmToken::Colon => string(":"),
         LlvmToken::CString(value) => {
             let mut string: String = string_new();
             string_push_str(&mut string, "c\"");
@@ -6856,19 +6824,19 @@ fn llvmToken_to_string(token: &LlvmToken) -> String {
         }
         LlvmToken::Identifier(name) => string_clone(name),
         LlvmToken::Integer(value) => integer_to_string(*value),
-        LlvmToken::Eof => string_from_str("<eof>"),
+        LlvmToken::Eof => string("<eof>"),
     }
 }
 
 /// Convert a comparison token into a string.
 fn comparison_to_string(comparison: &Comparison) -> String {
     match comparison {
-        Comparison::Eq => string_from_str("=="),
-        Comparison::Ne => string_from_str("!="),
-        Comparison::Gt => string_from_str(">"),
-        Comparison::Lt => string_from_str("<"),
-        Comparison::Geq => string_from_str(">="),
-        Comparison::Leq => string_from_str("<="),
+        Comparison::Eq => string("=="),
+        Comparison::Ne => string("!="),
+        Comparison::Gt => string(">"),
+        Comparison::Lt => string("<"),
+        Comparison::Geq => string(">="),
+        Comparison::Leq => string("<="),
     }
 }
 
@@ -6878,9 +6846,9 @@ fn literal_to_string(literal: &Literal) -> String {
         Literal::Int(value) => integer_to_string(*value),
         Literal::Bool(value) => {
             if *value {
-                string_from_str("true")
+                string("true")
             } else {
-                string_from_str("false")
+                string("false")
             }
         }
         Literal::Char(value) => {

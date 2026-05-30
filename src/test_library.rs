@@ -136,16 +136,16 @@ fn test_alloc() {
 
 #[test]
 fn test_string_push_string() {
-    let mut left = string_from_str("left");
-    let right = string_from_str("_right");
+    let mut left = string("left");
+    let right = string("_right");
     string_push_string(&mut left, &right);
     assert_eq!(to_std_string(&left), "left_right");
 }
 
 #[test]
-fn test_string_from_str_direct() {
-    let s = string_from_str("hello");
-    assert!(string_eq(&s, &string_from_str("hello")));
+fn test_string_direct() {
+    let s = string("hello");
+    assert!(string_eq(&s, &string("hello")));
 }
 
 fn rAstType_match(a: &RAstType, b: &RAstType) -> bool {
@@ -210,7 +210,7 @@ fn test_string_with_capacity() {
 
 #[test]
 fn test_string_clone() {
-    let mut s = string_from_str("clone me");
+    let mut s = string("clone me");
     let clone = string_clone(&s);
     string_push(&mut s, '!');
     assert_eq!(to_std_string(&clone), "clone me");
@@ -219,7 +219,7 @@ fn test_string_clone() {
 
 #[test]
 fn test_type_clone() {
-    let custom = RAstType::Custom(string_from_str("MyType"));
+    let custom = RAstType::Custom(string("MyType"));
     let cloned = rAstType_clone(&custom);
     assert!(rAstType_match(&custom, &cloned));
 }
