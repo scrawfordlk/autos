@@ -66,7 +66,7 @@ fn main() {
                     .to_string();
                 base.push_str(".ll");
                 base
-            }
+            },
         };
 
         let String::Inner(vec): String = code;
@@ -285,8 +285,8 @@ fn lexer_consume_char(lexer: &mut Lexer) -> Option<char> {
                 *line = *line + 1;
                 *last_newline_idx = *index;
             }
-        }
-        Option::None => {}
+        },
+        Option::None => {},
     }
     current
 }
@@ -310,7 +310,7 @@ fn lexer_expect_char(lexer: &mut Lexer, expected: char) {
                 string_push_string(&mut message, &literal_to_string(&Literal::Char(c)));
                 lexer_error(lexer, &message);
             }
-        }
+        },
         Option::None => lexer_error(lexer, &string("unexpected end of input")),
     }
 }
@@ -339,7 +339,7 @@ fn lexer_next_token(lexer: &mut Lexer) -> Token {
             } else {
                 lexer_scan_symbol(lexer)
             }
-        }
+        },
         Option::None => Token::Eof,
     };
 
@@ -359,7 +359,7 @@ fn lexer_scan_identifier(lexer: &mut Lexer) -> String {
                 } else {
                     return ident;
                 }
-            }
+            },
             Option::None => return ident,
         }
     }
@@ -424,7 +424,7 @@ fn lexer_scan_integer(lexer: &mut Lexer) -> usize {
                 } else {
                     done = true;
                 }
-            }
+            },
             Option::None => done = true,
         }
     }
@@ -435,7 +435,7 @@ fn lexer_scan_integer(lexer: &mut Lexer) -> usize {
             let mut message: String = string("invalid integer literal: ");
             string_push_string(&mut message, &value);
             lexer_error(lexer, &message);
-        }
+        },
     }
 }
 
@@ -500,7 +500,7 @@ fn lexer_scan_symbol(lexer: &mut Lexer) -> Token {
             let mut message: String = string("unexpected character: ");
             string_push_string(&mut message, &literal_to_string(&Literal::Char(c)));
             lexer_error(lexer, &message);
-        }
+        },
     }
 }
 
@@ -510,7 +510,7 @@ fn lexer_scan_slash(lexer: &mut Lexer) -> Token {
             lexer_consume_char(lexer);
             lexer_skip_line_comment(lexer);
             lexer_next_token(lexer)
-        }
+        },
         _ => Token::Slash,
     }
 }
@@ -520,7 +520,7 @@ fn lexer_scan_colon(lexer: &mut Lexer) -> Token {
         Option::Some(':') => {
             lexer_consume_char(lexer);
             Token::DoubleColon
-        }
+        },
         _ => Token::Colon,
     }
 }
@@ -530,11 +530,11 @@ fn lexer_scan_equals(lexer: &mut Lexer) -> Token {
         Option::Some('=') => {
             lexer_consume_char(lexer);
             Token::Cmp(Comparison::Eq)
-        }
+        },
         Option::Some('>') => {
             lexer_consume_char(lexer);
             Token::FatArrow
-        }
+        },
         _ => Token::Assign,
     }
 }
@@ -544,7 +544,7 @@ fn lexer_scan_minus(lexer: &mut Lexer) -> Token {
         Option::Some('>') => {
             lexer_consume_char(lexer);
             Token::Arrow
-        }
+        },
         _ => Token::Minus,
     }
 }
@@ -554,7 +554,7 @@ fn lexer_scan_bang(lexer: &mut Lexer) -> Token {
         Option::Some('=') => {
             lexer_consume_char(lexer);
             Token::Cmp(Comparison::Ne)
-        }
+        },
         _ => Token::Bang,
     }
 }
@@ -564,7 +564,7 @@ fn lexer_scan_less(lexer: &mut Lexer) -> Token {
         Option::Some('=') => {
             lexer_consume_char(lexer);
             Token::Cmp(Comparison::Leq)
-        }
+        },
         _ => Token::Cmp(Comparison::Lt),
     }
 }
@@ -574,7 +574,7 @@ fn lexer_scan_greater(lexer: &mut Lexer) -> Token {
         Option::Some('=') => {
             lexer_consume_char(lexer);
             Token::Cmp(Comparison::Geq)
-        }
+        },
         _ => Token::Cmp(Comparison::Gt),
     }
 }
@@ -588,7 +588,7 @@ fn lexer_skip_whitespace(lexer: &mut Lexer) {
                 } else {
                     return;
                 }
-            }
+            },
             Option::None => return,
         }
     }
@@ -619,15 +619,15 @@ fn lexer_skip_attributes(lexer: &mut Lexer) {
                         while skipping {
                             match lexer_consume_char(lexer) {
                                 Option::Some(']') => skipping = false,
-                                _ => {}
+                                _ => {},
                             }
                         }
-                    }
+                    },
                     _ => {
                         lexer_error(lexer, &string("expected '[' after '#'"));
-                    }
+                    },
                 }
-            }
+            },
             _ => return,
         }
     }
@@ -827,7 +827,7 @@ fn rastLiteral_type(literal: &RAstLiteral) -> RAstType {
         RAstLiteral::Bool(_) => RAstType::Bool,
         RAstLiteral::String(_) => {
             RAstType::Reference(box_new::<RAstType>(RAstType::Custom(string("str"))), false)
-        }
+        },
     }
 }
 
@@ -916,12 +916,12 @@ fn expect_identifier(lexer: &mut Lexer) -> String {
             let name: String = string_clone(name);
             lexer_next_token(lexer);
             name
-        }
+        },
         token => {
             let mut message: String = string("expected identifier, but got: ");
             string_push_string(&mut message, &token_to_string(token));
             parse_error(lexer, &message);
-        }
+        },
     }
 }
 
@@ -934,31 +934,31 @@ fn parse_language(lexer: &mut Lexer) -> RAst {
                 Token::Extern => {
                     let extern_block: RAstItem = RAstItem::ExternBlock(parse_extern_block(lexer));
                     vec_push::<RAstItem>(&mut items, extern_block);
-                }
+                },
                 Token::Fn => {
                     let function: RAstItem = RAstItem::Function(parse_function(lexer, true));
                     vec_push::<RAstItem>(&mut items, function);
-                }
+                },
                 token => {
                     let mut message: String = string("expected fn or extern, but got: ");
                     string_push_string(&mut message, &token_to_string(&token));
                     parse_error(lexer, &message);
-                }
+                },
             },
             Token::Fn => {
                 let function: RAstItem = RAstItem::Function(parse_function(lexer, false));
                 vec_push::<RAstItem>(&mut items, function);
-            }
+            },
             Token::Enum => {
                 let enumeration: RAstItem = RAstItem::Enum(parse_enum(lexer));
                 vec_push::<RAstItem>(&mut items, enumeration);
-            }
+            },
             token => {
                 let mut message: String =
                     string("expected function, enum, or extern block, but got: ");
                 string_push_string(&mut message, &token_to_string(token));
                 parse_error(lexer, &message);
-            }
+            },
         }
     }
 
@@ -976,12 +976,12 @@ fn parse_extern_block(lexer: &mut Lexer) -> Vec<RAstExternFunction> {
                 parse_error(lexer, &message);
             }
             lexer_next_token(lexer);
-        }
+        },
         _ => {
             let mut message: String = string("expected \"C\", but got: ");
             string_push_string(&mut message, &token_to_string(lexer_current_token(lexer)));
             parse_error(lexer, &message);
-        }
+        },
     }
 
     expect_token(lexer, &Token::LBrace);
@@ -1144,28 +1144,28 @@ fn parse_type(lexer: &mut Lexer) -> RAstType {
         Token::U8 => {
             lexer_next_token(lexer);
             RAstType::U8
-        }
+        },
         Token::Usize => {
             lexer_next_token(lexer);
             RAstType::Usize
-        }
+        },
         Token::Char => {
             lexer_next_token(lexer);
             RAstType::Char
-        }
+        },
         Token::Bool => {
             lexer_next_token(lexer);
             RAstType::Bool
-        }
+        },
         Token::LParen => {
             lexer_next_token(lexer);
             expect_token(lexer, &Token::RParen);
             RAstType::Unit
-        }
+        },
         Token::Bang => {
             lexer_next_token(lexer);
             RAstType::Never
-        }
+        },
         Token::Ampersand => {
             lexer_next_token(lexer);
 
@@ -1180,22 +1180,22 @@ fn parse_type(lexer: &mut Lexer) -> RAstType {
             let mutable: bool = lexer_try_consume(lexer, &Token::Mut);
             let inner: RAstType = parse_type(lexer);
             RAstType::Reference(box_new::<RAstType>(inner), mutable)
-        }
+        },
         Token::Star => {
             lexer_next_token(lexer);
             expect_token(lexer, &Token::Mut);
             let inner: RAstType = parse_type(lexer);
             RAstType::RawPointerMut(box_new::<RAstType>(inner))
-        }
+        },
         Token::Identifier(_) => {
             let enum_name: String = expect_identifier(lexer);
             RAstType::Custom(enum_name)
-        }
+        },
         token => {
             let mut message: String = string("expected a type, but got: ");
             string_push_string(&mut message, &token_to_string(token));
             parse_error(lexer, &message);
-        }
+        },
     }
 }
 
@@ -1208,9 +1208,9 @@ fn parse_expression(lexer: &mut Lexer) -> RAstExpr {
                 _ => {
                     let expression: RAstExpr = parse_expression(lexer);
                     RAstExpr::Return(Option::Some(box_new::<RAstExpr>(expression)))
-                }
+                },
             }
-        }
+        },
         _ => parse_assignment(lexer),
     }
 }
@@ -1249,7 +1249,7 @@ fn parse_comparison(lexer: &mut Lexer) -> RAstExpr {
                 box_new::<RAstExpr>(left),
                 box_new::<RAstExpr>(right),
             )
-        }
+        },
         _ => left,
     }
 }
@@ -1325,12 +1325,12 @@ fn parse_unary(lexer: &mut Lexer) -> RAstExpr {
             let mutable: bool = lexer_try_consume(lexer, &Token::Mut);
             let inner: RAstExpr = parse_unary(lexer);
             RAstExpr::Unary(RAstUnaryOp::Reference(mutable), box_new::<RAstExpr>(inner))
-        }
+        },
         Token::Star => {
             lexer_next_token(lexer);
             let inner: RAstExpr = parse_unary(lexer);
             RAstExpr::Unary(RAstUnaryOp::Dereference, box_new::<RAstExpr>(inner))
-        }
+        },
         _ => parse_factor(lexer),
     }
 }
@@ -1353,17 +1353,17 @@ fn parse_factor(lexer: &mut Lexer) -> RAstExpr {
             } else {
                 RAstExpr::VariableUse(first_identifier)
             }
-        }
+        },
         Token::LParen => {
             lexer_next_token(lexer);
             let expression: RAstExpr = parse_expression(lexer);
             expect_token(lexer, &Token::RParen);
             expression
-        }
+        },
         Token::Unsafe => {
             lexer_next_token(lexer);
             RAstExpr::Block(true, parse_block(lexer))
-        }
+        },
         Token::LBrace => RAstExpr::Block(false, parse_block(lexer)),
         Token::If => RAstExpr::If(parse_if(lexer)),
         Token::While => parse_while(lexer),
@@ -1372,7 +1372,7 @@ fn parse_factor(lexer: &mut Lexer) -> RAstExpr {
             let mut message: String = string("unexpected token: ");
             string_push_string(&mut message, &token_to_string(token));
             parse_error(lexer, &message);
-        }
+        },
     }
 }
 
@@ -1443,13 +1443,13 @@ fn parse_pattern(lexer: &mut Lexer) -> RAstPattern {
             RAstLiteral::Bool(value) => RAstPatternLiteral::Bool(value),
             RAstLiteral::String(_) => {
                 parse_error(lexer, &string("matching on string literals is unsupported"))
-            }
+            },
         }),
         Token::Mut => {
             lexer_next_token(lexer);
             let identifier: String = expect_identifier(lexer);
             RAstPattern::Identifier(true, identifier)
-        }
+        },
         Token::Identifier(_) => {
             let identifier: String = expect_identifier(lexer);
 
@@ -1479,12 +1479,12 @@ fn parse_pattern(lexer: &mut Lexer) -> RAstPattern {
             } else {
                 RAstPattern::Identifier(false, identifier)
             }
-        }
+        },
         token => {
             let mut message: String = string("expected pattern, but got: ");
             string_push_string(&mut message, &token_to_string(token));
             parse_error(lexer, &message);
-        }
+        },
     }
 }
 
@@ -1530,12 +1530,12 @@ fn parse_literal(lexer: &mut Lexer) -> RAstLiteral {
             };
             lexer_next_token(lexer);
             literal
-        }
+        },
         token => {
             let mut message: String = string("expected literal, but got: ");
             string_push_string(&mut message, &token_to_string(token));
             parse_error(lexer, &message);
-        }
+        },
     }
 }
 
@@ -1560,7 +1560,7 @@ fn collect_items(ast: &RAst) -> StringMap<Item> {
                 let signature: FnSignature =
                     FnSignature::Fn(param_types, rAstType_clone(return_type), *is_unsafe);
                 stringMap_insert::<Item>(&mut items, string_clone(name), Item::Function(signature));
-            }
+            },
             RAstItem::Enum(enum_item) => {
                 let RAstEnum::Enum(name, variants): &RAstEnum = enum_item;
 
@@ -1587,7 +1587,7 @@ fn collect_items(ast: &RAst) -> StringMap<Item> {
 
                 let cloned_enum: RAstEnum = RAstEnum::Enum(string_clone(name), cloned_variants);
                 stringMap_insert::<Item>(&mut items, string_clone(name), Item::Enum(cloned_enum));
-            }
+            },
             RAstItem::ExternBlock(functions) => {
                 let mut i: usize = 0;
                 while i < vec_len::<RAstExternFunction>(functions) {
@@ -1613,7 +1613,7 @@ fn collect_items(ast: &RAst) -> StringMap<Item> {
                     );
                     i = i + 1;
                 }
-            }
+            },
         }
         i = i + 1;
     }
@@ -1735,7 +1735,7 @@ fn semantic_lookup_variable(semantic: &Semantic, name: &String) -> Option<Variab
         Option::Some(entry) => {
             let Variable::Variable(variable_type, mutable) = entry;
             Option::Some(Variable::Variable(rAstType_clone(variable_type), *mutable))
-        }
+        },
         Option::None => Option::None,
     }
 }
@@ -1850,7 +1850,7 @@ fn castOperation_get_cast_operation(left_type: &RAstType, right_type: &RAstType)
                 } else {
                     CastOperation::Invalid
                 }
-            }
+            },
             _ => CastOperation::Invalid,
         },
         RAstType::RawPointerMut(_) => match right_type {
@@ -1876,7 +1876,7 @@ fn semantic_check_language(semantic: &mut Semantic, ast: &RAst) {
         let item: &RAstItem = vec_at::<RAstItem>(items, i);
         match item {
             RAstItem::Function(function) => semantic_check_function(semantic, function),
-            _ => {} // TODO: enum/extern checking
+            _ => {}, // TODO: enum/extern checking
         }
         i = i + 1;
     }
@@ -1907,8 +1907,8 @@ fn semantic_check_function(semantic: &mut Semantic, function: &RAstFunction) {
                 if already_used {
                     semantic_check_error("duplicate parameter name");
                 }
-            }
-            _ => {}
+            },
+            _ => {},
         }
         i = i + 1;
     }
@@ -1936,14 +1936,14 @@ fn semantic_check_block(semantic: &mut Semantic, block: &RAstBlock, is_unsafe: b
         match statement {
             RAstStatement::Let(variable, value) => {
                 semantic_check_binding(semantic, variable, box_deref::<RAstExpr>(value));
-            }
+            },
             RAstStatement::Expression(expression) => {
                 let ty: RAstType =
                     semantic_check_expression(semantic, box_deref::<RAstExpr>(expression));
                 if rAstType_eq(&ty, &RAstType::Never) {
                     statement_flow_type = RAstType::Never;
                 }
-            }
+            },
         }
         i = i + 1;
     }
@@ -1951,7 +1951,7 @@ fn semantic_check_block(semantic: &mut Semantic, block: &RAstBlock, is_unsafe: b
     let mut block_type: RAstType = match tail {
         Option::Some(expression) => {
             semantic_check_expression(semantic, box_deref::<RAstExpr>(expression))
-        }
+        },
         Option::None => RAstType::Unit,
     };
 
@@ -1981,8 +1981,8 @@ fn semantic_check_binding(semantic: &mut Semantic, variable: &RAstVariable, valu
                 rAstType_clone(binding_type),
                 *is_mutable,
             );
-        }
-        _ => {}
+        },
+        _ => {},
     }
 }
 
@@ -2003,10 +2003,10 @@ fn semantic_check_expression(semantic: &mut Semantic, expression: &RAstExpr) -> 
         ),
         RAstExpr::Cast(value, to_type) => {
             semantic_check_cast(semantic, box_deref::<RAstExpr>(value), to_type)
-        }
+        },
         RAstExpr::Unary(operator, value) => {
             semantic_check_unary_op(semantic, operator, box_deref::<RAstExpr>(value))
-        }
+        },
         RAstExpr::Literal(literal) => rastLiteral_type(literal),
         RAstExpr::VariableUse(name) => semantic_check_variable_use(semantic, name),
         RAstExpr::Call(callee, arguments) => semantic_check_call(semantic, callee, arguments),
@@ -2014,10 +2014,10 @@ fn semantic_check_expression(semantic: &mut Semantic, expression: &RAstExpr) -> 
         RAstExpr::If(if_expression) => semantic_check_if(semantic, if_expression),
         RAstExpr::While(condition, body) => {
             semantic_check_while(semantic, box_deref::<RAstExpr>(condition), body)
-        }
+        },
         RAstExpr::Match(value, arms) => {
             semantic_check_match(semantic, box_deref::<RAstExpr>(value), arms)
-        }
+        },
     }
 }
 
@@ -2027,13 +2027,13 @@ fn semantic_check_return(semantic: &mut Semantic, returned: &Option<Box<RAstExpr
             let ty: RAstType =
                 semantic_check_expression(semantic, box_deref::<RAstExpr>(expression));
             semantic_expect_exact_type_match(&ty, semantic_current_fn_return_type(semantic));
-        }
+        },
         Option::None => {
             semantic_expect_exact_type_match(
                 &RAstType::Unit,
                 semantic_current_fn_return_type(semantic),
             );
-        }
+        },
     }
     RAstType::Never
 }
@@ -2060,7 +2060,7 @@ fn semantic_check_assignment_lvalue_type(
                     semantic_check_error("invalid assignment to immutable variable");
                 }
                 variable_type
-            }
+            },
             Option::None => semantic_check_error("undefined variable"),
         },
         RAstExpr::Unary(RAstUnaryOp::Dereference, value) => {
@@ -2072,16 +2072,16 @@ fn semantic_check_assignment_lvalue_type(
                         semantic_check_error("invalid assignment using immutable reference");
                     }
                     rAstType_clone(box_deref::<RAstType>(&inner))
-                }
+                },
                 RAstType::RawPointerMut(inner) => {
                     if not(semantic_is_unsafe_context(semantic)) {
                         semantic_check_error("raw pointer dereference requires unsafe");
                     }
                     rAstType_clone(box_deref::<RAstType>(&inner))
-                }
+                },
                 _ => semantic_check_error("invalid assignment to an expression"),
             }
-        }
+        },
         _ => semantic_check_error("invalid assignment target"),
     }
 }
@@ -2100,7 +2100,7 @@ fn semantic_check_binary_op(
         RAstBinaryOp::Arithmetic(_) => {
             semantic_expect_numeric_type(&left_type);
             left_type
-        }
+        },
         RAstBinaryOp::Comparison(_) => RAstType::Bool,
     }
 }
@@ -2126,13 +2126,13 @@ fn semantic_check_unary_op(
                         semantic_check_error("cannot take mutable reference to immutable variable");
                     }
                     RAstType::Reference(box_new::<RAstType>(ty), *mutable_ref)
-                }
+                },
                 _ => semantic_check_error("undefined variable"),
             },
             _ => {
                 let ty: RAstType = semantic_check_expression(semantic, value);
                 RAstType::Reference(box_new::<RAstType>(ty), *mutable_ref)
-            }
+            },
         },
         RAstUnaryOp::Dereference => {
             let ty: RAstType = semantic_check_expression(semantic, value);
@@ -2143,10 +2143,10 @@ fn semantic_check_unary_op(
                         semantic_check_error("raw pointer dereference requires unsafe context");
                     }
                     rAstType_clone(box_deref::<RAstType>(&pointed))
-                }
+                },
                 _ => semantic_check_error("cannot dereference this expression"),
             }
-        }
+        },
     }
 }
 
@@ -2182,10 +2182,10 @@ fn semantic_check_call(
         match vec_get::<RAstType>(&parameter_types, i) {
             Option::Some(ty) => {
                 semantic_expect_exact_type_match(ty, &arg_type);
-            }
+            },
             _ => {
                 semantic_check_error("function call has more arguments than there are parameters");
-            }
+            },
         }
 
         i = i + 1;
@@ -2206,13 +2206,13 @@ fn semantic_check_if(semantic: &mut Semantic, if_expression: &RAstIf) -> RAstTyp
             let else_type: RAstType = match else_branch {
                 RAstElse::If(nested_if) => {
                     semantic_check_if(semantic, box_deref::<RAstIf>(nested_if))
-                }
+                },
                 RAstElse::Block(block) => semantic_check_block(semantic, block, false),
             };
             semantic_expect_rough_type_match(&then_type, &else_type);
 
             rAstType_coalesce(then_type, else_type)
-        }
+        },
         Option::None => RAstType::Unit,
     }
 }
@@ -2252,12 +2252,12 @@ fn semantic_check_match(
 
             if vec_len::<RAstPattern>(patterns) > 1 {
                 match pattern {
-                    RAstPattern::Literal(_) => {}
+                    RAstPattern::Literal(_) => {},
                     _ => {
                         semantic_check_error(
                             "multi-pattern match arms only support literal patterns",
                         );
-                    }
+                    },
                 }
             }
 
@@ -2283,7 +2283,7 @@ fn semantic_check_pattern(pattern: &RAstPattern, expression_type: &RAstType) {
                 } else {
                     RAstType::Usize
                 }
-            }
+            },
             RAstPatternLiteral::Char(_) => RAstType::Char,
             RAstPatternLiteral::Bool(_) => RAstType::Bool,
         },
@@ -2473,8 +2473,8 @@ fn codegen_function(codegen: &mut Codegen, function: &RAstFunction) {
 
                 let name: String = string_clone(name);
                 codegen_scope_insert(codegen, name, rAstType_clone(param_type), param_ptr);
-            }
-            _ => {}
+            },
+            _ => {},
         }
 
         parameter_index = parameter_index + 1;
@@ -2489,7 +2489,7 @@ fn codegen_function(codegen: &mut Codegen, function: &RAstFunction) {
             } else {
                 codegen_emit_ret_void(codegen);
             }
-        }
+        },
         _ => {
             if rAstType_eq(&block_type, &RAstType::Never) {
                 // return dummy value, it is never reached anyway
@@ -2497,7 +2497,7 @@ fn codegen_function(codegen: &mut Codegen, function: &RAstFunction) {
             } else {
                 codegen_emit_ret_value(codegen, &return_type, &value_name);
             }
-        }
+        },
     }
     codegen_emit_line(codegen, string("}"));
 
@@ -2517,7 +2517,7 @@ fn codegen_block(codegen: &mut Codegen, block: &RAstBlock) -> STPair {
         match statement {
             RAstStatement::Let(variable, value) => {
                 codegen_binding(codegen, variable, box_deref::<RAstExpr>(value));
-            }
+            },
 
             RAstStatement::Expression(expression) => {
                 // expression is only used for its side-effects, so we can discard the result
@@ -2528,7 +2528,7 @@ fn codegen_block(codegen: &mut Codegen, block: &RAstBlock) -> STPair {
                     // the rest of the block becomes unreachable, so the block type becomes Never
                     block_type = RAstType::Never;
                 }
-            }
+            },
         }
         i = i + 1;
     }
@@ -2562,8 +2562,8 @@ fn codegen_binding(codegen: &mut Codegen, variable: &RAstVariable, value: &RAstE
                 let name: String = string_clone(lvalue_name);
                 codegen_scope_insert(codegen, name, rAstType_clone(binding_type), lvalue_pointer);
             }
-        }
-        _ => {}
+        },
+        _ => {},
     }
 }
 
@@ -2584,10 +2584,10 @@ fn codegen_expression(codegen: &mut Codegen, expression: &RAstExpr) -> STPair {
         ),
         RAstExpr::Cast(value, to_type) => {
             codegen_cast(codegen, box_deref::<RAstExpr>(value), to_type)
-        }
+        },
         RAstExpr::Unary(operator, value) => {
             codegen_unary_op(codegen, operator, box_deref::<RAstExpr>(value))
-        }
+        },
         RAstExpr::Literal(literal) => codegen_literal(literal),
         RAstExpr::VariableUse(name) => codegen_variable_use(codegen, name),
         RAstExpr::Call(callee, arguments) => codegen_call(codegen, callee, arguments),
@@ -2595,7 +2595,7 @@ fn codegen_expression(codegen: &mut Codegen, expression: &RAstExpr) -> STPair {
         RAstExpr::If(if_expression) => codegen_if(codegen, if_expression),
         RAstExpr::While(condition, body) => {
             codegen_while(codegen, box_deref::<RAstExpr>(condition), body)
-        }
+        },
         RAstExpr::Match(value, arms) => codegen_match(codegen, box_deref::<RAstExpr>(value), arms),
     }
 }
@@ -2609,7 +2609,7 @@ fn codegen_return(codegen: &mut Codegen, returned: &Option<Box<RAstExpr>>) -> ST
             let STPair::ST(name, ty): STPair =
                 codegen_expression(codegen, box_deref::<RAstExpr>(expression));
             codegen_emit_ret_value(codegen, &ty, &name);
-        }
+        },
 
         // return;
         Option::None => {
@@ -2618,7 +2618,7 @@ fn codegen_return(codegen: &mut Codegen, returned: &Option<Box<RAstExpr>>) -> ST
             } else {
                 codegen_emit_ret_void(codegen);
             }
-        }
+        },
     }
 
     STPair::ST(string_new(), RAstType::Never)
@@ -2645,14 +2645,14 @@ fn codegen_assignment_lvalue(codegen: &mut Codegen, expression: &RAstExpr) -> ST
                 RAstType::Reference(inner, _) => {
                     let ty: RAstType = rAstType_clone(box_deref::<RAstType>(&inner));
                     STPair::ST(pointer_name, ty)
-                }
+                },
                 RAstType::RawPointerMut(inner) => {
                     let ty: RAstType = rAstType_clone(box_deref::<RAstType>(&inner));
                     STPair::ST(pointer_name, ty)
-                }
+                },
                 _ => STPair::ST(string_new(), RAstType::Unit), // should not be reachable
             }
-        }
+        },
         _ => STPair::ST(string_new(), RAstType::Unit), // should not be reachable
     }
 }
@@ -2671,11 +2671,11 @@ fn codegen_binary_op(
         RAstBinaryOp::Arithmetic(op) => {
             let name: String = codegen_emit_binary(codegen, op, &op_type, &left_name, &right_name);
             STPair::ST(name, op_type)
-        }
+        },
         RAstBinaryOp::Comparison(op) => {
             let name: String = codegen_emit_icmp(codegen, op, &op_type, &left_name, &right_name);
             STPair::ST(name, RAstType::Bool)
-        }
+        },
     }
 }
 
@@ -2688,19 +2688,19 @@ fn codegen_cast(codegen: &mut Codegen, value: &RAstExpr, to_type: &RAstType) -> 
         CastOperation::ZeroExtend => {
             let name: String = codegen_emit_zext(codegen, &from_type, &to_type, &from_name);
             STPair::ST(name, to_type)
-        }
+        },
         CastOperation::Truncate => {
             let name: String = codegen_emit_trunc(codegen, &from_type, &to_type, &from_name);
             STPair::ST(name, to_type)
-        }
+        },
         CastOperation::IntToPtr => {
             let name: String = codegen_emit_inttoptr(codegen, &from_type, &to_type, &from_name);
             STPair::ST(name, to_type)
-        }
+        },
         CastOperation::PtrToInt => {
             let name: String = codegen_emit_ptrtoint(codegen, &from_type, &to_type, &from_name);
             STPair::ST(name, to_type)
-        }
+        },
         CastOperation::None => STPair::ST(from_name, to_type),
         CastOperation::Invalid => STPair::ST(from_name, to_type), // should be unreachable
     }
@@ -2716,7 +2716,7 @@ fn codegen_unary_op(codegen: &mut Codegen, operator: &RAstUnaryOp, value: &RAstE
                     pointer_name,
                     RAstType::Reference(box_new::<RAstType>(ty), *mutable_ref),
                 )
-            }
+            },
             _ => {
                 let STPair::ST(name, ty): STPair = codegen_expression(codegen, value);
                 let reference: String = codegen_emit_alloca(codegen, &ty, 1);
@@ -2725,7 +2725,7 @@ fn codegen_unary_op(codegen: &mut Codegen, operator: &RAstUnaryOp, value: &RAstE
                     reference,
                     RAstType::Reference(box_new::<RAstType>(ty), *mutable_ref),
                 )
-            }
+            },
         },
 
         RAstUnaryOp::Dereference => {
@@ -2737,7 +2737,7 @@ fn codegen_unary_op(codegen: &mut Codegen, operator: &RAstUnaryOp, value: &RAstE
             };
             let name: String = codegen_emit_load(codegen, &inner_type, &name);
             STPair::ST(name, inner_type)
-        }
+        },
     }
 }
 
@@ -2798,7 +2798,7 @@ fn codegen_call(codegen: &mut Codegen, callee: &RAstPath, arguments: &Vec<RAstEx
                 string_new()
             };
             STPair::ST(result_name, return_type)
-        }
+        },
         Option::None => codegen_error("unknown codegen function"),
     }
 }
@@ -2847,7 +2847,7 @@ fn codegen_if(codegen: &mut Codegen, if_expression: &RAstIf) -> STPair {
             }
 
             if_type = rAstType_coalesce(if_type, else_type);
-        }
+        },
         _ => if_type = RAstType::Unit, // else is implicitly unit, so type of if must be unit
     }
 
@@ -3004,7 +3004,7 @@ fn codegen_arm(
                         codegen_emit_label(codegen, &fail_label); // next pattern of arm
                     }
                 } // otherwise no branch, arm is executed unconditionally
-            }
+            },
             RAstPattern::Identifier(_, identifier) => {
                 let pointer_name: String = codegen_emit_alloca(codegen, &expr_type, 1);
                 codegen_emit_store(codegen, &expr_type, &expr_name, &pointer_name);
@@ -3012,9 +3012,9 @@ fn codegen_arm(
                 let variable_name: String = string_clone(identifier);
                 let variable_type: RAstType = rAstType_clone(&expr_type);
                 codegen_scope_insert(codegen, variable_name, variable_type, pointer_name);
-            }
-            RAstPattern::Wildcard => {}
-            RAstPattern::EnumVariant(_, _, _) => {} // unimplemented
+            },
+            RAstPattern::Wildcard => {},
+            RAstPattern::EnumVariant(_, _, _) => {}, // unimplemented
         }
         j = j + 1;
     }
@@ -3650,7 +3650,7 @@ fn llvmLexer_expect_char(lexer: &mut LlvmLexer, expected: char) {
             if c != expected {
                 panic!("unexpected character");
             }
-        }
+        },
         _ => panic!("unexpected EOF"),
     }
 }
@@ -3669,8 +3669,8 @@ fn llvmLexer_consume_char(lexer: &mut LlvmLexer) -> Option<char> {
                 *line = *line + 1;
                 *last_newline_idx = *index;
             }
-        }
-        Option::None => {}
+        },
+        Option::None => {},
     }
     current
 }
@@ -3693,7 +3693,7 @@ fn llvmLexer_next_token(lexer: &mut LlvmLexer) -> LlvmToken {
             } else {
                 llvmLexer_scan_symbol(lexer)
             }
-        }
+        },
         Option::None => LlvmToken::Eof,
     };
 
@@ -3713,7 +3713,7 @@ fn llvmLexer_scan_cstring(lexer: &mut LlvmLexer) -> String {
             Option::Some('\\') => {
                 let character: char = llvmLexer_scan_escape(lexer);
                 string_push(&mut literal, character);
-            }
+            },
             Option::Some(ch) => string_push(&mut literal, ch),
             Option::None => panic!("unterminated LLVM c-string"),
         }
@@ -3732,13 +3732,13 @@ fn llvmLexer_scan_escape(lexer: &mut LlvmLexer) -> char {
                         string_push(&mut char_byte, second_hex_digit);
 
                         unwrap::<usize>(string_to_integer(&char_byte, 16)) as u8 as char
-                    }
+                    },
                     _ => panic!("expected second digit for escaped character byte"),
                 }
             } else {
                 hex_digit
             }
-        }
+        },
         Option::None => panic!("unterminated LLVM c-string"),
     }
 }
@@ -3754,7 +3754,7 @@ fn llvmLexer_scan_identifier_or_keyword(lexer: &mut LlvmLexer) -> String {
                 } else {
                     return identifier;
                 }
-            }
+            },
             Option::None => return identifier,
         }
     }
@@ -3845,7 +3845,7 @@ fn llvmLexer_scan_integer(lexer: &mut LlvmLexer) -> usize {
                 } else {
                     return value;
                 }
-            }
+            },
             Option::None => return value,
         }
     }
@@ -3881,7 +3881,7 @@ fn llvmLexer_skip_whitespace_and_comments(lexer: &mut LlvmLexer) {
                 } else {
                     return;
                 }
-            }
+            },
             Option::None => return,
         }
     }
@@ -3999,11 +3999,11 @@ fn llvmParser_expect_identifier(parser: &mut LlvmParser) -> String {
             let value: String = string_clone(identifier);
             llvmParser_next_token(parser);
             value
-        }
+        },
         _ => {
             let message: String = llvmParser_expected_message(parser, &string("LLVM identifier"));
             llvmParser_error(parser, &message)
-        }
+        },
     }
 }
 
@@ -4020,7 +4020,7 @@ fn llvmParser_value_has_type(parser: &LlvmParser, value: &LlvmValue, expected: &
                 Option::Some(actual) => llvmType_eq(actual, expected),
                 Option::None => false,
             }
-        }
+        },
         LlvmValue::Literal(_) => match expected {
             LlvmType::I1 | LlvmType::I8 | LlvmType::I64 => true, // allow overflows
             _ => false,
@@ -4162,7 +4162,7 @@ fn llvmType_bitwidth(parser: &LlvmParser, ty: &LlvmType) -> usize {
         _ => {
             let message: String = llvmParser_expected_message(parser, &string("LLVM integer type"));
             llvmParser_error(parser, &message)
-        }
+        },
     }
 }
 
@@ -4322,7 +4322,7 @@ fn llvmParser_parse_language(parser: &mut LlvmParser) {
                 let message: String =
                     llvmParser_expected_message(parser, &string("LLVM top-level item"));
                 llvmParser_error(parser, &message)
-            }
+            },
         }
     }
 }
@@ -4337,12 +4337,12 @@ fn llvmParser_parse_string(parser: &mut LlvmParser) {
         LlvmToken::CString(value) => {
             let string_value: String = string_clone(value);
             llvmParser_next_token(parser);
-        }
+        },
         _ => {
             let message: String =
                 llvmParser_expected_message(parser, &string("LLVM c-string literal"));
             llvmParser_error(parser, &message)
-        }
+        },
     }
 }
 
@@ -4494,11 +4494,11 @@ fn llvmParser_parse_instruction(parser: &mut LlvmParser) -> Instruction {
         LlvmToken::Call => {
             llvmParser_next_token(parser);
             Instruction::Call(llvmParser_parse_call(parser))
-        }
+        },
         _ => {
             let message: String = llvmParser_expected_message(parser, &string("LLVM instruction"));
             llvmParser_error(parser, &message)
-        }
+        },
     }
 }
 
@@ -4558,7 +4558,7 @@ fn llvmParser_parse_assignment(parser: &mut LlvmParser) -> AssignInstruction {
             let message: String =
                 llvmParser_expected_message(parser, &string("LLVM assignment operation"));
             llvmParser_error(parser, &message)
-        }
+        },
     };
 
     if not(llvmLocalSymTable_insert_register(
@@ -4595,7 +4595,7 @@ fn llvmParser_parse_icmp_assign(parser: &mut LlvmParser) -> AssignOp {
             let message: String =
                 llvmParser_expected_message(parser, &string("LLVM icmp operator"));
             llvmParser_error(parser, &message)
-        }
+        },
     };
 
     let ty: LlvmType = llvmParser_parse_type(parser);
@@ -4639,7 +4639,7 @@ fn llvmParser_parse_cast_assign(parser: &mut LlvmParser, operator: CastOp) -> As
                     &string("invalid LLVM zext: source type must be smaller than target type"),
                 );
             }
-        }
+        },
         CastOp::Trunc => {
             let from_bits: usize = llvmType_bitwidth(parser, &from_type);
             let to_bits: usize = llvmType_bitwidth(parser, &to_type);
@@ -4649,7 +4649,7 @@ fn llvmParser_parse_cast_assign(parser: &mut LlvmParser, operator: CastOp) -> As
                     &string("invalid LLVM trunc: source type must be larger than target type"),
                 );
             }
-        }
+        },
         CastOp::IntToPtr => {
             if not(llvmType_eq(&from_type, &LlvmType::I64)) {
                 llvmParser_error(
@@ -4663,7 +4663,7 @@ fn llvmParser_parse_cast_assign(parser: &mut LlvmParser, operator: CastOp) -> As
                     &string("invalid LLVM inttoptr: target type must be ptr"),
                 );
             }
-        }
+        },
         CastOp::PtrToInt => {
             if not(llvmType_eq(&from_type, &LlvmType::Ptr)) {
                 llvmParser_error(
@@ -4677,7 +4677,7 @@ fn llvmParser_parse_cast_assign(parser: &mut LlvmParser, operator: CastOp) -> As
                     &string("invalid LLVM ptrtoint: target type must be i64"),
                 );
             }
-        }
+        },
     }
 
     AssignOp::Cast(operator, to_type, value)
@@ -4787,21 +4787,21 @@ fn llvmParser_parse_type(parser: &mut LlvmParser) -> LlvmType {
                         llvmParser_error(parser, &message);
                     }
                     llvmParser_next_token(parser);
-                }
+                },
                 _ => {
                     let message: String =
                         llvmParser_expected_message(parser, &string("x in LLVM array type"));
                     llvmParser_error(parser, &message)
-                }
+                },
             }
             let inner: LlvmType = llvmParser_parse_type(parser);
             llvmParser_expect_token(parser, &LlvmToken::RBracket);
             LlvmType::Array(len, box_new::<LlvmType>(inner))
-        }
+        },
         _ => {
             let message: String = llvmParser_expected_message(parser, &string("LLVM type"));
             llvmParser_error(parser, &message)
-        }
+        },
     }
 }
 
@@ -4813,7 +4813,7 @@ fn llvmParser_parse_value(parser: &mut LlvmParser) -> LlvmValue {
         _ => {
             let message: String = llvmParser_expected_message(parser, &string("LLVM value"));
             llvmParser_error(parser, &message)
-        }
+        },
     }
 }
 
@@ -4824,7 +4824,7 @@ fn llvmParser_parse_integer(parser: &mut LlvmParser) -> usize {
             let message: String =
                 llvmParser_expected_message(parser, &string("LLVM integer literal"));
             llvmParser_error(parser, &message)
-        }
+        },
     }
 }
 
@@ -5009,7 +5009,7 @@ fn emu_load_double(emulator: &mut Emu, address: usize) -> Option<usize> {
                 if i + 1 < byte_size {
                     factor = factor * 256;
                 }
-            }
+            },
             _ => return Option::None,
         }
         i = i + 1;
@@ -5055,7 +5055,7 @@ fn emu_execute_function(
             let value: usize = emu_execute_builtin(emulator, builtin, arguments);
             emu_set_frame_size(emulator, previous_frame_size);
             return value;
-        }
+        },
         LlvmFunction::Function(_, parameters, blocks) => {
             let mut virtual_registers: StringMap<usize> = stringMap_new::<usize>();
 
@@ -5088,11 +5088,11 @@ fn emu_execute_function(
                         emu_deallocate_stack_frame(emulator);
                         emu_set_frame_size(emulator, previous_frame_size);
                         return value;
-                    }
+                    },
                 }
             }
             0 // satisfy compiler
-        }
+        },
     }
 }
 
@@ -5105,12 +5105,12 @@ fn emu_execute_builtin(emulator: &mut Emu, builtin: &LlvmBuiltIn, arguments: &Ve
                 Option::Some(address) => address,
                 Option::None => panic!("heap overflow of emu"),
             }
-        }
+        },
         LlvmBuiltIn::Exit => {
             let value: usize = *vec_at::<usize>(arguments, 0);
             emu_set_exit_code(emulator, value);
             value
-        }
+        },
     }
 }
 
@@ -5128,13 +5128,13 @@ fn emu_execute_instructions(
         match instruction {
             Instruction::Assignment(assign_instruction) => {
                 emu_execute_assignment(emulator, ast, registers, assign_instruction);
-            }
+            },
             Instruction::Store(ty, value, address) => {
                 emu_execute_store(emulator, registers, ty, value, address);
-            }
+            },
             Instruction::Call(Call::Call(call_type, callee, arguments)) => {
                 let _ = emu_execute_call(emulator, ast, registers, call_type, callee, arguments);
-            }
+            },
 
             Instruction::Ret(return_type, return_value) => {
                 let global_values: &StringMap<usize> = emu_globals(emulator);
@@ -5142,15 +5142,15 @@ fn emu_execute_instructions(
                     Option::Some(value) => {
                         let value: usize = llvm_eval_value(global_values, registers, value);
                         llvm_overflow_value(value, &return_type)
-                    }
+                    },
                     Option::None => 0,
                 });
-            }
+            },
             Instruction::Br(branch) => {
                 return match branch {
                     Branch::Unconditional(target_label) => {
                         LlvmExecFlow::Jump(string_clone(target_label))
-                    }
+                    },
                     Branch::Conditional(condition, then_label, else_label) => {
                         let global_values: &StringMap<usize> = emu_globals(emulator);
 
@@ -5162,14 +5162,14 @@ fn emu_execute_instructions(
                         } else {
                             LlvmExecFlow::Jump(string_clone(else_label))
                         }
-                    }
+                    },
                 };
-            }
+            },
         }
 
         match emu_exit_code(emulator) {
             Option::Some(code) => return LlvmExecFlow::Return(code),
-            Option::None => {}
+            Option::None => {},
         }
 
         i = i + 1;
@@ -5212,7 +5212,7 @@ fn emu_evaluate_assign_op(
                 BinaryOp::Udiv => lhs / rhs,
                 BinaryOp::Urem => lhs % rhs,
             }
-        }
+        },
 
         AssignOp::Icmp(predicate, operand_type, left, right) => {
             let mut lhs: usize = llvm_eval_value(global_values, registers, left);
@@ -5231,7 +5231,7 @@ fn emu_evaluate_assign_op(
                 IcmpOp::Ule => lhs <= rhs,
             };
             result as usize
-        }
+        },
 
         AssignOp::Cast(cast_op, to_type, value) => {
             let evaluated_value: usize = llvm_eval_value(global_values, registers, value);
@@ -5241,7 +5241,7 @@ fn emu_evaluate_assign_op(
                 CastOp::IntToPtr => evaluated_value, // only interpretation changes
                 CastOp::PtrToInt => evaluated_value, // only interpretation changes
             }
-        }
+        },
 
         AssignOp::Alloca(_, num_elements) => {
             let space: usize = *num_elements * size_of::<usize>();
@@ -5249,7 +5249,7 @@ fn emu_evaluate_assign_op(
                 Option::Some(address) => address,
                 Option::None => panic!("Stack overflow of emu"),
             }
-        }
+        },
 
         AssignOp::Load(loaded_type, address_value) => {
             let address: usize = llvm_eval_value(global_values, registers, address_value);
@@ -5257,11 +5257,11 @@ fn emu_evaluate_assign_op(
                 Option::Some(value) => llvm_overflow_value(value, loaded_type),
                 Option::None => panic!("invalid LLVM load address"),
             }
-        }
+        },
 
         AssignOp::Call(Call::Call(call_type, callee, arguments)) => {
             emu_execute_call(emulator, ast, registers, call_type, callee, arguments)
-        }
+        },
 
         AssignOp::Gep(_, pointer, indexes) => {
             let mut address: usize = llvm_eval_value(global_values, registers, pointer);
@@ -5273,7 +5273,7 @@ fn emu_evaluate_assign_op(
                 i = i + 1;
             }
             address
-        }
+        },
     }
 }
 
@@ -5830,7 +5830,7 @@ fn stringMap_get<'a, T>(map: &'a StringMap<T>, key: &String) -> Option<&'a T> {
 
                 // repeat with next bucket
                 bucket = box_deref::<List<StringMapEntry<T>>>(tail);
-            }
+            },
 
             List::Nil => return Option::None,
         }
@@ -5908,7 +5908,7 @@ fn stringMapStack_lookup<'a, T>(stack: &'a StringMapStack<T>, name: &String) -> 
         let scope: &StringMap<T> = unwrap::<&StringMap<T>>(vec_get::<StringMap<T>>(scopes, index));
         match stringMap_get::<T>(scope, name) {
             Option::Some(value) => return Option::Some(value),
-            Option::None => {}
+            Option::None => {},
         }
     }
     Option::None
@@ -5943,7 +5943,7 @@ fn llvmType_eq(left: &LlvmType, right: &LlvmType) -> bool {
                         box_deref::<LlvmType>(left_inner),
                         box_deref::<LlvmType>(right_inner),
                     )
-            }
+            },
             _ => false,
         },
         LlvmType::Void => match right {
@@ -6212,7 +6212,7 @@ fn rAstType_eq(a: &RAstType, b: &RAstType) -> bool {
         RAstType::RawPointerMut(left) => match b {
             RAstType::RawPointerMut(right) => {
                 rAstType_eq(box_deref::<RAstType>(left), box_deref::<RAstType>(right))
-            }
+            },
             _ => false,
         },
     }
@@ -6521,7 +6521,7 @@ fn fnSignature_clone(signature: &FnSignature) -> FnSignature {
                 i = i + 1;
             }
             FnSignature::Fn(cloned_params, rAstType_clone(return_type), *is_unsafe)
-        }
+        },
     }
 }
 
@@ -6537,10 +6537,10 @@ fn rAstType_clone(t: &RAstType) -> RAstType {
         RAstType::Custom(name) => RAstType::Custom(string_clone(name)),
         RAstType::Reference(inner, mutable) => {
             RAstType::Reference(box_clone::<RAstType>(inner, rAstType_clone), *mutable)
-        }
+        },
         RAstType::RawPointerMut(inner) => {
             RAstType::RawPointerMut(box_clone::<RAstType>(inner, rAstType_clone))
-        }
+        },
     }
 }
 
@@ -6889,7 +6889,7 @@ fn llvmToken_to_string(token: &LlvmToken) -> String {
             string_push_string(&mut string, value);
             string_push(&mut string, '"');
             string
-        }
+        },
         LlvmToken::Identifier(name) => string_clone(name),
         LlvmToken::Integer(value) => integer_to_string(*value),
         LlvmToken::Eof => string("<eof>"),
@@ -6918,21 +6918,21 @@ fn literal_to_string(literal: &Literal) -> String {
             } else {
                 string("false")
             }
-        }
+        },
         Literal::Char(value) => {
             let mut string: String = string_new();
             string_push(&mut string, '\'');
             string_push(&mut string, *value);
             string_push(&mut string, '\'');
             string
-        }
+        },
         Literal::String(value) => {
             let mut string: String = string_new();
             string_push(&mut string, '"');
             string_push_string(&mut string, value);
             string_push(&mut string, '"');
             string
-        }
+        },
     }
 }
 
