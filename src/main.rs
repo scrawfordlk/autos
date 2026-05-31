@@ -4041,23 +4041,58 @@ fn llvmParser_is_instruction_start(parser: &mut LlvmParser) -> bool {
 }
 
 enum LlvmAst {
-    AST(StringMap<LlvmFunction>),
+    AST(Vec<LlvmGlobal>, StringMap<LlvmFunction>),
+}
+
+/// Top-level LLVM global data.
+enum LlvmGlobal {
+    /// name, bytes
+    String(String, String),
 }
 
 /// Create an empty LLVM AST.
 fn llvmAst_new() -> LlvmAst {
-    LlvmAst::AST(stringMap_new::<LlvmFunction>())
+    LlvmAst::AST(vec_new::<LlvmGlobal>(), stringMap_new::<LlvmFunction>())
+}
+
+/// Get immutable access to the top-level globals list.
+fn llvmAst_globals(ast: &LlvmAst) -> &Vec<LlvmGlobal> {
+    let LlvmAst::AST(globals, _): &LlvmAst = ast;
+    globals
+}
+
+/// Get mutable access to the top-level globals list.
+fn llvmAst_globals_mut(ast: &mut LlvmAst) -> &mut Vec<LlvmGlobal> {
+    let LlvmAst::AST(globals, _): &mut LlvmAst = ast;
+    globals
+}
+
+/// Insert a global entry into the AST. Returns false on duplicate name.
+fn llvmAst_insert_global(ast: &mut LlvmAst, name: String, global: LlvmGlobal) -> bool {
+    let globals: &Vec<LlvmGlobal> = llvmAst_globals(ast);
+
+    let mut i: usize = 0;
+    while i < vec_len::<LlvmGlobal>(globals) {
+        let LlvmGlobal::String(existing_name, _): &LlvmGlobal = vec_at::<LlvmGlobal>(globals, i);
+        if string_eq(existing_name, &name) {
+            return false;
+        }
+        i = i + 1;
+    }
+
+    vec_push::<LlvmGlobal>(llvmAst_globals_mut(ast), global);
+    true
 }
 
 /// Get immutable access to the top-level function map.
 fn llvmAst_functions(ast: &LlvmAst) -> &StringMap<LlvmFunction> {
-    let LlvmAst::AST(functions): &LlvmAst = ast;
+    let LlvmAst::AST(_, functions): &LlvmAst = ast;
     functions
 }
 
 /// Get mutable access to the top-level function map.
 fn llvmAst_functions_mut(ast: &mut LlvmAst) -> &mut StringMap<LlvmFunction> {
-    let LlvmAst::AST(functions): &mut LlvmAst = ast;
+    let LlvmAst::AST(_, functions): &mut LlvmAst = ast;
     functions
 }
 
@@ -4154,16 +4189,20 @@ enum LlvmType {
     Void,
 }
 
-fn llvmType_bitwidth(parser: &LlvmParser, ty: &LlvmType) -> usize {
+fn llvmType_bitwidth(ty: &LlvmType) -> usize {
     match ty {
         LlvmType::I1 => 1,
         LlvmType::I8 => 8,
         LlvmType::I64 => 64,
-        _ => {
-            let message: String = llvmParser_expected_message(parser, &string("LLVM integer type"));
-            llvmParser_error(parser, &message)
-        },
+        LlvmType::Ptr => size_of::<usize>() * 8,
+        LlvmType::Array(len, inner) => *len * llvmType_bitwidth(box_deref::<LlvmType>(inner)),
+        LlvmType::Void => 0,
     }
+}
+
+/// Return the size of an LLVM type in bytes.
+fn llvmType_size(ty: &LlvmType) -> usize {
+    max(1, llvmType_bitwidth(ty) / 8)
 }
 
 /// Represents an instruction block.
@@ -4337,6 +4376,13 @@ fn llvmParser_parse_string(parser: &mut LlvmParser) {
         LlvmToken::CString(value) => {
             let string_value: String = string_clone(value);
             llvmParser_next_token(parser);
+            if not(llvmAst_insert_global(
+                llvmParser_ast_mut(parser),
+                string_clone(&name),
+                LlvmGlobal::String(name, string_value),
+            )) {
+                llvmParser_error(parser, &string("duplicate LLVM global string"));
+            }
         },
         _ => {
             let message: String =
@@ -4631,8 +4677,8 @@ fn llvmParser_parse_cast_assign(parser: &mut LlvmParser, operator: CastOp) -> As
 
     match &operator {
         CastOp::Zext => {
-            let from_bits: usize = llvmType_bitwidth(parser, &from_type);
-            let to_bits: usize = llvmType_bitwidth(parser, &to_type);
+            let from_bits: usize = llvmType_bitwidth(&from_type);
+            let to_bits: usize = llvmType_bitwidth(&to_type);
             if not(from_bits < to_bits) {
                 llvmParser_error(
                     parser,
@@ -4641,8 +4687,8 @@ fn llvmParser_parse_cast_assign(parser: &mut LlvmParser, operator: CastOp) -> As
             }
         },
         CastOp::Trunc => {
-            let from_bits: usize = llvmType_bitwidth(parser, &from_type);
-            let to_bits: usize = llvmType_bitwidth(parser, &to_type);
+            let from_bits: usize = llvmType_bitwidth(&from_type);
+            let to_bits: usize = llvmType_bitwidth(&to_type);
             if not(from_bits > to_bits) {
                 llvmParser_error(
                     parser,
@@ -4842,25 +4888,25 @@ enum LlvmExecFlow {
 /// Type that encapsulates the state of the LLVM emulator.
 enum Emu {
     Emu(
-        /// map of global addresses
+        /// map of global names to their addresses
         StringMap<usize>,
-        /// byte-addressed, double-word-aligned and big-endian memory (stack, heap, data)
+        /// byte-addressed, double-word-aligned and big-endian memory (data, heap, stack)
         Vec<u8>,
         /// stack pointer
         usize,
         /// current frame size,
         usize,
-        /// heap pointer
+        /// global pointer (end of data segment, start of heap)
         usize,
         /// exit code, if the program exited
         Option<usize>,
     ),
 }
 
-/// Create a new emulator state including `memory_size` bytes of main memory.
-/// The program heap boundary is at the address `global_pointer`.
-fn emu_new(memory_size: usize, global_pointer: usize) -> Emu {
+/// Create a new emulator state with `memory_size` bytes of main memory.
+fn emu_new(memory_size: usize) -> Emu {
     let stack_pointer: usize = memory_size;
+    let global_pointer: usize = 0;
     Emu::Emu(
         stringMap_new::<usize>(),
         vec_with_len::<u8>(memory_size),
@@ -4874,6 +4920,12 @@ fn emu_new(memory_size: usize, global_pointer: usize) -> Emu {
 /// Get a shared reference to the global values.
 fn emu_globals(emulator: &Emu) -> &StringMap<usize> {
     let Emu::Emu(globals, _, _, _, _, _): &Emu = emulator;
+    globals
+}
+
+/// Get mutable access to the global values.
+fn emu_globals_mut(emulator: &mut Emu) -> &mut StringMap<usize> {
+    let Emu::Emu(globals, _, _, _, _, _): &mut Emu = emulator;
     globals
 }
 
@@ -4901,16 +4953,32 @@ fn emu_set_frame_size(emulator: &mut Emu, value: usize) {
     *frame_size = value;
 }
 
-/// Get the current heap pointer.
-fn emu_get_heap_pointer(emulator: &Emu) -> usize {
-    let Emu::Emu(_, _, _, _, heap_pointer, _): &Emu = emulator;
-    *heap_pointer
+/// Get the global pointer (end of data segment).
+fn emu_get_gp(emulator: &Emu) -> usize {
+    let Emu::Emu(_, _, _, _, gp, _): &Emu = emulator;
+    *gp
 }
 
-/// Set the current heap pointer.
+/// Set the global pointer (end of data segment).
+fn emu_set_gp(emulator: &mut Emu, value: usize) {
+    let Emu::Emu(_, _, _, _, gp, _): &mut Emu = emulator;
+    *gp = value;
+}
+
+/// Get the address of the top of the heap.
+fn emu_get_heap_pointer(emulator: &Emu) -> usize {
+    let gp: usize = emu_get_gp(emulator);
+    match emu_load_bytes(emulator, gp - size_of::<usize>(), size_of::<usize>()) {
+        Option::Some(value) => value,
+        Option::None => gp,
+    }
+}
+
+/// Allocate and set the heap pointer (which is used by the bump allocator).
 fn emu_set_heap_pointer(emulator: &mut Emu, value: usize) {
-    let Emu::Emu(_, _, _, _, heap_pointer, _): &mut Emu = emulator;
-    *heap_pointer = value;
+    let gp: usize = emu_get_gp(emulator);
+    emu_store_bytes(emulator, gp, value, size_of::<usize>());
+    emu_set_gp(emulator, gp + size_of::<usize>());
 }
 
 /// Return true if exit was requested and return the code.
@@ -4966,6 +5034,34 @@ fn emu_allocate_heap(emulator: &mut Emu, size: usize) -> Option<usize> {
     }
 }
 
+/// Load top-level LLVM string globals into the data segment.
+fn emu_load_globals(emulator: &mut Emu, ast: &LlvmAst) {
+    let mut data_pointer: usize = emu_get_gp(emulator);
+
+    let mut i: usize = 0;
+    while i < vec_len::<LlvmGlobal>(llvmAst_globals(ast)) {
+        let LlvmGlobal::String(name, value): &LlvmGlobal =
+            vec_at::<LlvmGlobal>(llvmAst_globals(ast), i);
+
+        let alloc_size: usize = emu_align_to_double(string_len(value));
+        let address: usize = data_pointer;
+
+        let mut j: usize = 0;
+        while j < string_len(value) {
+            let character: usize = unwrap::<char>(string_get(value, j)) as usize;
+            emu_store_bytes(emulator, address + j, character, 1);
+            j = j + 1;
+        }
+
+        stringMap_insert::<usize>(emu_globals_mut(emulator), string_clone(name), address);
+        data_pointer = data_pointer + alloc_size;
+        i = i + 1;
+    }
+
+    emu_set_gp(emulator, data_pointer);
+    emu_set_heap_pointer(emulator, data_pointer);
+}
+
 /// Deallocates the top stack frame by resetting the frame size to 0 and moving the stack pointer up by the frame size.
 fn emu_deallocate_stack_frame(emulator: &mut Emu) {
     let stack_pointer: usize = emu_get_sp(emulator);
@@ -4974,14 +5070,13 @@ fn emu_deallocate_stack_frame(emulator: &mut Emu) {
     emu_set_frame_size(emulator, 0);
 }
 
-/// Store one double word at `address`.
-fn emu_store_double(emulator: &mut Emu, address: usize, value: usize) -> bool {
+/// Store a little-endian integer value at `address` using `byte_count` bytes.
+fn emu_store_bytes(emulator: &mut Emu, address: usize, value: usize, byte_count: usize) -> bool {
     let Emu::Emu(_, memory, _, _, _, _): &mut Emu = emulator;
-    let bytes: usize = size_of::<usize>();
 
     let mut remaining: usize = value;
     let mut i: usize = 0;
-    while i < bytes {
+    while i < byte_count {
         let byte: u8 = (remaining % 256) as u8;
 
         if not(vec_set::<u8>(memory, address + i, byte)) {
@@ -4994,19 +5089,18 @@ fn emu_store_double(emulator: &mut Emu, address: usize, value: usize) -> bool {
     true
 }
 
-/// Load one double word from `address`.
-fn emu_load_double(emulator: &mut Emu, address: usize) -> Option<usize> {
-    let Emu::Emu(_, memory, _, _, _, _): &mut Emu = emulator;
-    let byte_size: usize = size_of::<usize>();
+/// Load a little-endian integer value from `address` using `byte_count` bytes.
+fn emu_load_bytes(emulator: &Emu, address: usize, byte_count: usize) -> Option<usize> {
+    let Emu::Emu(_, memory, _, _, _, _): &Emu = emulator;
 
     let mut value: usize = 0;
     let mut factor: usize = 1;
     let mut i: usize = 0;
-    while i < byte_size {
+    while i < byte_count {
         match vec_get::<u8>(memory, address + i) {
             Option::Some(byte) => {
                 value = value + (*byte as usize) * factor;
-                if i + 1 < byte_size {
+                if i + 1 < byte_count {
                     factor = factor * 256;
                 }
             },
@@ -5024,8 +5118,9 @@ fn emu_execute_llvm(source: String) -> usize {
     let main_name: String = string("main");
     let empty_args: Vec<usize> = vec_new::<usize>();
 
-    // TODO: parameterise memory size, set correct global pointer after parsing
-    let mut emulator: Emu = emu_new(3000000, 0);
+    // TODO: parameterise memory size
+    let mut emulator: Emu = emu_new(3000000);
+    emu_load_globals(&mut emulator, &ast);
     emu_execute_function_named(&mut emulator, &ast, &main_name, &empty_args)
 }
 
@@ -5137,10 +5232,9 @@ fn emu_execute_instructions(
             },
 
             Instruction::Ret(return_type, return_value) => {
-                let global_values: &StringMap<usize> = emu_globals(emulator);
                 return LlvmExecFlow::Return(match return_value {
                     Option::Some(value) => {
-                        let value: usize = llvm_eval_value(global_values, registers, value);
+                        let value: usize = llvm_eval_value(emulator, registers, value);
                         llvm_overflow_value(value, &return_type)
                     },
                     Option::None => 0,
@@ -5152,10 +5246,8 @@ fn emu_execute_instructions(
                         LlvmExecFlow::Jump(string_clone(target_label))
                     },
                     Branch::Conditional(condition, then_label, else_label) => {
-                        let global_values: &StringMap<usize> = emu_globals(emulator);
-
                         let condition_value: usize =
-                            llvm_eval_value(global_values, registers, condition);
+                            llvm_eval_value(emulator, registers, condition);
 
                         if condition_value == 1 {
                             LlvmExecFlow::Jump(string_clone(then_label))
@@ -5196,12 +5288,10 @@ fn emu_evaluate_assign_op(
     registers: &StringMap<usize>,
     operation: &AssignOp,
 ) -> usize {
-    let global_values: &StringMap<usize> = emu_globals(emulator);
-
     match operation {
         AssignOp::Binary(operator, result_type, left, right) => {
-            let lhs: usize = llvm_eval_value(global_values, registers, left);
-            let rhs: usize = llvm_eval_value(emu_globals(emulator), registers, right);
+            let lhs: usize = llvm_eval_value(emulator, registers, left);
+            let rhs: usize = llvm_eval_value(emulator, registers, right);
             let lhs: usize = llvm_overflow_value(lhs, result_type);
             let rhs: usize = llvm_overflow_value(rhs, result_type);
 
@@ -5215,8 +5305,8 @@ fn emu_evaluate_assign_op(
         },
 
         AssignOp::Icmp(predicate, operand_type, left, right) => {
-            let mut lhs: usize = llvm_eval_value(global_values, registers, left);
-            let mut rhs: usize = llvm_eval_value(emu_globals(emulator), registers, right);
+            let mut lhs: usize = llvm_eval_value(emulator, registers, left);
+            let mut rhs: usize = llvm_eval_value(emulator, registers, right);
 
             // handle overflowing literals
             lhs = llvm_overflow_value(lhs, operand_type);
@@ -5234,7 +5324,7 @@ fn emu_evaluate_assign_op(
         },
 
         AssignOp::Cast(cast_op, to_type, value) => {
-            let evaluated_value: usize = llvm_eval_value(global_values, registers, value);
+            let evaluated_value: usize = llvm_eval_value(emulator, registers, value);
             match cast_op {
                 CastOp::Zext => llvm_overflow_value(evaluated_value, to_type),
                 CastOp::Trunc => llvm_overflow_value(evaluated_value, to_type),
@@ -5243,8 +5333,8 @@ fn emu_evaluate_assign_op(
             }
         },
 
-        AssignOp::Alloca(_, num_elements) => {
-            let space: usize = *num_elements * size_of::<usize>();
+        AssignOp::Alloca(allocated_type, num_elements) => {
+            let space: usize = *num_elements * llvmType_size(allocated_type);
             match emu_allocate_stack(emulator, space) {
                 Option::Some(address) => address,
                 Option::None => panic!("Stack overflow of emu"),
@@ -5252,8 +5342,8 @@ fn emu_evaluate_assign_op(
         },
 
         AssignOp::Load(loaded_type, address_value) => {
-            let address: usize = llvm_eval_value(global_values, registers, address_value);
-            match emu_load_double(emulator, address) {
+            let address: usize = llvm_eval_value(emulator, registers, address_value);
+            match emu_load_bytes(emulator, address, llvmType_size(loaded_type)) {
                 Option::Some(value) => llvm_overflow_value(value, loaded_type),
                 Option::None => panic!("invalid LLVM load address"),
             }
@@ -5263,13 +5353,21 @@ fn emu_evaluate_assign_op(
             emu_execute_call(emulator, ast, registers, call_type, callee, arguments)
         },
 
-        AssignOp::Gep(_, pointer, indexes) => {
-            let mut address: usize = llvm_eval_value(global_values, registers, pointer);
+        AssignOp::Gep(base_type, pointer, indexes) => {
+            let mut address: usize = llvm_eval_value(emulator, registers, pointer);
+            let mut current_type: LlvmType = llvmType_clone(base_type);
+
             let mut i: usize = 0;
             while i < vec_len::<LlvmTypedValue>(indexes) {
-                let typed_value: &LlvmTypedValue = vec_at::<LlvmTypedValue>(indexes, i);
-                let LlvmTypedValue::Pair(_, index_value): &LlvmTypedValue = typed_value;
-                address = address + llvm_eval_value(global_values, registers, index_value);
+                let LlvmTypedValue::Pair(_, index_value): &LlvmTypedValue =
+                    vec_at::<LlvmTypedValue>(indexes, i);
+                let index: usize = llvm_eval_value(emulator, registers, index_value);
+
+                address = address + index * llvmType_size(&current_type);
+                current_type = match current_type {
+                    LlvmType::Array(_, inner) => llvmType_clone(box_deref::<LlvmType>(&inner)),
+                    other => other,
+                };
                 i = i + 1;
             }
             address
@@ -5286,15 +5384,13 @@ fn emu_execute_call(
     callee: &String,
     arguments: &Vec<LlvmTypedValue>,
 ) -> usize {
-    let global_values: &StringMap<usize> = emu_globals(emulator);
-
     let mut arg_values: Vec<usize> = vec_new::<usize>();
     let mut i: usize = 0;
     while i < vec_len::<LlvmTypedValue>(arguments) {
         let argument: &LlvmTypedValue = vec_at::<LlvmTypedValue>(arguments, i);
         let LlvmTypedValue::Pair(ty, argument_value): &LlvmTypedValue = argument;
 
-        let value: usize = llvm_eval_value(global_values, registers, argument_value);
+        let value: usize = llvm_eval_value(emulator, registers, argument_value);
         let wrapped_value: usize = llvm_overflow_value(value, ty);
         vec_push::<usize>(&mut arg_values, wrapped_value);
 
@@ -5322,30 +5418,30 @@ fn emu_execute_store(
     value: &LlvmValue,
     address: &LlvmValue,
 ) {
-    let global_values: &StringMap<usize> = emu_globals(emulator);
-
-    let raw_value: usize = llvm_eval_value(global_values, registers, value);
+    let raw_value: usize = llvm_eval_value(emulator, registers, value);
     let stored_value: usize = llvm_overflow_value(raw_value, store_type);
-    let target_address: usize = llvm_eval_value(global_values, registers, address);
+    let target_address: usize = llvm_eval_value(emulator, registers, address);
+    let byte_count: usize = llvmType_size(store_type);
 
-    if not(emu_store_double(emulator, target_address, stored_value)) {
+    if not(emu_store_bytes(
+        emulator,
+        target_address,
+        stored_value,
+        byte_count,
+    )) {
         panic!("invalid LLVM store address");
     }
 }
 
 /// Evaluate the value of a virtual register, global name or literal.
-fn llvm_eval_value(
-    global_values: &StringMap<usize>,
-    registers: &StringMap<usize>,
-    value: &LlvmValue,
-) -> usize {
+fn llvm_eval_value(emulator: &Emu, registers: &StringMap<usize>, value: &LlvmValue) -> usize {
     match value {
         LlvmValue::Literal(number) => *number,
         LlvmValue::Register(name) => match stringMap_get::<usize>(registers, name) {
             Option::Some(register_value) => *register_value,
             Option::None => panic!("unknown LLVM register"),
         },
-        LlvmValue::Global(name) => match stringMap_get::<usize>(global_values, name) {
+        LlvmValue::Global(name) => match stringMap_get::<usize>(emu_globals(emulator), name) {
             Option::Some(value) => *value,
             Option::None => panic!("unknown LLVM global value"),
         },
