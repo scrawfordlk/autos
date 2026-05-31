@@ -5461,11 +5461,6 @@ fn max(n: usize, m: usize) -> usize {
     if n > m { n } else { m }
 }
 
-/// Return the minimum of two values.
-fn min(n: usize, m: usize) -> usize {
-    if n < m { n } else { m }
-}
-
 /// Return true if the number is negative (Two's Complement).
 fn is_negative(number: usize) -> bool {
     number >= 9223372036854775808
