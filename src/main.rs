@@ -211,8 +211,7 @@ fn sourceFile_get_char(file: &SourceFile, index: usize) -> Option<char> {
 }
 
 /// Returns the current line.
-fn sourceFile_current_line(file: &SourceFile) -> usize {
-    let SourceFile::SourceFile(_, _, line, _): &SourceFile = file;
+fn sourceFile_current_line(SourceFile::SourceFile(_, _, line, _): &SourceFile) -> usize {
     *line
 }
 
@@ -237,26 +236,22 @@ fn lexer_new(source: String) -> Lexer {
 }
 
 /// Get immutable access to the lexer source file state.
-fn lexer_sourcefile(lexer: &Lexer) -> &SourceFile {
-    let Lexer::Lexer(source, _): &Lexer = lexer;
+fn lexer_sourcefile(Lexer::Lexer(source, _): &Lexer) -> &SourceFile {
     source
 }
 
 /// Get mutable access to the lexer source file state.
-fn lexer_sourcefile_mut(lexer: &mut Lexer) -> &mut SourceFile {
-    let Lexer::Lexer(source, _): &mut Lexer = lexer;
+fn lexer_sourcefile_mut(Lexer::Lexer(source, _): &mut Lexer) -> &mut SourceFile {
     source
 }
 
 /// Get the current token from the lexer.
-fn lexer_current_token(lexer: &Lexer) -> &Token {
-    let Lexer::Lexer(_, token): &Lexer = lexer;
+fn lexer_current_token(Lexer::Lexer(_, token): &Lexer) -> &Token {
     token
 }
 
 /// Get mutable access to the current lexer token slot.
-fn lexer_set_current_token(lexer: &mut Lexer, token: Token) {
-    let Lexer::Lexer(_, old_token): &mut Lexer = lexer;
+fn lexer_set_current_token(Lexer::Lexer(_, old_token): &mut Lexer, token: Token) {
     *old_token = token;
 }
 
@@ -882,7 +877,8 @@ fn rAstType_coerce(left: RAstType, right: RAstType) -> RAstType {
 /// If one of the arguments is Never, return true, since Never matches every type.
 fn type_matches(left: &RAstType, right: &RAstType) -> bool {
     or(
-        // Never is a special type that indicates the value is unreachable, so it matches every type
+        // Never is a special type that indicates the value is unreachable, so it matches every
+        // type
         or(
             rAstType_eq(left, &RAstType::Never),
             rAstType_eq(right, &RAstType::Never),
@@ -1796,7 +1792,7 @@ enum FnSignature {
 ///
 /// ZeroExtend: A type with smaller bitwidth is zero-extended to a larger bitwidth.
 /// Truncate: A type with larger bitwidth is truncated to a smaller bitwidth.
-/// None: Do not perform a cast (because the cast would be a no-op which would be illegal in LLVM-IR).
+/// None: Do not perform a cast (cast would be a no-op which would be illegal in LLVM-IR).
 /// Invalid: The cast is illegal.
 enum CastOperation {
     /// A type with smaller bitwidth is zero-extended to a larger bitwidth.
@@ -2309,14 +2305,12 @@ fn codegen_new(items: StringMap<Item>) -> Codegen {
 }
 
 /// Get a shared reference to the code.
-fn codegen_code(codegen: &Codegen) -> &Code {
-    let Codegen::Codegen(code, _, _, _, _): &Codegen = codegen;
+fn codegen_code(Codegen::Codegen(code, _, _, _, _): &Codegen) -> &Code {
     code
 }
 
 /// Get a mutable reference to the code.
-fn codegen_code_mut(codegen: &mut Codegen) -> &mut Code {
-    let Codegen::Codegen(code, _, _, _, _): &mut Codegen = codegen;
+fn codegen_code_mut(Codegen::Codegen(code, _, _, _, _): &mut Codegen) -> &mut Code {
     code
 }
 
@@ -2327,20 +2321,17 @@ fn codegen_mark_as_main(codegen: &mut Codegen, is_main_function: bool) {
 }
 
 /// Return true if the current function is the main function.
-fn codegen_is_main(codegen: &Codegen) -> bool {
-    let Codegen::Codegen(_, is_main, _, _, _): &Codegen = codegen;
+fn codegen_is_main(Codegen::Codegen(_, is_main, _, _, _): &Codegen) -> bool {
     *is_main
 }
 
 /// Push a new empty scope onto the stack.
-fn codegen_push_scope(codegen: &mut Codegen) {
-    let Codegen::Codegen(_, _, _, stack, _): &mut Codegen = codegen;
+fn codegen_push_scope(Codegen::Codegen(_, _, _, stack, _): &mut Codegen) {
     stringMapStack_push_empty::<STPair>(stack);
 }
 
 /// Pop the last pushed scope.
-fn codegen_pop_scope(codegen: &mut Codegen) -> bool {
-    let Codegen::Codegen(_, _, _, stack, _): &mut Codegen = codegen;
+fn codegen_pop_scope(Codegen::Codegen(_, _, _, stack, _): &mut Codegen) -> bool {
     stringMapStack_pop::<STPair>(stack)
 }
 
@@ -2369,14 +2360,12 @@ fn codegen_function_signature(codegen: &Codegen, name: &String) -> Option<FnSign
 }
 
 /// Get the current value of the SSA numbering scheme.
-fn codegen_ssa_counter(codegen: &Codegen) -> usize {
-    let Codegen::Codegen(_, _, counter, _, _): &Codegen = codegen;
+fn codegen_ssa_counter(Codegen::Codegen(_, _, counter, _, _): &Codegen) -> usize {
     *counter
 }
 
 /// Increment the SSA numbering value by one.
-fn codegen_increment_ssa_counter(codegen: &mut Codegen) {
-    let Codegen::Codegen(_, _, counter, _, _): &mut Codegen = codegen;
+fn codegen_increment_ssa_counter(Codegen::Codegen(_, _, counter, _, _): &mut Codegen) {
     *counter = *counter + 1;
 }
 
@@ -3605,26 +3594,22 @@ fn llvmLexer_new(source: String) -> LlvmLexer {
 }
 
 /// Get the lexer source file.
-fn llvmLexer_sourcefile(lexer: &LlvmLexer) -> &SourceFile {
-    let LlvmLexer::Lexer(source, _): &LlvmLexer = lexer;
+fn llvmLexer_sourcefile(LlvmLexer::Lexer(source, _): &LlvmLexer) -> &SourceFile {
     source
 }
 
 /// Get the lexer source file.
-fn llvmLexer_sourcefile_mut(lexer: &mut LlvmLexer) -> &mut SourceFile {
-    let LlvmLexer::Lexer(source, _): &mut LlvmLexer = lexer;
+fn llvmLexer_sourcefile_mut(LlvmLexer::Lexer(source, _): &mut LlvmLexer) -> &mut SourceFile {
     source
 }
 
 /// Get the current lexer token.
-fn llvmLexer_current_token(lexer: &LlvmLexer) -> &LlvmToken {
-    let LlvmLexer::Lexer(_, token): &LlvmLexer = lexer;
+fn llvmLexer_current_token(LlvmLexer::Lexer(_, token): &LlvmLexer) -> &LlvmToken {
     token
 }
 
 /// Set the current lexer token.
-fn llvmLexer_set_current_token(lexer: &mut LlvmLexer, token: LlvmToken) {
-    let LlvmLexer::Lexer(_, old_token): &mut LlvmLexer = lexer;
+fn llvmLexer_set_current_token(LlvmLexer::Lexer(_, old_token): &mut LlvmLexer, token: LlvmToken) {
     *old_token = token;
 }
 
@@ -3916,8 +3901,7 @@ fn llvmParser_new(source: String) -> LlvmParser {
 }
 
 /// Get immutable parser lexer access.
-fn llvmParser_lexer(parser: &LlvmParser) -> &LlvmLexer {
-    let LlvmParser::Parser(lexer, _, _): &LlvmParser = parser;
+fn llvmParser_lexer(LlvmParser::Parser(lexer, _, _): &LlvmParser) -> &LlvmLexer {
     lexer
 }
 
@@ -4056,14 +4040,12 @@ fn llvmAst_new() -> LlvmAst {
 }
 
 /// Get immutable access to the top-level globals list.
-fn llvmAst_globals(ast: &LlvmAst) -> &Vec<LlvmGlobal> {
-    let LlvmAst::AST(globals, _): &LlvmAst = ast;
+fn llvmAst_globals(LlvmAst::AST(globals, _): &LlvmAst) -> &Vec<LlvmGlobal> {
     globals
 }
 
 /// Get mutable access to the top-level globals list.
-fn llvmAst_globals_mut(ast: &mut LlvmAst) -> &mut Vec<LlvmGlobal> {
-    let LlvmAst::AST(globals, _): &mut LlvmAst = ast;
+fn llvmAst_globals_mut(LlvmAst::AST(globals, _): &mut LlvmAst) -> &mut Vec<LlvmGlobal> {
     globals
 }
 
@@ -4085,14 +4067,12 @@ fn llvmAst_insert_global(ast: &mut LlvmAst, name: String, global: LlvmGlobal) ->
 }
 
 /// Get immutable access to the top-level function map.
-fn llvmAst_functions(ast: &LlvmAst) -> &StringMap<LlvmFunction> {
-    let LlvmAst::AST(_, functions): &LlvmAst = ast;
+fn llvmAst_functions(LlvmAst::AST(_, functions): &LlvmAst) -> &StringMap<LlvmFunction> {
     functions
 }
 
 /// Get mutable access to the top-level function map.
-fn llvmAst_functions_mut(ast: &mut LlvmAst) -> &mut StringMap<LlvmFunction> {
-    let LlvmAst::AST(_, functions): &mut LlvmAst = ast;
+fn llvmAst_functions_mut(LlvmAst::AST(_, functions): &mut LlvmAst) -> &mut StringMap<LlvmFunction> {
     functions
 }
 
@@ -4212,14 +4192,14 @@ enum InstructionBlock {
 }
 
 /// Get a shared reference to the label of an instruction block.
-fn instructionBlock_label(instruction_block: &InstructionBlock) -> &String {
-    let InstructionBlock::Block(label, _): &InstructionBlock = instruction_block;
+fn instructionBlock_label(InstructionBlock::Block(label, _): &InstructionBlock) -> &String {
     label
 }
 
 /// Get a shared reference to the instructions of an instruction block.
-fn instructionBlock_instructions(instruction_block: &InstructionBlock) -> &Vec<Instruction> {
-    let InstructionBlock::Block(_, instructions): &InstructionBlock = instruction_block;
+fn instructionBlock_instructions(
+    InstructionBlock::Block(_, instructions): &InstructionBlock,
+) -> &Vec<Instruction> {
     instructions
 }
 
@@ -4918,50 +4898,42 @@ fn emu_new(memory_size: usize) -> Emu {
 }
 
 /// Get a shared reference to the global values.
-fn emu_globals(emulator: &Emu) -> &StringMap<usize> {
-    let Emu::Emu(globals, _, _, _, _, _): &Emu = emulator;
+fn emu_globals(Emu::Emu(globals, _, _, _, _, _): &Emu) -> &StringMap<usize> {
     globals
 }
 
 /// Get mutable access to the global values.
-fn emu_globals_mut(emulator: &mut Emu) -> &mut StringMap<usize> {
-    let Emu::Emu(globals, _, _, _, _, _): &mut Emu = emulator;
+fn emu_globals_mut(Emu::Emu(globals, _, _, _, _, _): &mut Emu) -> &mut StringMap<usize> {
     globals
 }
 
 /// Get the current value of the stack pointer.
-fn emu_get_sp(emulator: &Emu) -> usize {
-    let Emu::Emu(_, _, stack_pointer, _, _, _): &Emu = emulator;
+fn emu_get_sp(Emu::Emu(_, _, stack_pointer, _, _, _): &Emu) -> usize {
     *stack_pointer
 }
 
 /// Set the value of the stack pointer.
-fn emu_set_sp(emulator: &mut Emu, value: usize) {
-    let Emu::Emu(_, _, stack_pointer, _, _, _): &mut Emu = emulator;
+fn emu_set_sp(Emu::Emu(_, _, stack_pointer, _, _, _): &mut Emu, value: usize) {
     *stack_pointer = value;
 }
 
 /// Get the size of the active stack frame in bytes.
-fn emu_get_frame_size(emulator: &Emu) -> usize {
-    let Emu::Emu(_, _, _, frame_size, _, _): &Emu = emulator;
+fn emu_get_frame_size(Emu::Emu(_, _, _, frame_size, _, _): &Emu) -> usize {
     *frame_size
 }
 
 /// Set the size of the active stack frame.
-fn emu_set_frame_size(emulator: &mut Emu, value: usize) {
-    let Emu::Emu(_, _, _, frame_size, _, _): &mut Emu = emulator;
+fn emu_set_frame_size(Emu::Emu(_, _, _, frame_size, _, _): &mut Emu, value: usize) {
     *frame_size = value;
 }
 
 /// Get the global pointer (end of data segment).
-fn emu_get_gp(emulator: &Emu) -> usize {
-    let Emu::Emu(_, _, _, _, gp, _): &Emu = emulator;
+fn emu_get_gp(Emu::Emu(_, _, _, _, gp, _): &Emu) -> usize {
     *gp
 }
 
 /// Set the global pointer (end of data segment).
-fn emu_set_gp(emulator: &mut Emu, value: usize) {
-    let Emu::Emu(_, _, _, _, gp, _): &mut Emu = emulator;
+fn emu_set_gp(Emu::Emu(_, _, _, _, gp, _): &mut Emu, value: usize) {
     *gp = value;
 }
 
@@ -4982,8 +4954,7 @@ fn emu_set_heap_pointer(emulator: &mut Emu, value: usize) {
 }
 
 /// Return true if exit was requested and return the code.
-fn emu_exit_code(emulator: &Emu) -> Option<usize> {
-    let Emu::Emu(_, _, _, _, _, exit_code): &Emu = emulator;
+fn emu_exit_code(Emu::Emu(_, _, _, _, _, exit_code): &Emu) -> Option<usize> {
     match exit_code {
         Option::Some(code) => Option::Some(*code),
         Option::None => Option::None,
@@ -4991,8 +4962,7 @@ fn emu_exit_code(emulator: &Emu) -> Option<usize> {
 }
 
 /// Set the exit code and mark the program as exited.
-fn emu_set_exit_code(emulator: &mut Emu, code: usize) {
-    let Emu::Emu(_, _, _, _, _, exit_code): &mut Emu = emulator;
+fn emu_set_exit_code(Emu::Emu(_, _, _, _, _, exit_code): &mut Emu, code: usize) {
     *exit_code = Option::Some(code);
 }
 
@@ -5062,7 +5032,8 @@ fn emu_load_globals(emulator: &mut Emu, ast: &LlvmAst) {
     emu_set_heap_pointer(emulator, data_pointer);
 }
 
-/// Deallocates the top stack frame by resetting the frame size to 0 and moving the stack pointer up by the frame size.
+/// Deallocates the top stack frame by resetting the frame size to 0 and moving the stack pointer up
+/// by the frame size.
 fn emu_deallocate_stack_frame(emulator: &mut Emu) {
     let stack_pointer: usize = emu_get_sp(emulator);
     let frame_size: usize = emu_get_frame_size(emulator);
@@ -5514,7 +5485,7 @@ fn codegen_error(message: &str) -> ! {
 }
 
 fn semantic_check_error(message: &str) -> ! {
-    panic!("Semantic error: {}", message)
+    panic!("Semantic error: {}", message);
 }
 
 /// Emit an LLVM parser error and panic.
@@ -5668,8 +5639,7 @@ fn box_new<T>(value: T) -> Box<T> {
 }
 
 /// Dereference a box.
-fn box_deref<T>(ptr_wrap: &Box<T>) -> &T {
-    let Box::Ptr(ptr): &Box<T> = ptr_wrap;
+fn box_deref<T>(Box::Ptr(ptr): &Box<T>) -> &T {
     unsafe { &**ptr }
 }
 
@@ -5703,20 +5673,17 @@ fn vec_with_len<T>(len: usize) -> Vec<T> {
 }
 
 /// Get the backing pointer.
-fn vec_ptr<T>(vec: &Vec<T>) -> *mut T {
-    let Vec::Vec(ptr, _, _): &Vec<T> = vec;
+fn vec_ptr<T>(Vec::Vec(ptr, _, _): &Vec<T>) -> *mut T {
     *ptr
 }
 
 /// Get the logical length.
-fn vec_len<T>(vec: &Vec<T>) -> usize {
-    let Vec::Vec(_, len, _): &Vec<T> = vec;
+fn vec_len<T>(Vec::Vec(_, len, _): &Vec<T>) -> usize {
     *len
 }
 
 /// Get the capacity.
-fn vec_capacity<T>(vec: &Vec<T>) -> usize {
-    let Vec::Vec(_, _, capacity): &Vec<T> = vec;
+fn vec_capacity<T>(Vec::Vec(_, _, capacity): &Vec<T>) -> usize {
     *capacity
 }
 
@@ -5833,14 +5800,12 @@ enum StringMapEntry<T> {
 }
 
 /// Get the key stored in one StringMapEntry.
-fn stringMapEntry_get_key<T>(entry: &StringMapEntry<T>) -> &String {
-    let StringMapEntry::Entry(key, _) = entry;
+fn stringMapEntry_get_key<T>(StringMapEntry::Entry(key, _): &StringMapEntry<T>) -> &String {
     key
 }
 
 /// Get the value stored in one StringMapEntry.
-fn stringMapEntry_get_value<T>(entry: &StringMapEntry<T>) -> &T {
-    let StringMapEntry::Entry(_, value) = entry;
+fn stringMapEntry_get_value<T>(StringMapEntry::Entry(_, value): &StringMapEntry<T>) -> &T {
     value
 }
 
@@ -6745,8 +6710,7 @@ fn string(str: &str) -> String {
 }
 
 /// Get the length of the string.
-fn string_len(string: &String) -> usize {
-    let String::Inner(bytes): &String = string;
+fn string_len(String::Inner(bytes): &String) -> usize {
     vec_len::<u8>(bytes)
 }
 
