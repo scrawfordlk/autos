@@ -51,7 +51,7 @@ while -> "while" expression block
 
 match -> "match" expression "{" { arm } "}"
 
-arm   -> pattern "=>" expression ","
+arm   -> pattern { "|" pattern } "=>" expression ","
 
 call  -> path "(" [ expression { "," expression } [ "," ] ] ")"
 
