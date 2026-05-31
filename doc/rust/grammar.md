@@ -3,16 +3,20 @@
 ## Global
 
 ```
-language -> { function | enum }
+language  -> { function | extern | enum }
 
-function -> [ "unsafe" ] "fn" identifier
-           "(" [ variable { "," variable } [ "," ] ] ")" [ "->" type ] block
+function  -> signature block
 
-enum     -> "enum" identifier "{" variant "," { variant "," } "}"
+signature -> [ "unsafe" ] "fn" identifier
+             "(" [ variable { "," variable } [ "," ] ] ")" [ "->" type ]
 
-variant  -> identifier [ "(" type { "," type } ")" ]
+extern    -> "unsafe" "extern" ""C"" "{" { signature ";" } "}"
 
-block    -> "{" { ( binding | expression [ ";" ] ) } "}"
+enum      -> "enum" identifier "{" variant "," { variant "," } "}"
+
+variant   -> identifier [ "(" type { "," type } ")" ]
+
+block     -> "{" { ( binding | expression [ ";" ] ) } "}"
 ```
 
 ## Expression
