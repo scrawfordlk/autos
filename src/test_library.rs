@@ -161,24 +161,6 @@ fn rAstType_match(a: &RAstType, b: &RAstType) -> bool {
     }
 }
 
-fn rAstTypeList_match(a: &List<RAstType>, b: &List<RAstType>) -> bool {
-    match (a, b) {
-        (List::Nil, List::Nil) => true,
-        (List::Cons(a_head, a_tail), List::Cons(b_head, b_tail)) => and(
-            rAstType_match(a_head, b_head),
-            rAstTypeList_match(
-                box_deref::<List<RAstType>>(a_tail),
-                box_deref::<List<RAstType>>(b_tail),
-            ),
-        ),
-        _ => false,
-    }
-}
-
-fn rAstTypeList_single(t: RAstType) -> List<RAstType> {
-    List::Cons(t, box_new::<List<RAstType>>(List::Nil))
-}
-
 // ------------------------- Bool ----------------------------
 
 #[test]
