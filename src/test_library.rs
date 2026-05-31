@@ -5,12 +5,6 @@ fn test_unwrap_char_some() {
     assert_eq!(unwrap::<char>(Option::Some('a')), 'a');
 }
 
-#[test]
-#[should_panic(expected = "tried to unwrap None variant of Option<T>")]
-fn test_unwrap_char_none() {
-    unwrap::<char>(Option::None);
-}
-
 // ------------------------- String ----------------------------
 
 #[test]

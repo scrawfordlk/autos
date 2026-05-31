@@ -1259,7 +1259,7 @@ fn parse_arithmetic(lexer: &mut Lexer) -> RAstExpr {
         let operator: RAstArithmeticOp = match lexer_current_token(lexer) {
             Token::Plus => RAstArithmeticOp::Add,
             Token::Minus => RAstArithmeticOp::Sub,
-            _ => panic!("unreachable"),
+            _ => panic("unreachable"),
         };
         lexer_next_token(lexer);
 
@@ -1288,7 +1288,7 @@ fn parse_term(lexer: &mut Lexer) -> RAstExpr {
             Token::Star => RAstArithmeticOp::Mul,
             Token::Slash => RAstArithmeticOp::Div,
             Token::Remainder => RAstArithmeticOp::Rem,
-            _ => panic!("unreachable"),
+            _ => panic("unreachable"),
         };
         lexer_next_token(lexer);
 
@@ -3626,10 +3626,10 @@ fn llvmLexer_expect_char(lexer: &mut LlvmLexer, expected: char) {
     match llvmLexer_consume_char(lexer) {
         Option::Some(c) => {
             if c != expected {
-                panic!("unexpected character");
+                panic("unexpected character");
             }
         },
-        _ => panic!("unexpected EOF"),
+        _ => panic("unexpected EOF"),
     }
 }
 
@@ -3693,7 +3693,7 @@ fn llvmLexer_scan_cstring(lexer: &mut LlvmLexer) -> String {
                 string_push(&mut literal, character);
             },
             Option::Some(ch) => string_push(&mut literal, ch),
-            Option::None => panic!("unterminated LLVM c-string"),
+            Option::None => panic("unterminated LLVM c-string"),
         }
     }
     literal // satisfy compiler
@@ -3711,13 +3711,13 @@ fn llvmLexer_scan_escape(lexer: &mut LlvmLexer) -> char {
 
                         unwrap::<usize>(string_to_integer(&char_byte, 16)) as u8 as char
                     },
-                    _ => panic!("expected second digit for escaped character byte"),
+                    _ => panic("expected second digit for escaped character byte"),
                 }
             } else {
                 hex_digit
             }
         },
-        Option::None => panic!("unterminated LLVM c-string"),
+        Option::None => panic("unterminated LLVM c-string"),
     }
 }
 
@@ -3843,7 +3843,7 @@ fn llvmLexer_scan_symbol(lexer: &mut LlvmLexer) -> LlvmToken {
         ',' => LlvmToken::Comma,
         '=' => LlvmToken::Assign,
         ':' => LlvmToken::Colon,
-        _ => panic!("unsupported token in LLVM input"),
+        _ => panic("unsupported token in LLVM input"),
     }
 }
 
@@ -4079,7 +4079,7 @@ fn llvmAst_insert_function(ast: &mut LlvmAst, name: String, function: LlvmFuncti
 fn llvmAst_lookup_function(ast: &LlvmAst, name: String) -> &LlvmFunction {
     match stringMap_get::<LlvmFunction>(llvmAst_functions(ast), &name) {
         Option::Some(function) => function,
-        Option::None => panic!("unknown LLVM function"),
+        Option::None => panic("unknown LLVM function"),
     }
 }
 
@@ -4205,7 +4205,7 @@ fn instructionBlock_fetch_instructions(
 
         i = i + 1;
     }
-    panic!("unknown LLVM block label");
+    panic("unknown LLVM block label");
 }
 
 /// Represents an instruction inside an instruction block.
@@ -5134,7 +5134,7 @@ fn emu_execute_function(
                     emu_execute_instructions(emulator, ast, &mut virtual_registers, instructions);
 
                 match flow {
-                    LlvmExecFlow::Continue => panic!("LLVM block did not terminate"),
+                    LlvmExecFlow::Continue => panic("LLVM block did not terminate"),
                     LlvmExecFlow::Jump(next_label) => current_label = next_label,
                     LlvmExecFlow::Return(value) => {
                         emu_deallocate_stack_frame(emulator);
@@ -5155,7 +5155,7 @@ fn emu_execute_builtin(emulator: &mut Emu, builtin: &LlvmBuiltIn, arguments: &Ve
             let value: usize = *vec_at::<usize>(arguments, 0);
             match emu_allocate_heap(emulator, value) {
                 Option::Some(address) => address,
-                Option::None => panic!("heap overflow of emu"),
+                Option::None => panic("heap overflow of emu"),
             }
         },
         LlvmBuiltIn::Exit => {
@@ -5293,7 +5293,7 @@ fn emu_evaluate_assign_op(
             let space: usize = *num_elements * llvmType_size(allocated_type);
             match emu_allocate_stack(emulator, space) {
                 Option::Some(address) => address,
-                Option::None => panic!("Stack overflow of emu"),
+                Option::None => panic("Stack overflow of emu"),
             }
         },
 
@@ -5301,7 +5301,7 @@ fn emu_evaluate_assign_op(
             let address: usize = llvm_eval_value(emulator, registers, address_value);
             match emu_load_bytes(emulator, address, llvmType_size(loaded_type)) {
                 Option::Some(value) => llvm_overflow_value(value, loaded_type),
-                Option::None => panic!("invalid LLVM load address"),
+                Option::None => panic("invalid LLVM load address"),
             }
         },
 
@@ -5385,7 +5385,7 @@ fn emu_execute_store(
         stored_value,
         byte_count,
     )) {
-        panic!("invalid LLVM store address");
+        panic("invalid LLVM store address");
     }
 }
 
@@ -5395,11 +5395,11 @@ fn llvm_eval_value(emulator: &Emu, registers: &StringMap<usize>, value: &LlvmVal
         LlvmValue::Literal(number) => *number,
         LlvmValue::Register(name) => match stringMap_get::<usize>(registers, name) {
             Option::Some(register_value) => *register_value,
-            Option::None => panic!("unknown LLVM register"),
+            Option::None => panic("unknown LLVM register"),
         },
         LlvmValue::Global(name) => match stringMap_get::<usize>(emu_globals(emulator), name) {
             Option::Some(value) => *value,
-            Option::None => panic!("unknown LLVM global value"),
+            Option::None => panic("unknown LLVM global value"),
         },
     }
 }
@@ -5424,6 +5424,12 @@ fn is_negative(number: usize) -> bool {
 
 // -------------------------- Error --------------------------------
 
+/// Panic by printing a message and exiting the program.
+fn panic(message: &str) -> ! {
+    eprint_str(message);
+    exit_process(1);
+}
+
 /// Report an error message with source location and exit.
 /// TODO: not subset-conform
 fn report_error(file: &SourceFile, message: &String) -> ! {
@@ -5442,16 +5448,16 @@ fn report_error(file: &SourceFile, message: &String) -> ! {
         }
         start = start + 1;
     }
-    eprintln!();
+    eprint_str("\n");
 
     let mut i: usize = 1;
     while i < col {
-        eprint!(" ");
+        eprint_str(" ");
         i = i + 1;
     }
-    eprint!("^ ");
+    eprint_str("^ ");
     eprint_string(message);
-    eprintln!();
+    eprint_str("\n");
 
     exit_process(1);
 }
@@ -5591,7 +5597,7 @@ fn option_is_none<T>(opt: &Option<T>) -> bool {
 fn unwrap<T>(opt: Option<T>) -> T {
     match opt {
         Option::Some(value) => value,
-        Option::None => panic!("tried to unwrap None variant of Option<T>"),
+        Option::None => panic("tried to unwrap None variant of Option<T>"),
     }
 }
 
@@ -7061,7 +7067,7 @@ fn alloc<T>(count: usize) -> *mut T {
         let p: *mut u8 = malloc(size_of::<T>() * count);
 
         if p as usize == 0 {
-            eprintln!("Heap Memory Allocation Error!");
+            eprint_str("Heap Memory Allocation Error!\n");
             exit(1);
         }
 
