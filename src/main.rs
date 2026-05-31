@@ -151,6 +151,7 @@ enum Token {
     DoubleColon,     // "::"
     SemiColon,       // ";"
     Comma,           // ","
+    Pipe,            // "|"
     Assign,          // "="
     Bang,            // "!"
     Cmp(Comparison), // ==, !=, <, <=, >, >=
@@ -483,6 +484,7 @@ fn lexer_scan_symbol(lexer: &mut Lexer) -> Token {
         ')' => Token::RParen,
         ';' => Token::SemiColon,
         ',' => Token::Comma,
+        '|' => Token::Pipe,
         '+' => Token::Plus,
         '*' => Token::Star,
         '/' => lexer_scan_slash(lexer),
@@ -797,7 +799,7 @@ enum RAstElse {
 /// A match arm.
 enum RAstArm {
     /// "... => ...,"
-    Arm(RAstPattern, RAstExpr),
+    Arm(Vec<RAstPattern>, RAstExpr),
 }
 
 /// Convert a parsed AST path to a single string.
@@ -1417,11 +1419,20 @@ fn parse_match(lexer: &mut Lexer) -> RAstExpr {
 }
 
 fn parse_arm(lexer: &mut Lexer) -> RAstArm {
+    let mut patterns: Vec<RAstPattern> = vec_new::<RAstPattern>();
     let pattern: RAstPattern = parse_pattern(lexer);
+    vec_push::<RAstPattern>(&mut patterns, pattern);
+
+    while lexer_try_consume(lexer, &Token::Pipe) {
+        let pattern: RAstPattern = parse_pattern(lexer);
+        vec_push::<RAstPattern>(&mut patterns, pattern);
+    }
+
     expect_token(lexer, &Token::FatArrow);
+
     let expression: RAstExpr = parse_expression(lexer);
     expect_token(lexer, &Token::Comma);
-    RAstArm::Arm(pattern, expression)
+    RAstArm::Arm(patterns, expression)
 }
 
 fn parse_pattern(lexer: &mut Lexer) -> RAstPattern {
@@ -2233,15 +2244,25 @@ fn semantic_check_match(
     let mut i: usize = 0;
     while i < vec_len::<RAstArm>(arms) {
         let arm: &RAstArm = vec_at::<RAstArm>(arms, i);
-        let RAstArm::Arm(pattern, expression): &RAstArm = arm;
+        let RAstArm::Arm(patterns, expression): &RAstArm = arm;
 
-        let pattern_type: RAstType = semantic_check_pattern(pattern, &expr_type);
-        // matching numeric value on numeric pattern is valid
-        if not(and(
-            rAstType_is_numeric(&pattern_type),
-            rAstType_is_numeric(&expr_type),
-        )) {
-            semantic_expect_exact_type_match(&pattern_type, &expr_type);
+        let mut j: usize = 0;
+        while j < vec_len::<RAstPattern>(patterns) {
+            let pattern: &RAstPattern = vec_at::<RAstPattern>(patterns, j);
+
+            if vec_len::<RAstPattern>(patterns) > 1 {
+                match pattern {
+                    RAstPattern::Literal(_) => {}
+                    _ => {
+                        semantic_check_error(
+                            "multi-pattern match arms only support literal patterns",
+                        );
+                    }
+                }
+            }
+
+            semantic_check_pattern(pattern, &expr_type);
+            j = j + 1;
         }
 
         let arm_type: RAstType = semantic_check_expression(semantic, expression);
@@ -2253,17 +2274,24 @@ fn semantic_check_match(
     return_type
 }
 
-fn semantic_check_pattern(pattern: &RAstPattern, expression_type: &RAstType) -> RAstType {
-    match pattern {
+fn semantic_check_pattern(pattern: &RAstPattern, expression_type: &RAstType) {
+    let pattern_type: RAstType = match pattern {
         RAstPattern::Literal(literal) => match literal {
-            RAstPatternLiteral::Int(_) => RAstType::Usize,
+            RAstPatternLiteral::Int(_) => {
+                if rAstType_is_numeric(expression_type) {
+                    return; // numeric expression matches on numeric pattern
+                } else {
+                    RAstType::Usize
+                }
+            }
             RAstPatternLiteral::Char(_) => RAstType::Char,
             RAstPatternLiteral::Bool(_) => RAstType::Bool,
         },
-        RAstPattern::Identifier(_, _) => rAstType_clone(expression_type),
+        RAstPattern::Identifier(_, _) | RAstPattern::Wildcard => return, // type agnostic
         RAstPattern::EnumVariant(enum_name, _, _) => RAstType::Custom(string_clone(enum_name)),
-        RAstPattern::Wildcard => rAstType_clone(expression_type),
-    }
+    };
+
+    semantic_expect_exact_type_match(&pattern_type, &expression_type);
 }
 
 // -----------------------------------------------------------------
@@ -2894,35 +2922,52 @@ fn codegen_match(codegen: &mut Codegen, value: &RAstExpr, arms: &Vec<RAstArm>) -
         let arm_label: String = codegen_next_label(codegen, "match.arm");
         let else_label: String = codegen_next_label(codegen, "match.else");
 
-        let RAstArm::Arm(pattern, arm_expr): &RAstArm = vec_at::<RAstArm>(arms, i);
+        let RAstArm::Arm(patterns, arm_expr): &RAstArm = vec_at::<RAstArm>(arms, i);
 
-        match pattern {
-            RAstPattern::Literal(literal) => {
-                if not(is_last_arm) {
-                    let value: String = integer_to_string(rAstPatternLiteral_value(literal));
+        let mut j: usize = 0;
+        while j < vec_len::<RAstPattern>(patterns) {
+            let pattern: &RAstPattern = vec_at::<RAstPattern>(patterns, j);
+            let is_last_pattern: bool = j == vec_len::<RAstPattern>(patterns) - 1;
 
-                    let cond_name: String = codegen_emit_icmp(
-                        codegen,
-                        &RAstComparisonOp::Eq,
-                        &expr_type,
-                        &expr_name,
-                        &value,
-                    );
+            match pattern {
+                RAstPattern::Literal(literal) => {
+                    if not(is_last_arm) {
+                        let value: String = integer_to_string(rAstPatternLiteral_value(literal));
 
-                    codegen_emit_br_conditional(codegen, &cond_name, &arm_label, &else_label);
-                } // otherwise no need to branch, arm is executed unconditionally
+                        let cond_name: String = codegen_emit_icmp(
+                            codegen,
+                            &RAstComparisonOp::Eq,
+                            &expr_type,
+                            &expr_name,
+                            &value,
+                        );
+
+                        let fail_label: String = if is_last_pattern {
+                            string_clone(&else_label) // next arm
+                        } else {
+                            codegen_next_label(codegen, "match.check") // next pattern
+                        };
+
+                        codegen_emit_br_conditional(codegen, &cond_name, &arm_label, &fail_label);
+
+                        if not(is_last_pattern) {
+                            codegen_emit_label(codegen, &fail_label); // next pattern of arm
+                        }
+                    } // otherwise no branch, arm is executed unconditionally
+                }
+                RAstPattern::Identifier(_, identifier) => {
+                    let pointer_name: String = codegen_emit_alloca(codegen, &expr_type, 1);
+                    codegen_emit_store(codegen, &expr_type, &expr_name, &pointer_name);
+
+                    let variable_name: String = string_clone(identifier);
+                    let variable_type: RAstType = rAstType_clone(&expr_type);
+                    codegen_scope_insert(codegen, variable_name, variable_type, pointer_name);
+                }
+                RAstPattern::Wildcard => {}
+                RAstPattern::EnumVariant(_, _, _) => {} // unimplemented
             }
-            RAstPattern::Identifier(_, identifier) => {
-                let pointer_name: String = codegen_emit_alloca(codegen, &expr_type, 1);
-                codegen_emit_store(codegen, &expr_type, &expr_name, &pointer_name);
-
-                let variable_name: String = string_clone(identifier);
-                let variable_type: RAstType = rAstType_clone(&expr_type);
-                codegen_scope_insert(codegen, variable_name, variable_type, pointer_name);
-            }
-            RAstPattern::Wildcard => {}
-            RAstPattern::EnumVariant(_, _, _) => {} // unimplemented
-        };
+            j = j + 1;
+        }
 
         if not(is_last_arm) {
             codegen_emit_label(codegen, &arm_label);
@@ -5927,6 +5972,10 @@ fn token_eq(a: &Token, b: &Token) -> bool {
             Token::Mut => true,
             _ => false,
         },
+        Token::Pipe => match b {
+            Token::Pipe => true,
+            _ => false,
+        },
         Token::Ampersand => match b {
             Token::Ampersand => true,
             _ => false,
@@ -6384,6 +6433,7 @@ fn token_clone(token: &Token) -> Token {
         Token::DoubleColon => Token::DoubleColon,
         Token::SemiColon => Token::SemiColon,
         Token::Comma => Token::Comma,
+        Token::Pipe => Token::Pipe,
         Token::Assign => Token::Assign,
         Token::Bang => Token::Bang,
         Token::Cmp(comparison) => Token::Cmp(comparison_clone(comparison)),
@@ -6732,6 +6782,7 @@ fn token_to_string(token: &Token) -> String {
         Token::DoubleColon => string("::"),
         Token::SemiColon => string(";"),
         Token::Comma => string(","),
+        Token::Pipe => string("|"),
         Token::Assign => string("="),
         Token::Bang => string("!"),
         Token::Cmp(comparison) => comparison_to_string(comparison),
