@@ -863,14 +863,14 @@ fn rAstType_is_numeric(ty: &RAstType) -> bool {
     }
 }
 
-/// Coalesce two types into a type that encompasses both.
+/// Coerce two types into one type.
 /// Assumes that only the following cases can occur:
 /// 1. left == right
 /// 2. left == Never
 /// 3. right == Never
 ///
-/// The type returned is only Never if left == right == Never
-fn rAstType_coalesce(left: RAstType, right: RAstType) -> RAstType {
+/// The type returned is only Never if left == right == Never.
+fn rAstType_coerce(left: RAstType, right: RAstType) -> RAstType {
     if rAstType_eq(&left, &RAstType::Never) {
         right
     } else {
@@ -2211,7 +2211,7 @@ fn semantic_check_if(semantic: &mut Semantic, if_expression: &RAstIf) -> RAstTyp
             };
             semantic_expect_rough_type_match(&then_type, &else_type);
 
-            rAstType_coalesce(then_type, else_type)
+            rAstType_coerce(then_type, else_type)
         },
         Option::None => RAstType::Unit,
     }
@@ -2268,7 +2268,7 @@ fn semantic_check_match(
         let arm_type: RAstType = semantic_check_expression(semantic, expression);
         semantic_expect_rough_type_match(&return_type, &arm_type);
 
-        return_type = rAstType_coalesce(return_type, arm_type);
+        return_type = rAstType_coerce(return_type, arm_type);
         i = i + 1;
     }
     return_type
@@ -2846,7 +2846,7 @@ fn codegen_if(codegen: &mut Codegen, if_expression: &RAstIf) -> STPair {
                 codegen_emit_store(codegen, &else_type, &else_value, &result_pointer);
             }
 
-            if_type = rAstType_coalesce(if_type, else_type);
+            if_type = rAstType_coerce(if_type, else_type);
         },
         _ => if_type = RAstType::Unit, // else is implicitly unit, so type of if must be unit
     }
@@ -2912,7 +2912,7 @@ fn codegen_match(codegen: &mut Codegen, value: &RAstExpr, arms: &Vec<RAstArm>) -
     let result_pointer: String = codegen_emit_alloca(codegen, &RAstType::Unit, 1);
     let alloca_idx: usize = codegen_code_last_index(codegen);
 
-    let mut return_type: RAstType = RAstType::Never; // still unknown, coalescing arm types yields correct type
+    let mut return_type: RAstType = RAstType::Never; // still unknown, coercing arm types yields correct type
 
     let mut i: usize = 0;
     while i < vec_len::<RAstArm>(arms) {
@@ -2931,7 +2931,7 @@ fn codegen_match(codegen: &mut Codegen, value: &RAstExpr, arms: &Vec<RAstArm>) -
             &end_label,
         );
 
-        return_type = rAstType_coalesce(return_type, arm_type);
+        return_type = rAstType_coerce(return_type, arm_type);
         codegen_pop_scope(codegen);
         i = i + 1;
     }
