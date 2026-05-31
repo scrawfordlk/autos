@@ -5582,11 +5582,6 @@ fn box_deref<T>(ptr_wrap: &Box<T>) -> &T {
     unsafe { &**ptr }
 }
 
-/// Clone a boxed value.
-fn box_clone<T>(ptr: &Box<T>, clone_fn: fn(&T) -> T) -> Box<T> {
-    box_new::<T>(clone_fn(box_deref::<T>(ptr)))
-}
-
 // ----------------------------------------------------------------
 // --------------------------- Vec --------------------------------
 // ----------------------------------------------------------------
@@ -6535,12 +6530,13 @@ fn rAstType_clone(t: &RAstType) -> RAstType {
         RAstType::Unit => RAstType::Unit,
         RAstType::Never => RAstType::Never,
         RAstType::Custom(name) => RAstType::Custom(string_clone(name)),
-        RAstType::Reference(inner, mutable) => {
-            RAstType::Reference(box_clone::<RAstType>(inner, rAstType_clone), *mutable)
-        },
-        RAstType::RawPointerMut(inner) => {
-            RAstType::RawPointerMut(box_clone::<RAstType>(inner, rAstType_clone))
-        },
+        RAstType::Reference(inner, mutable) => RAstType::Reference(
+            box_new::<RAstType>(rAstType_clone(box_deref::<RAstType>(inner))),
+            *mutable,
+        ),
+        RAstType::RawPointerMut(inner) => RAstType::RawPointerMut(box_new::<RAstType>(
+            rAstType_clone(box_deref::<RAstType>(inner)),
+        )),
     }
 }
 
