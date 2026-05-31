@@ -2919,71 +2919,17 @@ fn codegen_match(codegen: &mut Codegen, value: &RAstExpr, arms: &Vec<RAstArm>) -
         codegen_push_scope(codegen);
 
         let is_last_arm: bool = i == vec_len::<RAstArm>(arms) - 1;
-        let arm_label: String = codegen_next_label(codegen, "match.arm");
-        let else_label: String = codegen_next_label(codegen, "match.else");
+        let arm: &RAstArm = vec_at::<RAstArm>(arms, i);
 
-        let RAstArm::Arm(patterns, arm_expr): &RAstArm = vec_at::<RAstArm>(arms, i);
-
-        let mut j: usize = 0;
-        while j < vec_len::<RAstPattern>(patterns) {
-            let pattern: &RAstPattern = vec_at::<RAstPattern>(patterns, j);
-            let is_last_pattern: bool = j == vec_len::<RAstPattern>(patterns) - 1;
-
-            match pattern {
-                RAstPattern::Literal(literal) => {
-                    if not(is_last_arm) {
-                        let value: String = integer_to_string(rAstPatternLiteral_value(literal));
-
-                        let cond_name: String = codegen_emit_icmp(
-                            codegen,
-                            &RAstComparisonOp::Eq,
-                            &expr_type,
-                            &expr_name,
-                            &value,
-                        );
-
-                        let fail_label: String = if is_last_pattern {
-                            string_clone(&else_label) // next arm
-                        } else {
-                            codegen_next_label(codegen, "match.check") // next pattern
-                        };
-
-                        codegen_emit_br_conditional(codegen, &cond_name, &arm_label, &fail_label);
-
-                        if not(is_last_pattern) {
-                            codegen_emit_label(codegen, &fail_label); // next pattern of arm
-                        }
-                    } // otherwise no branch, arm is executed unconditionally
-                }
-                RAstPattern::Identifier(_, identifier) => {
-                    let pointer_name: String = codegen_emit_alloca(codegen, &expr_type, 1);
-                    codegen_emit_store(codegen, &expr_type, &expr_name, &pointer_name);
-
-                    let variable_name: String = string_clone(identifier);
-                    let variable_type: RAstType = rAstType_clone(&expr_type);
-                    codegen_scope_insert(codegen, variable_name, variable_type, pointer_name);
-                }
-                RAstPattern::Wildcard => {}
-                RAstPattern::EnumVariant(_, _, _) => {} // unimplemented
-            }
-            j = j + 1;
-        }
-
-        if not(is_last_arm) {
-            codegen_emit_label(codegen, &arm_label);
-        }
-
-        let STPair::ST(arm_value, arm_type) = codegen_expression(codegen, arm_expr);
-        if type_has_value(&arm_type) {
-            codegen_emit_store(codegen, &arm_type, &arm_value, &result_pointer);
-        }
-
-        // arm evaluated, so jump to end
-        codegen_emit_br(codegen, &end_label);
-
-        if not(is_last_arm) {
-            codegen_emit_label(codegen, &else_label);
-        }
+        let arm_type: RAstType = codegen_arm(
+            codegen,
+            arm,
+            is_last_arm,
+            &expr_name,
+            &expr_type,
+            &result_pointer,
+            &end_label,
+        );
 
         return_type = rAstType_coalesce(return_type, arm_type);
         codegen_pop_scope(codegen);
@@ -3004,6 +2950,92 @@ fn codegen_match(codegen: &mut Codegen, value: &RAstExpr, arms: &Vec<RAstArm>) -
     };
 
     STPair::ST(result, return_type)
+}
+
+/// Generate code for a single match arm.
+///
+/// * `codegen`: The state of the code generator
+/// * `arm`: The arm to generate code for
+/// * `is_last_arm`: True, if the given arm is the last arm of the match expression.
+/// * `expr_name`: The name of the expression that is being matched on.
+/// * `expr_type`: The type of the expression that is being matched on.
+/// * `result_pointer`: The name of the pointer to the memory where the match result is stored
+/// * `end_label`: The merge-label of the match.
+fn codegen_arm(
+    codegen: &mut Codegen,
+    arm: &RAstArm,
+    is_last_arm: bool,
+    expr_name: &String,
+    expr_type: &RAstType,
+    result_pointer: &String,
+    end_label: &String,
+) -> RAstType {
+    let RAstArm::Arm(patterns, arm_expr): &RAstArm = arm;
+    let arm_label: String = codegen_next_label(codegen, "match.arm");
+    let else_label: String = codegen_next_label(codegen, "match.else");
+
+    let mut j: usize = 0;
+    while j < vec_len::<RAstPattern>(patterns) {
+        let pattern: &RAstPattern = vec_at::<RAstPattern>(patterns, j);
+        let is_last_pattern: bool = j == vec_len::<RAstPattern>(patterns) - 1;
+
+        match pattern {
+            RAstPattern::Literal(literal) => {
+                if not(is_last_arm) {
+                    let value: String = integer_to_string(rAstPatternLiteral_value(literal));
+
+                    let cond_name: String = codegen_emit_icmp(
+                        codegen,
+                        &RAstComparisonOp::Eq,
+                        expr_type,
+                        expr_name,
+                        &value,
+                    );
+
+                    let fail_label: String = if is_last_pattern {
+                        string_clone(&else_label) // next arm
+                    } else {
+                        codegen_next_label(codegen, "match.check") // next pattern
+                    };
+
+                    codegen_emit_br_conditional(codegen, &cond_name, &arm_label, &fail_label);
+
+                    if not(is_last_pattern) {
+                        codegen_emit_label(codegen, &fail_label); // next pattern of arm
+                    }
+                } // otherwise no branch, arm is executed unconditionally
+            }
+            RAstPattern::Identifier(_, identifier) => {
+                let pointer_name: String = codegen_emit_alloca(codegen, &expr_type, 1);
+                codegen_emit_store(codegen, &expr_type, &expr_name, &pointer_name);
+
+                let variable_name: String = string_clone(identifier);
+                let variable_type: RAstType = rAstType_clone(&expr_type);
+                codegen_scope_insert(codegen, variable_name, variable_type, pointer_name);
+            }
+            RAstPattern::Wildcard => {}
+            RAstPattern::EnumVariant(_, _, _) => {} // unimplemented
+        }
+        j = j + 1;
+    }
+
+    if not(is_last_arm) {
+        codegen_emit_label(codegen, &arm_label);
+    }
+
+    let STPair::ST(arm_value, arm_type) = codegen_expression(codegen, arm_expr);
+    if type_has_value(&arm_type) {
+        codegen_emit_store(codegen, &arm_type, &arm_value, &result_pointer);
+    }
+
+    // arm evaluated, so jump to end
+    codegen_emit_br(codegen, &end_label);
+
+    if not(is_last_arm) {
+        codegen_emit_label(codegen, &else_label);
+    }
+
+    arm_type
 }
 
 // ---------------------------- Code Emission ---------------------------------
