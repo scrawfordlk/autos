@@ -12,6 +12,7 @@ fn test() -> usize {
             },
         },
         100 => return 6,
+        _ => 7,
     }
 }
 
