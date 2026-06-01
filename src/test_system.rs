@@ -16,16 +16,14 @@ fn test_system() {
     for source_path in rust_sources() {
         let label = source_label(&source_path);
 
-        // NOTE: Do not use rustc for now, because in Rust you actually can't return any value (while you
-        // can in LLVM-IR), which makes testing early on easier, at least until I bootstrap an exit
-        // function.
-        //
-        // let rust_source_path = write_file(&format!("{}-source", label), "rs", &source);
-        // let rustc_exe_path = unique_path(&format!("{}-rustc", label), "bin");
-        // run_rustc(&rust_source_path, &rustc_exe_path);
-        // let rustc_exit = run_binary(&rustc_exe_path);
-
         let (emu_exit, llvm_path) = compile_emulate(&source_path);
+
+        let source = std::fs::read_to_string(&source_path).expect("can read rust test source");
+        let rust_source = rustc_source(&source_path, &source);
+        let rust_source_path = write_file(&format!("{}-source", label), "rs", rust_source.as_str());
+        let rustc_exe_path = unique_path(&format!("{}-rustc", label), "bin");
+        run_rustc(&rust_source_path, &rustc_exe_path);
+        let rustc_exit = run_binary(&rustc_exe_path);
 
         let clang_exe_path = unique_path(&format!("{}-clang", label), "bin");
         run_clang(&llvm_path, &clang_exe_path);
@@ -41,11 +39,19 @@ fn test_system() {
         );
         assert_eq!(
             emu_exit,
+            rustc_exit,
+            "emulator exit code does not match rustc-compiled binary exit code for {}",
+            source_path.display()
+        );
+        assert_eq!(
+            emu_exit,
             lli_exit,
             "emulator exit code does not match lli emulated exit code for {}",
             source_path.display()
         );
         remove_file(&llvm_path).expect("can remove generated LLVM-IR file");
+        remove_file(&rust_source_path).expect("can remove rust source file");
+        remove_file(&rustc_exe_path).expect("can remove generated rustc binary");
     }
 }
 
@@ -102,6 +108,13 @@ fn write_file(label: &str, extension: &str, content: &str) -> PathBuf {
     path
 }
 
+fn rustc_source(path: &Path, source: &str) -> std::string::String {
+    format!(
+        "#![allow(overflowing_literals, unused_parens, unused_assignments, unreachable_code, unused_variables)]\n{}",
+        source
+    )
+}
+
 fn tool_available(tool: &str) -> bool {
     match Command::new(tool)
         .arg("--version")
@@ -116,7 +129,10 @@ fn tool_available(tool: &str) -> bool {
 
 fn run_binary(path: &Path) -> i32 {
     let status = Command::new(path).status().expect("able to execute binary");
-    status.code().expect("binary terminates with exit code")
+    status.code().expect(&format!(
+        "binary {} terminates with exit code",
+        path.display()
+    ))
 }
 
 fn run_lli(path: &Path) -> i32 {
