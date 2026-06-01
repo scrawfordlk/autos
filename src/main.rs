@@ -826,6 +826,16 @@ fn rAstPatternLiteral_value(literal: &RAstPatternLiteral) -> usize {
     }
 }
 
+/// Return the size of the given type in bytes.
+fn rType_size(ty: &RType) -> usize {
+    match ty {
+        RType::U8 | RType::Char | RType::Bool => 1,
+        RType::Usize | RType::Reference(_, _) | RType::RawPointerMut(_) => size_of::<usize>(),
+        RType::Unit | RType::Never => 0,
+        RType::Custom(_) => 0, // TODO:
+    }
+}
+
 /// Convert Rust AST type into a simple LLVM-IR type name.
 fn rType_to_llvm_name(ty: &RType) -> String {
     match ty {
@@ -3061,7 +3071,6 @@ fn codegen_emit_binary(
     string_push_string(&mut line, rhs);
 
     codegen_emit_line(codegen, line);
-
     name
 }
 
@@ -3099,7 +3108,6 @@ fn codegen_emit_icmp(
     string_push_string(&mut line, rhs);
 
     codegen_emit_line(codegen, line);
-
     name
 }
 
@@ -3189,7 +3197,6 @@ fn codegen_emit_cast(
     string_push(&mut line, '\n');
 
     codegen_emit_line(codegen, line);
-
     name
 }
 
@@ -3256,7 +3263,6 @@ fn codegen_emit_alloca(codegen: &mut Codegen, ty: &RType, num_elements: usize) -
     string_push_string(&mut line, &integer_to_string(num_elements));
 
     codegen_emit_line(codegen, line);
-
     name
 }
 
@@ -3289,6 +3295,23 @@ fn codegen_emit_load(codegen: &mut Codegen, ty: &RType, pointer: &String) -> Str
     string_push_string(&mut line, pointer);
 
     codegen_emit_line(codegen, line);
+    name
+}
+
+/// Compute a new pointer using pointer arithmetic addition on a pointer.
+/// This emits (assume temporaries do not violate SSA):
+/// t0     = ptrtoint ptr `pointer` to i64
+/// t1     = add i64 %t0, `size_of(ty) * index`
+/// `name` = inttoptr i64 %t1 to ptr
+/// and returns `name`.
+fn emit_pointer_add(codegen: &mut Codegen, pointer: &String, ty: &RType, index: usize) -> String {
+    let ptr_type: RType = RType::RawPointerMut(box_new(RType::Unit)); // dummy type to use `ptr` type
+    let addition: RAstArithmeticOp = RAstArithmeticOp::Add;
+    let offset: String = integer_to_string(index * rType_size(ty));
+
+    let t0: String = codegen_emit_ptrtoint(codegen, &ptr_type, &RType::Usize, pointer);
+    let t1: String = codegen_emit_binary(codegen, &addition, &RType::Usize, &t0, &offset);
+    let name: String = codegen_emit_inttoptr(codegen, &RType::Usize, &ptr_type, &t1);
 
     name
 }
@@ -3329,7 +3352,6 @@ fn codegen_emit_call_value(
     string_push_str(&mut line, ")");
 
     codegen_emit_line(codegen, line);
-
     name
 }
 
