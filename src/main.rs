@@ -3004,12 +3004,6 @@ fn code_new() -> Code {
     Code::Code(vec_new::<String>())
 }
 
-/// Emit the given string as a new line of LLVM-IR code.
-fn codegen_emit_line(codegen: &mut Codegen, line: String) {
-    let Code::Code(lines): &mut Code = codegen_code_mut(codegen);
-    vec_push::<String>(lines, line);
-}
-
 /// Get the line index of the last emitted line.
 fn codegen_code_last_index(codegen: &Codegen) -> usize {
     let Code::Code(lines): &Code = codegen_code(codegen);
@@ -3038,10 +3032,17 @@ fn codegen_into_llvm(Codegen::Codegen(Code::Code(lines), _, _, _, _): Codegen) -
     code
 }
 
-/// Emit a binary instruction of the following form:
-/// `name` = `op` `ty` `lhs`,`rhs`
-/// where `op` can be one of the following: `add`, `sub`, `mul`, `udiv`, `urem`
-/// and return `name`.
+/// Emit the given string as a new line of LLVM-IR code.
+fn codegen_emit_line(codegen: &mut Codegen, line: String) {
+    let Code::Code(lines): &mut Code = codegen_code_mut(codegen);
+    vec_push::<String>(lines, line);
+}
+
+/// Emit a binary arithmetic instruction.
+/// ```llvm
+/// %<name> = <op> <ty> <lhs>, <rhs>
+/// ```
+/// Returns `%<name>`.
 fn codegen_emit_binary(
     codegen: &mut Codegen,
     op: &RAstArithmeticOp,
@@ -3074,10 +3075,11 @@ fn codegen_emit_binary(
     name
 }
 
-/// Emit an icmp instruction:
-/// `name` = icmp `op` `ty` `lhs`,`rhs`
-/// where `op` can be one of the following: `eq`, `ne`, `gt`, `lt`, `ge`, `le`
-/// and return `name`.
+/// Emit an integer-comparison instruction.
+/// ```llvm
+/// %<name> = icmp <op> <ty> <lhs>, <rhs>
+/// ```
+/// Returns `%<name>`.
 fn codegen_emit_icmp(
     codegen: &mut Codegen,
     op: &RAstComparisonOp,
@@ -3111,8 +3113,10 @@ fn codegen_emit_icmp(
     name
 }
 
-/// Emit a ret instruction:
-/// ret `ty` `value`
+/// Emit a return instruction with a value.
+/// ```llvm
+/// ret <ty> <value>
+/// ```
 fn codegen_emit_ret_value(codegen: &mut Codegen, ty: &RType, value: &String) {
     let mut line: String = string_new();
     string_push_str(&mut line, "  ");
@@ -3124,14 +3128,18 @@ fn codegen_emit_ret_value(codegen: &mut Codegen, ty: &RType, value: &String) {
     codegen_emit_line(codegen, line);
 }
 
-/// Emit a ret void instruction:
+/// Emit a return instruction with no value.
+/// ```llvm
 /// ret void
+/// ```
 fn codegen_emit_ret_void(codegen: &mut Codegen) {
     codegen_emit_line(codegen, string("  ret void"));
 }
 
-/// Emit a label:
-/// `label`:
+/// Emit a basic block label.
+/// ```llvm
+/// <label>:
+/// ```
 fn codegen_emit_label(codegen: &mut Codegen, label: &String) {
     let mut line: String = string_new();
     string_push(&mut line, '\n');
@@ -3141,8 +3149,10 @@ fn codegen_emit_label(codegen: &mut Codegen, label: &String) {
     codegen_emit_line(codegen, line);
 }
 
-/// Emit an unconditional branch:
-/// br label %`target_label`
+/// Emit an unconditional branch.
+/// ```llvm
+/// br label %<target_label>
+/// ```
 fn codegen_emit_br(codegen: &mut Codegen, target_label: &String) {
     let mut line: String = string_new();
     string_push_str(&mut line, "  br label %");
@@ -3151,8 +3161,10 @@ fn codegen_emit_br(codegen: &mut Codegen, target_label: &String) {
     codegen_emit_line(codegen, line);
 }
 
-/// Emit a conditional branch:
-/// br i1 `condition`, label %`then_label`, label %`else_label`
+/// Emit a conditional branch.
+/// ```llvm
+/// br i1 <condition>, label %<then_label>, label %<else_label>
+/// ```
 fn codegen_emit_br_conditional(
     codegen: &mut Codegen,
     condition: &String,
@@ -3170,10 +3182,11 @@ fn codegen_emit_br_conditional(
     codegen_emit_line(codegen, line);
 }
 
-/// Emit a cast instruction of the following form:
-/// `name` = `op` `from_type` `value` to `to_type`
-/// where `op` can be one of the following: `zext`, `trunc`
-/// and return `name`.
+/// Emit a cast instruction.
+/// ```llvm
+/// %<name> = <op> <from_type> <value> to <to_type>
+/// ```
+/// Returns `%<name>`.
 fn codegen_emit_cast(
     codegen: &mut Codegen,
     op: &str,
@@ -3200,9 +3213,11 @@ fn codegen_emit_cast(
     name
 }
 
-/// Emit a zext instruction:
-/// `name` = zext `from_type` `value` to `to_type`
-/// and return `name`.
+/// Emit a zero-extend instruction.
+/// ```llvm
+/// %<name> = zext <from_type> <value> to <to_type>
+/// ```
+/// Returns `%<name>`.
 fn codegen_emit_zext(
     codegen: &mut Codegen,
     from_type: &RType,
@@ -3212,9 +3227,11 @@ fn codegen_emit_zext(
     codegen_emit_cast(codegen, "zext", from_type, to_type, value)
 }
 
-/// Emit a trunc instruction:
-/// `name` = trunc `from_type` `value` to `to_type`
-/// and return `name`.
+/// Emit a truncate instruction.
+/// ```llvm
+/// %<name> = trunc <from_type> <value> to <to_type>
+/// ```
+/// Returns `%<name>`.
 fn codegen_emit_trunc(
     codegen: &mut Codegen,
     from_type: &RType,
@@ -3224,9 +3241,11 @@ fn codegen_emit_trunc(
     codegen_emit_cast(codegen, "trunc", from_type, to_type, value)
 }
 
-/// Emit an inttoptr instruction:
-/// `name` = inttoptr `from_type` `value` to `to_type`
-/// and return `name`.
+/// Emit an integer-to-pointer instruction.
+/// ```llvm
+/// %<name> = inttoptr <from_type> <value> to <to_type>
+/// ```
+/// Returns `%<name>`.
 fn codegen_emit_inttoptr(
     codegen: &mut Codegen,
     from_type: &RType,
@@ -3236,9 +3255,11 @@ fn codegen_emit_inttoptr(
     codegen_emit_cast(codegen, "inttoptr", from_type, to_type, value)
 }
 
-/// Emit a ptrtoint instruction:
-/// `name` = ptrtoint `from_type` `value` to `to_type`
-/// and return `name`.
+/// Emit a pointer-to-integer instruction.
+/// ```llvm
+/// %<name> = ptrtoint <from_type> <value> to <to_type>
+/// ```
+/// Returns `%<name>`.
 fn codegen_emit_ptrtoint(
     codegen: &mut Codegen,
     from_type: &RType,
@@ -3248,9 +3269,11 @@ fn codegen_emit_ptrtoint(
     codegen_emit_cast(codegen, "ptrtoint", from_type, to_type, value)
 }
 
-/// Emit an alloca instruction:
-/// `name` = alloca `ty`, i64 `num_elements`
-/// and return `name`.
+/// Emit an allocate instruction.
+/// ```llvm
+/// %<name> = alloca <ty>, i64 <num_elements>
+/// ```
+/// Returns `%<name>`.
 fn codegen_emit_alloca(codegen: &mut Codegen, ty: &RType, num_elements: usize) -> String {
     let name: String = codegen_next_register(codegen);
 
@@ -3266,8 +3289,10 @@ fn codegen_emit_alloca(codegen: &mut Codegen, ty: &RType, num_elements: usize) -
     name
 }
 
-/// Emit a store instruction:
-/// store `ty` `value`, ptr `pointer`.
+/// Emit a store instruction.
+/// ```llvm
+/// store <ty> <value>, ptr <pointer>
+/// ```
 fn codegen_emit_store(codegen: &mut Codegen, ty: &RType, value: &String, pointer: &String) {
     let mut line: String = string_new();
     string_push_str(&mut line, "  store ");
@@ -3281,8 +3306,11 @@ fn codegen_emit_store(codegen: &mut Codegen, ty: &RType, value: &String, pointer
     codegen_emit_line(codegen, line);
 }
 
-/// Emit a load instruction:
-/// `name` = load `ty`, `ptr` pointer`.
+/// Emit a load instruction.
+/// ```llvm
+/// %<name> = load <ty>, ptr <pointer>
+/// ```
+/// Returns `%<name>`.
 fn codegen_emit_load(codegen: &mut Codegen, ty: &RType, pointer: &String) -> String {
     let name: String = codegen_next_register(codegen);
     let mut line: String = string_new();
@@ -3298,12 +3326,13 @@ fn codegen_emit_load(codegen: &mut Codegen, ty: &RType, pointer: &String) -> Str
     name
 }
 
-/// Compute a new pointer using pointer arithmetic addition on a pointer.
-/// This emits (assume temporaries do not violate SSA):
-/// t0     = ptrtoint ptr `pointer` to i64
-/// t1     = add i64 %t0, `size_of(ty) * index`
-/// `name` = inttoptr i64 %t1 to ptr
-/// and returns `name`.
+/// Emit pointer arithmetic using integer casts and addition.
+/// ```llvm
+/// %t0 = ptrtoint ptr <pointer> to i64
+/// %t1 = add i64 %t0, <size_of(ty) * index>
+/// %<name> = inttoptr i64 %t1 to ptr
+/// ```
+/// Returns `%<name>`.
 fn emit_pointer_add(codegen: &mut Codegen, pointer: &String, ty: &RType, index: usize) -> String {
     let ptr_type: RType = RType::RawPointerMut(box_new(RType::Unit)); // dummy type to use `ptr` type
     let addition: RAstArithmeticOp = RAstArithmeticOp::Add;
@@ -3317,6 +3346,10 @@ fn emit_pointer_add(codegen: &mut Codegen, pointer: &String, ty: &RType, index: 
 }
 
 /// Emit a call instruction that returns a value.
+/// ```llvm
+/// %<name> = call <return_type> @<function_name>(<arg_type> <arg_value>, ...)
+/// ```
+/// Returns `%<name>`.
 fn codegen_emit_call_value(
     codegen: &mut Codegen,
     function_name: &String,
@@ -3355,7 +3388,10 @@ fn codegen_emit_call_value(
     name
 }
 
-/// Emit a call instruction that returns void.
+/// Emit a call instruction that returns `void`.
+/// ```llvm
+/// call void @<function_name>(<arg_type> <arg_value>, ...)
+/// ```
 fn codegen_emit_call_void(
     codegen: &mut Codegen,
     function_name: &String,
@@ -3386,7 +3422,12 @@ fn codegen_emit_call_void(
     codegen_emit_line(codegen, line);
 }
 
-/// Emit a function header.
+/// Emit a function header with an entry label.
+/// ```llvm
+/// define <return_type> @<fn_name>(<param_type> %<param_name>, ...) {
+/// entry:
+/// ```
+/// Does not return a value.
 fn codegen_emit_function_header(
     codegen: &mut Codegen,
     fn_name: &String,
@@ -3426,7 +3467,11 @@ fn codegen_emit_function_header(
     codegen_emit_line(codegen, line);
 }
 
-/// Emit an LLVM declare for the given extern function.
+/// Emit an LLVM `declare` for an extern function.
+/// ```llvm
+/// declare <return_type> @<fn_name>(<param_type>, ...)
+/// ```
+/// Does not return a value.
 fn codegen_emit_declare(
     codegen: &mut Codegen,
     fn_name: &String,
