@@ -108,7 +108,7 @@ fn main() {
 
 /// Compile source code into LLVM-IR.
 fn compile(source: &str, do_semantic_analysis: bool) -> String {
-    let mut lexer: Lexer = lexer_new(string(source));
+    let mut lexer: RLexer = rLexer_new(string(source));
     let ast: RAst = parse_language(&mut lexer);
 
     let items: StringMap<Item> = collect_items(&ast);
@@ -129,52 +129,52 @@ fn compile(source: &str, do_semantic_analysis: bool) -> String {
 // -----------------------------------------------------------------
 
 #[derive(Debug)]
-enum Token {
-    Fn,              // "fn"
-    Enum,            // "enum"
-    Extern,          // "extern"
-    Let,             // "let"
-    If,              // "if"
-    Else,            // "else"
-    While,           // "while"
-    Return,          // "return"
-    Match,           // "match"
-    As,              // "as"
-    Unsafe,          // "unsafe"
-    Mut,             // "mut"
-    Ampersand,       // "&"
-    LBrace,          // "{"
-    RBrace,          // "}"
-    LParen,          // "("
-    RParen,          // ")"
-    Colon,           // ":"
-    DoubleColon,     // "::"
-    SemiColon,       // ";"
-    Comma,           // ","
-    Pipe,            // "|"
-    Assign,          // "="
-    Bang,            // "!"
-    Cmp(Comparison), // ==, !=, <, <=, >, >=
-    FatArrow,        // "=>"
-    Plus,            // "+"
-    Minus,           // "-"
-    Star,            // "*"
-    Slash,           // "/"
-    Remainder,       // "%"
-    Usize,           // "usize"
-    U8,              // "u8"
-    Bool,            // "bool"
-    Char,            // "char"
-    Str,             // "str"
-    Arrow,           // "->"
-    Literal(Literal),
+enum RToken {
+    Fn,                 // "fn"
+    Enum,               // "enum"
+    Extern,             // "extern"
+    Let,                // "let"
+    If,                 // "if"
+    Else,               // "else"
+    While,              // "while"
+    Return,             // "return"
+    Match,              // "match"
+    As,                 // "as"
+    Unsafe,             // "unsafe"
+    Mut,                // "mut"
+    Ampersand,          // "&"
+    LBrace,             // "{"
+    RBrace,             // "}"
+    LParen,             // "("
+    RParen,             // ")"
+    Colon,              // ":"
+    DoubleColon,        // "::"
+    SemiColon,          // ";"
+    Comma,              // ","
+    Pipe,               // "|"
+    Assign,             // "="
+    Bang,               // "!"
+    Cmp(RComparisonOp), // ==, !=, <, <=, >, >=
+    FatArrow,           // "=>"
+    Plus,               // "+"
+    Minus,              // "-"
+    Star,               // "*"
+    Slash,              // "/"
+    Remainder,          // "%"
+    Usize,              // "usize"
+    U8,                 // "u8"
+    Bool,               // "bool"
+    Char,               // "char"
+    Str,                // "str"
+    Arrow,              // "->"
+    Literal(RLiteral),
     Identifier(String),
     Eof,
 }
 
 /// Comparison tokens
 #[derive(Debug)]
-enum Comparison {
+enum RComparisonOp {
     Eq,
     Ne,
     Gt,
@@ -185,17 +185,17 @@ enum Comparison {
 
 /// Literal tokens.
 #[derive(Debug)]
-enum Literal {
+enum RLiteral {
     Int(usize),
     String(String),
     Char(char),
     Bool(bool),
 }
 
-/// A type that encapsulates the state of the lexer
-enum Lexer {
+/// The lexer state of the scanned Rust program.
+enum RLexer {
     /// source file, current token
-    Lexer(SourceFile, Token),
+    Lexer(SourceFile, RToken),
 }
 
 /// A type that manages the source file
@@ -228,48 +228,48 @@ fn sourceFile_current_line_start(file: &SourceFile) -> usize {
 }
 
 /// Create a lexer and prime it with the first token.
-fn lexer_new(source: String) -> Lexer {
+fn rLexer_new(source: String) -> RLexer {
     let source_file: SourceFile = SourceFile::SourceFile(source, 0, 0, 0);
-    let mut lexer: Lexer = Lexer::Lexer(source_file, Token::Eof);
-    lexer_next_token(&mut lexer);
+    let mut lexer: RLexer = RLexer::Lexer(source_file, RToken::Eof);
+    rLexer_next_token(&mut lexer);
     lexer
 }
 
 /// Get immutable access to the lexer source file state.
-fn lexer_sourcefile(Lexer::Lexer(source, _): &Lexer) -> &SourceFile {
+fn rLexer_sourcefile(RLexer::Lexer(source, _): &RLexer) -> &SourceFile {
     source
 }
 
 /// Get mutable access to the lexer source file state.
-fn lexer_sourcefile_mut(Lexer::Lexer(source, _): &mut Lexer) -> &mut SourceFile {
+fn rLexer_sourcefile_mut(RLexer::Lexer(source, _): &mut RLexer) -> &mut SourceFile {
     source
 }
 
 /// Get the current token from the lexer.
-fn lexer_current_token(Lexer::Lexer(_, token): &Lexer) -> &Token {
+fn rLexer_current_token(RLexer::Lexer(_, token): &RLexer) -> &RToken {
     token
 }
 
 /// Get mutable access to the current lexer token slot.
-fn lexer_set_current_token(Lexer::Lexer(_, old_token): &mut Lexer, token: Token) {
+fn rLexer_set_current_token(RLexer::Lexer(_, old_token): &mut RLexer, token: RToken) {
     *old_token = token;
 }
 
 /// Check whether the current token equals `token`.
-fn lexer_current_token_eq(lexer: &Lexer, token: &Token) -> bool {
-    token_eq(lexer_current_token(lexer), token)
+fn rLexer_current_token_eq(lexer: &RLexer, token: &RToken) -> bool {
+    token_eq(rLexer_current_token(lexer), token)
 }
 
 /// Peek at the next character without consuming it.
-fn lexer_peek_char(lexer: &Lexer) -> Option<char> {
-    let SourceFile::SourceFile(string, index, _, _): &SourceFile = lexer_sourcefile(lexer);
+fn rLexer_peek_char(lexer: &RLexer) -> Option<char> {
+    let SourceFile::SourceFile(string, index, _, _): &SourceFile = rLexer_sourcefile(lexer);
     string_get(string, *index)
 }
 
 /// Consume and return the next character.
-fn lexer_consume_char(lexer: &mut Lexer) -> Option<char> {
+fn rLexer_consume_char(lexer: &mut RLexer) -> Option<char> {
     let SourceFile::SourceFile(source, index, line, last_newline_idx): &mut SourceFile =
-        lexer_sourcefile_mut(lexer);
+        rLexer_sourcefile_mut(lexer);
 
     let current: Option<char> = string_get(source, *index);
     *index = *index + 1;
@@ -287,9 +287,9 @@ fn lexer_consume_char(lexer: &mut Lexer) -> Option<char> {
 }
 
 /// Consume `token` when present and report success.
-fn lexer_try_consume(lexer: &mut Lexer, token: &Token) -> bool {
-    if lexer_current_token_eq(lexer, token) {
-        lexer_next_token(lexer);
+fn rLexer_try_consume(lexer: &mut RLexer, token: &RToken) -> bool {
+    if rLexer_current_token_eq(lexer, token) {
+        rLexer_next_token(lexer);
         true
     } else {
         false
@@ -297,12 +297,12 @@ fn lexer_try_consume(lexer: &mut Lexer, token: &Token) -> bool {
 }
 
 /// Consume the next character, erroring if it doesn't match expected.
-fn lexer_expect_char(lexer: &mut Lexer, expected: char) {
-    match lexer_consume_char(lexer) {
+fn rLexer_expect_char(lexer: &mut RLexer, expected: char) {
+    match rLexer_consume_char(lexer) {
         Option::Some(c) => {
             if c != expected {
                 let mut message: String = string("unexpected character: ");
-                string_push_string(&mut message, &literal_to_string(&Literal::Char(c)));
+                string_push_string(&mut message, &rLiteral_to_string(&RLiteral::Char(c)));
                 lexer_error(lexer, &message);
             }
         },
@@ -313,43 +313,43 @@ fn lexer_expect_char(lexer: &mut Lexer, expected: char) {
 // ---------------------- Lexer ----------------------
 
 /// Consume and return the next token.
-fn lexer_next_token(lexer: &mut Lexer) -> Token {
-    lexer_skip_attributes(lexer);
-    lexer_skip_whitespace(lexer);
+fn rLexer_next_token(lexer: &mut RLexer) -> RToken {
+    rLexer_skip_attributes(lexer);
+    rLexer_skip_whitespace(lexer);
 
-    let token: Token = match lexer_peek_char(lexer) {
+    let token: RToken = match rLexer_peek_char(lexer) {
         Option::Some(c) => {
             if is_alpha(c) {
-                let ident: String = lexer_scan_identifier(lexer);
-                identifier_to_token(ident)
+                let ident: String = rLexer_scan_identifier(lexer);
+                rust_identifier_to_token(ident)
             } else if is_digit(c) {
-                let value: usize = lexer_scan_integer(lexer);
-                Token::Literal(Literal::Int(value))
+                let value: usize = rLexer_scan_integer(lexer);
+                RToken::Literal(RLiteral::Int(value))
             } else if c == '\'' {
-                let ch: char = lexer_scan_char_literal(lexer);
-                Token::Literal(Literal::Char(ch))
+                let ch: char = rLexer_scan_char_literal(lexer);
+                RToken::Literal(RLiteral::Char(ch))
             } else if c == '"' {
-                let s: String = lexer_scan_string_literal(lexer);
-                Token::Literal(Literal::String(s))
+                let s: String = rLexer_scan_string_literal(lexer);
+                RToken::Literal(RLiteral::String(s))
             } else {
-                lexer_scan_symbol(lexer)
+                rLexer_scan_symbol(lexer)
             }
         },
-        Option::None => Token::Eof,
+        Option::None => RToken::Eof,
     };
 
-    lexer_set_current_token(lexer, token_clone(&token));
+    rLexer_set_current_token(lexer, token_clone(&token));
     token
 }
 
 /// Scan an identifier or keyword.
-fn lexer_scan_identifier(lexer: &mut Lexer) -> String {
+fn rLexer_scan_identifier(lexer: &mut RLexer) -> String {
     let mut ident: String = string_new();
     while true {
-        match lexer_peek_char(lexer) {
+        match rLexer_peek_char(lexer) {
             Option::Some(c) => {
                 if is_alphanumeric(c) {
-                    lexer_consume_char(lexer);
+                    rLexer_consume_char(lexer);
                     string_push(&mut ident, c);
                 } else {
                     return ident;
@@ -362,60 +362,60 @@ fn lexer_scan_identifier(lexer: &mut Lexer) -> String {
 }
 
 /// Convert an identifier to a keyword token if applicable.
-fn identifier_to_token(ident: String) -> Token {
+fn rust_identifier_to_token(ident: String) -> RToken {
     if string_eq(&ident, &string("fn")) {
-        Token::Fn
+        RToken::Fn
     } else if string_eq(&ident, &string("enum")) {
-        Token::Enum
+        RToken::Enum
     } else if string_eq(&ident, &string("extern")) {
-        Token::Extern
+        RToken::Extern
     } else if string_eq(&ident, &string("let")) {
-        Token::Let
+        RToken::Let
     } else if string_eq(&ident, &string("if")) {
-        Token::If
+        RToken::If
     } else if string_eq(&ident, &string("else")) {
-        Token::Else
+        RToken::Else
     } else if string_eq(&ident, &string("while")) {
-        Token::While
+        RToken::While
     } else if string_eq(&ident, &string("return")) {
-        Token::Return
+        RToken::Return
     } else if string_eq(&ident, &string("match")) {
-        Token::Match
+        RToken::Match
     } else if string_eq(&ident, &string("as")) {
-        Token::As
+        RToken::As
     } else if string_eq(&ident, &string("unsafe")) {
-        Token::Unsafe
+        RToken::Unsafe
     } else if string_eq(&ident, &string("mut")) {
-        Token::Mut
+        RToken::Mut
     } else if string_eq(&ident, &string("usize")) {
-        Token::Usize
+        RToken::Usize
     } else if string_eq(&ident, &string("u8")) {
-        Token::U8
+        RToken::U8
     } else if string_eq(&ident, &string("bool")) {
-        Token::Bool
+        RToken::Bool
     } else if string_eq(&ident, &string("char")) {
-        Token::Char
+        RToken::Char
     } else if string_eq(&ident, &string("str")) {
-        Token::Str
+        RToken::Str
     } else if string_eq(&ident, &string("true")) {
-        Token::Literal(Literal::Bool(true))
+        RToken::Literal(RLiteral::Bool(true))
     } else if string_eq(&ident, &string("false")) {
-        Token::Literal(Literal::Bool(false))
+        RToken::Literal(RLiteral::Bool(false))
     } else {
-        Token::Identifier(ident)
+        RToken::Identifier(ident)
     }
 }
 
-fn lexer_scan_integer(lexer: &mut Lexer) -> usize {
+fn rLexer_scan_integer(lexer: &mut RLexer) -> usize {
     let mut value: String = string_new();
 
     let mut done: bool = false;
     while not(done) {
-        match lexer_peek_char(lexer) {
+        match rLexer_peek_char(lexer) {
             Option::Some(c) => {
                 if is_digit(c) {
                     string_push(&mut value, c);
-                    lexer_consume_char(lexer);
+                    rLexer_consume_char(lexer);
                 } else {
                     done = true;
                 }
@@ -434,24 +434,24 @@ fn lexer_scan_integer(lexer: &mut Lexer) -> usize {
     }
 }
 
-fn lexer_scan_char_literal(lexer: &mut Lexer) -> char {
-    lexer_expect_char(lexer, '\'');
-    let c: char = match lexer_consume_char(lexer) {
-        Option::Some('\\') => lexer_scan_escape_char(lexer),
+fn rLexer_scan_char_literal(lexer: &mut RLexer) -> char {
+    rLexer_expect_char(lexer, '\'');
+    let c: char = match rLexer_consume_char(lexer) {
+        Option::Some('\\') => rLexer_scan_escape_char(lexer),
         Option::Some(ch) => ch,
         Option::None => lexer_error(lexer, &string("unexpected end of file")),
     };
-    lexer_expect_char(lexer, '\'');
+    rLexer_expect_char(lexer, '\'');
     c
 }
 
-fn lexer_scan_string_literal(lexer: &mut Lexer) -> String {
-    lexer_expect_char(lexer, '"');
+fn rLexer_scan_string_literal(lexer: &mut RLexer) -> String {
+    rLexer_expect_char(lexer, '"');
     let mut s: String = string_new();
     while true {
-        match lexer_consume_char(lexer) {
+        match rLexer_consume_char(lexer) {
             Option::Some('"') => return s,
-            Option::Some('\\') => string_push(&mut s, lexer_scan_escape_char(lexer)),
+            Option::Some('\\') => string_push(&mut s, rLexer_scan_escape_char(lexer)),
             Option::Some(c) => string_push(&mut s, c),
             Option::None => lexer_error(lexer, &string("unexpected end of string literal")),
         }
@@ -460,8 +460,8 @@ fn lexer_scan_string_literal(lexer: &mut Lexer) -> String {
 }
 
 /// Scan an escape sequence after backslash.
-fn lexer_scan_escape_char(lexer: &mut Lexer) -> char {
-    match lexer_consume_char(lexer) {
+fn rLexer_scan_escape_char(lexer: &mut RLexer) -> char {
+    match rLexer_consume_char(lexer) {
         Option::Some('n') => '\n',
         Option::Some('t') => '\t',
         Option::Some('r') => '\r',
@@ -471,115 +471,115 @@ fn lexer_scan_escape_char(lexer: &mut Lexer) -> char {
     }
 }
 
-fn lexer_scan_symbol(lexer: &mut Lexer) -> Token {
-    match unwrap::<char>(lexer_consume_char(lexer)) {
-        '{' => Token::LBrace,
-        '}' => Token::RBrace,
-        '(' => Token::LParen,
-        ')' => Token::RParen,
-        ';' => Token::SemiColon,
-        ',' => Token::Comma,
-        '|' => Token::Pipe,
-        '+' => Token::Plus,
-        '*' => Token::Star,
-        '/' => lexer_scan_slash(lexer),
-        '%' => Token::Remainder,
-        '&' => Token::Ampersand,
-        ':' => lexer_scan_colon(lexer),
-        '=' => lexer_scan_equals(lexer),
-        '-' => lexer_scan_minus(lexer),
-        '!' => lexer_scan_bang(lexer),
-        '<' => lexer_scan_less(lexer),
-        '>' => lexer_scan_greater(lexer),
+fn rLexer_scan_symbol(lexer: &mut RLexer) -> RToken {
+    match unwrap::<char>(rLexer_consume_char(lexer)) {
+        '{' => RToken::LBrace,
+        '}' => RToken::RBrace,
+        '(' => RToken::LParen,
+        ')' => RToken::RParen,
+        ';' => RToken::SemiColon,
+        ',' => RToken::Comma,
+        '|' => RToken::Pipe,
+        '+' => RToken::Plus,
+        '*' => RToken::Star,
+        '/' => rLexer_scan_slash(lexer),
+        '%' => RToken::Remainder,
+        '&' => RToken::Ampersand,
+        ':' => rLexer_scan_colon(lexer),
+        '=' => rLexer_scan_equals(lexer),
+        '-' => rLexer_scan_minus(lexer),
+        '!' => rLexer_scan_bang(lexer),
+        '<' => rLexer_scan_less(lexer),
+        '>' => rLexer_scan_greater(lexer),
         c => {
             let mut message: String = string("unexpected character: ");
-            string_push_string(&mut message, &literal_to_string(&Literal::Char(c)));
+            string_push_string(&mut message, &rLiteral_to_string(&RLiteral::Char(c)));
             lexer_error(lexer, &message);
         },
     }
 }
 
-fn lexer_scan_slash(lexer: &mut Lexer) -> Token {
-    match lexer_peek_char(lexer) {
+fn rLexer_scan_slash(lexer: &mut RLexer) -> RToken {
+    match rLexer_peek_char(lexer) {
         Option::Some('/') => {
-            lexer_consume_char(lexer);
-            lexer_skip_line_comment(lexer);
-            lexer_next_token(lexer)
+            rLexer_consume_char(lexer);
+            rLexer_skip_line_comment(lexer);
+            rLexer_next_token(lexer)
         },
-        _ => Token::Slash,
+        _ => RToken::Slash,
     }
 }
 
-fn lexer_scan_colon(lexer: &mut Lexer) -> Token {
-    match lexer_peek_char(lexer) {
+fn rLexer_scan_colon(lexer: &mut RLexer) -> RToken {
+    match rLexer_peek_char(lexer) {
         Option::Some(':') => {
-            lexer_consume_char(lexer);
-            Token::DoubleColon
+            rLexer_consume_char(lexer);
+            RToken::DoubleColon
         },
-        _ => Token::Colon,
+        _ => RToken::Colon,
     }
 }
 
-fn lexer_scan_equals(lexer: &mut Lexer) -> Token {
-    match lexer_peek_char(lexer) {
+fn rLexer_scan_equals(lexer: &mut RLexer) -> RToken {
+    match rLexer_peek_char(lexer) {
         Option::Some('=') => {
-            lexer_consume_char(lexer);
-            Token::Cmp(Comparison::Eq)
+            rLexer_consume_char(lexer);
+            RToken::Cmp(RComparisonOp::Eq)
         },
         Option::Some('>') => {
-            lexer_consume_char(lexer);
-            Token::FatArrow
+            rLexer_consume_char(lexer);
+            RToken::FatArrow
         },
-        _ => Token::Assign,
+        _ => RToken::Assign,
     }
 }
 
-fn lexer_scan_minus(lexer: &mut Lexer) -> Token {
-    match lexer_peek_char(lexer) {
+fn rLexer_scan_minus(lexer: &mut RLexer) -> RToken {
+    match rLexer_peek_char(lexer) {
         Option::Some('>') => {
-            lexer_consume_char(lexer);
-            Token::Arrow
+            rLexer_consume_char(lexer);
+            RToken::Arrow
         },
-        _ => Token::Minus,
+        _ => RToken::Minus,
     }
 }
 
-fn lexer_scan_bang(lexer: &mut Lexer) -> Token {
-    match lexer_peek_char(lexer) {
+fn rLexer_scan_bang(lexer: &mut RLexer) -> RToken {
+    match rLexer_peek_char(lexer) {
         Option::Some('=') => {
-            lexer_consume_char(lexer);
-            Token::Cmp(Comparison::Ne)
+            rLexer_consume_char(lexer);
+            RToken::Cmp(RComparisonOp::Ne)
         },
-        _ => Token::Bang,
+        _ => RToken::Bang,
     }
 }
 
-fn lexer_scan_less(lexer: &mut Lexer) -> Token {
-    match lexer_peek_char(lexer) {
+fn rLexer_scan_less(lexer: &mut RLexer) -> RToken {
+    match rLexer_peek_char(lexer) {
         Option::Some('=') => {
-            lexer_consume_char(lexer);
-            Token::Cmp(Comparison::Leq)
+            rLexer_consume_char(lexer);
+            RToken::Cmp(RComparisonOp::Leq)
         },
-        _ => Token::Cmp(Comparison::Lt),
+        _ => RToken::Cmp(RComparisonOp::Lt),
     }
 }
 
-fn lexer_scan_greater(lexer: &mut Lexer) -> Token {
-    match lexer_peek_char(lexer) {
+fn rLexer_scan_greater(lexer: &mut RLexer) -> RToken {
+    match rLexer_peek_char(lexer) {
         Option::Some('=') => {
-            lexer_consume_char(lexer);
-            Token::Cmp(Comparison::Geq)
+            rLexer_consume_char(lexer);
+            RToken::Cmp(RComparisonOp::Geq)
         },
-        _ => Token::Cmp(Comparison::Gt),
+        _ => RToken::Cmp(RComparisonOp::Gt),
     }
 }
 
-fn lexer_skip_whitespace(lexer: &mut Lexer) {
+fn rLexer_skip_whitespace(lexer: &mut RLexer) {
     while true {
-        match lexer_peek_char(lexer) {
+        match rLexer_peek_char(lexer) {
             Option::Some(c) => {
                 if is_whitespace(c) {
-                    lexer_consume_char(lexer);
+                    rLexer_consume_char(lexer);
                 } else {
                     return;
                 }
@@ -589,9 +589,9 @@ fn lexer_skip_whitespace(lexer: &mut Lexer) {
     }
 }
 
-fn lexer_skip_line_comment(lexer: &mut Lexer) {
+fn rLexer_skip_line_comment(lexer: &mut RLexer) {
     while true {
-        match lexer_consume_char(lexer) {
+        match rLexer_consume_char(lexer) {
             Option::Some('\n') => return,
             Option::Some(_) => (),
             Option::None => return,
@@ -600,19 +600,19 @@ fn lexer_skip_line_comment(lexer: &mut Lexer) {
 }
 
 /// Skips attributes which are useful in Rust, but unsupported.
-fn lexer_skip_attributes(lexer: &mut Lexer) {
-    lexer_skip_whitespace(lexer);
+fn rLexer_skip_attributes(lexer: &mut RLexer) {
+    rLexer_skip_whitespace(lexer);
     while true {
-        match lexer_peek_char(lexer) {
+        match rLexer_peek_char(lexer) {
             Option::Some('#') => {
-                lexer_consume_char(lexer);
-                lexer_skip_whitespace(lexer);
+                rLexer_consume_char(lexer);
+                rLexer_skip_whitespace(lexer);
 
-                match lexer_consume_char(lexer) {
+                match rLexer_consume_char(lexer) {
                     Option::Some('[') => {
                         let mut skipping: bool = true;
                         while skipping {
-                            match lexer_consume_char(lexer) {
+                            match rLexer_consume_char(lexer) {
                                 Option::Some(']') => skipping = false,
                                 _ => {},
                             }
@@ -645,7 +645,7 @@ enum RAstItem {
 /// Function definition.
 enum RAstFunction {
     /// unsafe, name, parameters, return type, body
-    Function(bool, String, Vec<RAstVariable>, RAstType, RAstBlock),
+    Function(bool, String, Vec<RAstVariable>, RType, RAstBlock),
 }
 
 /// Enum definition.
@@ -657,18 +657,18 @@ enum RAstEnum {
 /// Extern function declaration.
 enum RAstExternFunction {
     /// name, parameters, return type
-    ExternFunction(String, Vec<RAstVariable>, RAstType),
+    ExternFunction(String, Vec<RAstVariable>, RType),
 }
 
 /// Enum variant.
 enum RAstVariant {
     /// name, field types (empty vec for unit-like variants)
-    Variant(String, Vec<RAstType>),
+    Variant(String, Vec<RType>),
 }
 
 /// Typed variable (`pattern: type`).
 enum RAstVariable {
-    Variable(RAstPattern, RAstType),
+    Variable(RAstPattern, RType),
 }
 
 /// Block with statements and optional trailing expression.
@@ -701,7 +701,7 @@ enum RAstPatternLiteral {
 
 /// Type forms from the Rust subset grammar.
 #[derive(Debug)]
-enum RAstType {
+enum RType {
     U8,
     Usize,
     Bool,
@@ -710,17 +710,9 @@ enum RAstType {
     Never,
     Custom(String),
     /// inner, mutable
-    Reference(Box<RAstType>, bool),
+    Reference(Box<RType>, bool),
     /// `*mut T`
-    RawPointerMut(Box<RAstType>),
-}
-
-/// Literal values.
-enum RAstLiteral {
-    Int(usize),
-    String(String),
-    Char(char),
-    Bool(bool),
+    RawPointerMut(Box<RType>),
 }
 
 /// Path segments joined by `::`.
@@ -733,9 +725,9 @@ enum RAstExpr {
     Return(Option<Box<RAstExpr>>),
     Assign(Box<RAstExpr>, Box<RAstExpr>),
     Binary(RAstBinaryOp, Box<RAstExpr>, Box<RAstExpr>),
-    Cast(Box<RAstExpr>, RAstType),
+    Cast(Box<RAstExpr>, RType),
     Unary(RAstUnaryOp, Box<RAstExpr>),
-    Literal(RAstLiteral),
+    Literal(RLiteral),
     VariableUse(String),
     Call(RAstPath, Vec<RAstExpr>),
     /// unsafe, block
@@ -814,13 +806,13 @@ fn rAstPath_to_string(RAstPath::Path(segments): &RAstPath) -> String {
 }
 
 /// Get the type represented by a literal.
-fn rastLiteral_type(literal: &RAstLiteral) -> RAstType {
+fn rLiteral_type(literal: &RLiteral) -> RType {
     match literal {
-        RAstLiteral::Int(_) => RAstType::Usize,
-        RAstLiteral::Char(_) => RAstType::Char,
-        RAstLiteral::Bool(_) => RAstType::Bool,
-        RAstLiteral::String(_) => {
-            RAstType::Reference(box_new::<RAstType>(RAstType::Custom(string("str"))), false)
+        RLiteral::Int(_) => RType::Usize,
+        RLiteral::Char(_) => RType::Char,
+        RLiteral::Bool(_) => RType::Bool,
+        RLiteral::String(_) => {
+            RType::Reference(box_new::<RType>(RType::Custom(string("str"))), false)
         },
     }
 }
@@ -835,24 +827,24 @@ fn rAstPatternLiteral_value(literal: &RAstPatternLiteral) -> usize {
 }
 
 /// Convert Rust AST type into a simple LLVM-IR type name.
-fn rAstType_to_llvm_name(ty: &RAstType) -> String {
+fn rType_to_llvm_name(ty: &RType) -> String {
     match ty {
-        RAstType::U8 => string("i8"),
-        RAstType::Usize => string("i64"), // assume 64-bit for now
-        RAstType::Bool => string("i1"),
-        RAstType::Char => string("i8"),
-        RAstType::Unit => string("void"),
-        RAstType::Never => string("void"),
-        RAstType::Custom(_) => string("i64"),
-        RAstType::Reference(_, _) => string("ptr"),
-        RAstType::RawPointerMut(_) => string("ptr"),
+        RType::U8 => string("i8"),
+        RType::Usize => string("i64"), // assume 64-bit for now
+        RType::Bool => string("i1"),
+        RType::Char => string("i8"),
+        RType::Unit => string("void"),
+        RType::Never => string("void"),
+        RType::Custom(_) => string("i64"),
+        RType::Reference(_, _) => string("ptr"),
+        RType::RawPointerMut(_) => string("ptr"),
     }
 }
 
-fn rAstType_is_numeric(ty: &RAstType) -> bool {
+fn rType_is_numeric(ty: &RType) -> bool {
     match ty {
-        RAstType::U8 => true,
-        RAstType::Usize => true,
+        RType::U8 => true,
+        RType::Usize => true,
         _ => false,
     }
 }
@@ -864,8 +856,8 @@ fn rAstType_is_numeric(ty: &RAstType) -> bool {
 /// 3. right == Never
 ///
 /// The type returned is only Never if left == right == Never.
-fn rAstType_coerce(left: RAstType, right: RAstType) -> RAstType {
-    if rAstType_eq(&left, &RAstType::Never) {
+fn rType_coerce(left: RType, right: RType) -> RType {
+    if rType_eq(&left, &RType::Never) {
         right
     } else {
         left
@@ -874,28 +866,28 @@ fn rAstType_coerce(left: RAstType, right: RAstType) -> RAstType {
 
 /// Checks for equality between two types.
 /// If one of the arguments is Never, return true, since Never matches every type.
-fn type_matches(left: &RAstType, right: &RAstType) -> bool {
+fn type_matches(left: &RType, right: &RType) -> bool {
     or(
         // Never is a special type that indicates the value is unreachable, so it matches every
         // type
         or(
-            rAstType_eq(left, &RAstType::Never),
-            rAstType_eq(right, &RAstType::Never),
+            rType_eq(left, &RType::Never),
+            rType_eq(right, &RType::Never),
         ),
-        rAstType_eq(left, right),
+        rType_eq(left, right),
     )
 }
 
 /// Return true if the type has a value.
 /// This is true for all types, other than Unit and Never.
-fn type_has_value(ty: &RAstType) -> bool {
-    not(type_matches(ty, &RAstType::Unit))
+fn type_has_value(ty: &RType) -> bool {
+    not(type_matches(ty, &RType::Unit))
 }
 
 /// Require and consume the given token.
-fn expect_token(lexer: &mut Lexer, token: &Token) {
-    if not(lexer_try_consume(lexer, token)) {
-        let bad_token: &Token = lexer_current_token(lexer);
+fn expect_token(lexer: &mut RLexer, token: &RToken) {
+    if not(rLexer_try_consume(lexer, token)) {
+        let bad_token: &RToken = rLexer_current_token(lexer);
         let mut message: String = string("expected ");
         string_push_string(&mut message, &token_to_string(token));
         string_push_str(&mut message, ", but got: ");
@@ -905,11 +897,11 @@ fn expect_token(lexer: &mut Lexer, token: &Token) {
 }
 
 /// Read and consume the current identifier token.
-fn expect_identifier(lexer: &mut Lexer) -> String {
-    match lexer_current_token(lexer) {
-        Token::Identifier(name) => {
+fn expect_identifier(lexer: &mut RLexer) -> String {
+    match rLexer_current_token(lexer) {
+        RToken::Identifier(name) => {
             let name: String = string_clone(name);
-            lexer_next_token(lexer);
+            rLexer_next_token(lexer);
             name
         },
         token => {
@@ -920,17 +912,17 @@ fn expect_identifier(lexer: &mut Lexer) -> String {
     }
 }
 
-fn parse_language(lexer: &mut Lexer) -> RAst {
+fn parse_language(lexer: &mut RLexer) -> RAst {
     let mut items: Vec<RAstItem> = vec_new::<RAstItem>();
 
-    while not(lexer_current_token_eq(lexer, &Token::Eof)) {
-        match lexer_current_token(lexer) {
-            Token::Unsafe => match lexer_next_token(lexer) {
-                Token::Extern => {
+    while not(rLexer_current_token_eq(lexer, &RToken::Eof)) {
+        match rLexer_current_token(lexer) {
+            RToken::Unsafe => match rLexer_next_token(lexer) {
+                RToken::Extern => {
                     let extern_block: RAstItem = RAstItem::ExternBlock(parse_extern_block(lexer));
                     vec_push::<RAstItem>(&mut items, extern_block);
                 },
-                Token::Fn => {
+                RToken::Fn => {
                     let function: RAstItem = RAstItem::Function(parse_function(lexer, true));
                     vec_push::<RAstItem>(&mut items, function);
                 },
@@ -940,11 +932,11 @@ fn parse_language(lexer: &mut Lexer) -> RAst {
                     parse_error(lexer, &message);
                 },
             },
-            Token::Fn => {
+            RToken::Fn => {
                 let function: RAstItem = RAstItem::Function(parse_function(lexer, false));
                 vec_push::<RAstItem>(&mut items, function);
             },
-            Token::Enum => {
+            RToken::Enum => {
                 let enumeration: RAstItem = RAstItem::Enum(parse_enum(lexer));
                 vec_push::<RAstItem>(&mut items, enumeration);
             },
@@ -960,92 +952,92 @@ fn parse_language(lexer: &mut Lexer) -> RAst {
     RAst::Language(items)
 }
 
-fn parse_extern_block(lexer: &mut Lexer) -> Vec<RAstExternFunction> {
-    expect_token(lexer, &Token::Extern);
+fn parse_extern_block(lexer: &mut RLexer) -> Vec<RAstExternFunction> {
+    expect_token(lexer, &RToken::Extern);
 
-    match lexer_current_token(lexer) {
-        Token::Literal(Literal::String(value)) => {
+    match rLexer_current_token(lexer) {
+        RToken::Literal(RLiteral::String(value)) => {
             if not(string_eq(value, &string("C"))) {
                 let mut message: String = string("expected \"C\", but got: ");
-                string_push_string(&mut message, &token_to_string(lexer_current_token(lexer)));
+                string_push_string(&mut message, &token_to_string(rLexer_current_token(lexer)));
                 parse_error(lexer, &message);
             }
-            lexer_next_token(lexer);
+            rLexer_next_token(lexer);
         },
         _ => {
             let mut message: String = string("expected \"C\", but got: ");
-            string_push_string(&mut message, &token_to_string(lexer_current_token(lexer)));
+            string_push_string(&mut message, &token_to_string(rLexer_current_token(lexer)));
             parse_error(lexer, &message);
         },
     }
 
-    expect_token(lexer, &Token::LBrace);
+    expect_token(lexer, &RToken::LBrace);
 
     let mut functions: Vec<RAstExternFunction> = vec_new::<RAstExternFunction>();
-    while not(lexer_current_token_eq(lexer, &Token::RBrace)) {
+    while not(rLexer_current_token_eq(lexer, &RToken::RBrace)) {
         let function: RAstExternFunction = parse_function_declaration(lexer);
         vec_push::<RAstExternFunction>(&mut functions, function);
     }
-    expect_token(lexer, &Token::RBrace);
+    expect_token(lexer, &RToken::RBrace);
 
     functions
 }
 
-fn parse_function_declaration(lexer: &mut Lexer) -> RAstExternFunction {
-    expect_token(lexer, &Token::Fn);
+fn parse_function_declaration(lexer: &mut RLexer) -> RAstExternFunction {
+    expect_token(lexer, &RToken::Fn);
     let name: String = expect_identifier(lexer);
-    expect_token(lexer, &Token::LParen);
+    expect_token(lexer, &RToken::LParen);
 
     let mut parameters: Vec<RAstVariable> = vec_new::<RAstVariable>();
-    if not(lexer_current_token_eq(lexer, &Token::RParen)) {
+    if not(rLexer_current_token_eq(lexer, &RToken::RParen)) {
         let variable: RAstVariable = parse_variable(lexer);
         vec_push::<RAstVariable>(&mut parameters, variable);
 
         while and(
-            lexer_try_consume(lexer, &Token::Comma),
-            not(lexer_current_token_eq(lexer, &Token::RParen)),
+            rLexer_try_consume(lexer, &RToken::Comma),
+            not(rLexer_current_token_eq(lexer, &RToken::RParen)),
         ) {
             let variable: RAstVariable = parse_variable(lexer);
             vec_push::<RAstVariable>(&mut parameters, variable);
         }
     }
-    expect_token(lexer, &Token::RParen);
+    expect_token(lexer, &RToken::RParen);
 
-    let return_type: RAstType = if lexer_try_consume(lexer, &Token::Arrow) {
+    let return_type: RType = if rLexer_try_consume(lexer, &RToken::Arrow) {
         parse_type(lexer)
     } else {
-        RAstType::Unit
+        RType::Unit
     };
 
-    expect_token(lexer, &Token::SemiColon);
+    expect_token(lexer, &RToken::SemiColon);
     RAstExternFunction::ExternFunction(name, parameters, return_type)
 }
 
-fn parse_function(lexer: &mut Lexer, is_unsafe: bool) -> RAstFunction {
-    expect_token(lexer, &Token::Fn);
+fn parse_function(lexer: &mut RLexer, is_unsafe: bool) -> RAstFunction {
+    expect_token(lexer, &RToken::Fn);
 
     let name: String = expect_identifier(lexer);
-    expect_token(lexer, &Token::LParen);
+    expect_token(lexer, &RToken::LParen);
 
     let mut parameters: Vec<RAstVariable> = vec_new::<RAstVariable>();
-    if not(lexer_current_token_eq(lexer, &Token::RParen)) {
+    if not(rLexer_current_token_eq(lexer, &RToken::RParen)) {
         let variable: RAstVariable = parse_variable(lexer);
         vec_push::<RAstVariable>(&mut parameters, variable);
 
         while and(
-            lexer_try_consume(lexer, &Token::Comma),
-            not(lexer_current_token_eq(lexer, &Token::RParen)),
+            rLexer_try_consume(lexer, &RToken::Comma),
+            not(rLexer_current_token_eq(lexer, &RToken::RParen)),
         ) {
             let variable: RAstVariable = parse_variable(lexer);
             vec_push::<RAstVariable>(&mut parameters, variable);
         }
     }
-    expect_token(lexer, &Token::RParen);
+    expect_token(lexer, &RToken::RParen);
 
-    let return_type: RAstType = if lexer_try_consume(lexer, &Token::Arrow) {
+    let return_type: RType = if rLexer_try_consume(lexer, &RToken::Arrow) {
         parse_type(lexer)
     } else {
-        RAstType::Unit
+        RType::Unit
     };
 
     let body: RAstBlock = parse_block(lexer);
@@ -1053,138 +1045,135 @@ fn parse_function(lexer: &mut Lexer, is_unsafe: bool) -> RAstFunction {
     RAstFunction::Function(is_unsafe, name, parameters, return_type, body)
 }
 
-fn parse_enum(lexer: &mut Lexer) -> RAstEnum {
-    expect_token(lexer, &Token::Enum);
+fn parse_enum(lexer: &mut RLexer) -> RAstEnum {
+    expect_token(lexer, &RToken::Enum);
     let name: String = expect_identifier(lexer);
-    expect_token(lexer, &Token::LBrace);
+    expect_token(lexer, &RToken::LBrace);
 
     let mut variants: Vec<RAstVariant> = vec_new::<RAstVariant>();
     let first_variant: RAstVariant = parse_variant(lexer);
     vec_push::<RAstVariant>(&mut variants, first_variant);
-    expect_token(lexer, &Token::Comma);
+    expect_token(lexer, &RToken::Comma);
 
-    while not(lexer_current_token_eq(lexer, &Token::RBrace)) {
+    while not(rLexer_current_token_eq(lexer, &RToken::RBrace)) {
         let variant: RAstVariant = parse_variant(lexer);
         vec_push::<RAstVariant>(&mut variants, variant);
-        expect_token(lexer, &Token::Comma);
+        expect_token(lexer, &RToken::Comma);
     }
-    expect_token(lexer, &Token::RBrace);
+    expect_token(lexer, &RToken::RBrace);
 
     RAstEnum::Enum(name, variants)
 }
 
-fn parse_variant(lexer: &mut Lexer) -> RAstVariant {
+fn parse_variant(lexer: &mut RLexer) -> RAstVariant {
     let name: String = expect_identifier(lexer);
 
-    let mut field_types: Vec<RAstType> = vec_new::<RAstType>();
-    if lexer_try_consume(lexer, &Token::LParen) {
-        vec_push::<RAstType>(&mut field_types, parse_type(lexer));
+    let mut field_types: Vec<RType> = vec_new::<RType>();
+    if rLexer_try_consume(lexer, &RToken::LParen) {
+        vec_push::<RType>(&mut field_types, parse_type(lexer));
 
-        while lexer_try_consume(lexer, &Token::Comma) {
-            vec_push::<RAstType>(&mut field_types, parse_type(lexer));
+        while rLexer_try_consume(lexer, &RToken::Comma) {
+            vec_push::<RType>(&mut field_types, parse_type(lexer));
         }
-        expect_token(lexer, &Token::RParen);
+        expect_token(lexer, &RToken::RParen);
     }
 
     RAstVariant::Variant(name, field_types)
 }
 
-fn parse_block(lexer: &mut Lexer) -> RAstBlock {
-    expect_token(lexer, &Token::LBrace);
+fn parse_block(lexer: &mut RLexer) -> RAstBlock {
+    expect_token(lexer, &RToken::LBrace);
     let mut statements: Vec<RAstStatement> = vec_new::<RAstStatement>();
     let mut tail: Option<Box<RAstExpr>> = Option::None;
 
-    while not(lexer_current_token_eq(lexer, &Token::RBrace)) {
-        if lexer_current_token_eq(lexer, &Token::Let) {
+    while not(rLexer_current_token_eq(lexer, &RToken::RBrace)) {
+        if rLexer_current_token_eq(lexer, &RToken::Let) {
             let let_binding: RAstStatement = parse_binding(lexer);
             vec_push::<RAstStatement>(&mut statements, let_binding);
-            expect_token(lexer, &Token::SemiColon);
+            expect_token(lexer, &RToken::SemiColon);
         } else {
             let expression: RAstExpr = parse_expression(lexer);
 
-            if lexer_current_token_eq(lexer, &Token::RBrace) {
+            if rLexer_current_token_eq(lexer, &RToken::RBrace) {
                 // end of block with expression as return value
-                lexer_next_token(lexer);
+                rLexer_next_token(lexer);
                 tail = Option::Some(box_new::<RAstExpr>(expression));
                 return RAstBlock::Block(statements, tail);
             } else {
-                lexer_try_consume(lexer, &Token::SemiColon); // optional semi-colon
+                rLexer_try_consume(lexer, &RToken::SemiColon); // optional semi-colon
                 let expr_statement = RAstStatement::Expression(box_new::<RAstExpr>(expression));
                 vec_push::<RAstStatement>(&mut statements, expr_statement);
             }
         }
     }
-    expect_token(lexer, &Token::RBrace);
+    expect_token(lexer, &RToken::RBrace);
 
     RAstBlock::Block(statements, tail)
 }
 
-fn parse_binding(lexer: &mut Lexer) -> RAstStatement {
-    expect_token(lexer, &Token::Let);
+fn parse_binding(lexer: &mut RLexer) -> RAstStatement {
+    expect_token(lexer, &RToken::Let);
     let variable: RAstVariable = parse_variable(lexer);
-    expect_token(lexer, &Token::Assign);
+    expect_token(lexer, &RToken::Assign);
     let value: RAstExpr = parse_expression(lexer);
     RAstStatement::Let(variable, box_new::<RAstExpr>(value))
 }
 
-fn parse_variable(lexer: &mut Lexer) -> RAstVariable {
+fn parse_variable(lexer: &mut RLexer) -> RAstVariable {
     let pattern: RAstPattern = parse_pattern(lexer);
-    expect_token(lexer, &Token::Colon);
-    let ty: RAstType = parse_type(lexer);
+    expect_token(lexer, &RToken::Colon);
+    let ty: RType = parse_type(lexer);
     RAstVariable::Variable(pattern, ty)
 }
 
-fn parse_type(lexer: &mut Lexer) -> RAstType {
-    match lexer_current_token(lexer) {
-        Token::U8 => {
-            lexer_next_token(lexer);
-            RAstType::U8
+fn parse_type(lexer: &mut RLexer) -> RType {
+    match rLexer_current_token(lexer) {
+        RToken::U8 => {
+            rLexer_next_token(lexer);
+            RType::U8
         },
-        Token::Usize => {
-            lexer_next_token(lexer);
-            RAstType::Usize
+        RToken::Usize => {
+            rLexer_next_token(lexer);
+            RType::Usize
         },
-        Token::Char => {
-            lexer_next_token(lexer);
-            RAstType::Char
+        RToken::Char => {
+            rLexer_next_token(lexer);
+            RType::Char
         },
-        Token::Bool => {
-            lexer_next_token(lexer);
-            RAstType::Bool
+        RToken::Bool => {
+            rLexer_next_token(lexer);
+            RType::Bool
         },
-        Token::LParen => {
-            lexer_next_token(lexer);
-            expect_token(lexer, &Token::RParen);
-            RAstType::Unit
+        RToken::LParen => {
+            rLexer_next_token(lexer);
+            expect_token(lexer, &RToken::RParen);
+            RType::Unit
         },
-        Token::Bang => {
-            lexer_next_token(lexer);
-            RAstType::Never
+        RToken::Bang => {
+            rLexer_next_token(lexer);
+            RType::Never
         },
-        Token::Ampersand => {
-            lexer_next_token(lexer);
+        RToken::Ampersand => {
+            rLexer_next_token(lexer);
 
-            if lexer_try_consume(lexer, &Token::Str) {
+            if rLexer_try_consume(lexer, &RToken::Str) {
                 // TODO: remove this and handle like a user-defined type
-                return RAstType::Reference(
-                    box_new::<RAstType>(RAstType::Custom(string("str"))),
-                    false,
-                );
+                return RType::Reference(box_new::<RType>(RType::Custom(string("str"))), false);
             }
 
-            let mutable: bool = lexer_try_consume(lexer, &Token::Mut);
-            let inner: RAstType = parse_type(lexer);
-            RAstType::Reference(box_new::<RAstType>(inner), mutable)
+            let mutable: bool = rLexer_try_consume(lexer, &RToken::Mut);
+            let inner: RType = parse_type(lexer);
+            RType::Reference(box_new::<RType>(inner), mutable)
         },
-        Token::Star => {
-            lexer_next_token(lexer);
-            expect_token(lexer, &Token::Mut);
-            let inner: RAstType = parse_type(lexer);
-            RAstType::RawPointerMut(box_new::<RAstType>(inner))
+        RToken::Star => {
+            rLexer_next_token(lexer);
+            expect_token(lexer, &RToken::Mut);
+            let inner: RType = parse_type(lexer);
+            RType::RawPointerMut(box_new::<RType>(inner))
         },
-        Token::Identifier(_) => {
+        RToken::Identifier(_) => {
             let enum_name: String = expect_identifier(lexer);
-            RAstType::Custom(enum_name)
+            RType::Custom(enum_name)
         },
         token => {
             let mut message: String = string("expected a type, but got: ");
@@ -1194,12 +1183,12 @@ fn parse_type(lexer: &mut Lexer) -> RAstType {
     }
 }
 
-fn parse_expression(lexer: &mut Lexer) -> RAstExpr {
-    match lexer_current_token(lexer) {
-        Token::Return => {
-            lexer_next_token(lexer);
-            match lexer_current_token(lexer) {
-                Token::SemiColon | Token::RBrace => RAstExpr::Return(Option::None),
+fn parse_expression(lexer: &mut RLexer) -> RAstExpr {
+    match rLexer_current_token(lexer) {
+        RToken::Return => {
+            rLexer_next_token(lexer);
+            match rLexer_current_token(lexer) {
+                RToken::SemiColon | RToken::RBrace => RAstExpr::Return(Option::None),
                 _ => {
                     let expression: RAstExpr = parse_expression(lexer);
                     RAstExpr::Return(Option::Some(box_new::<RAstExpr>(expression)))
@@ -1210,9 +1199,9 @@ fn parse_expression(lexer: &mut Lexer) -> RAstExpr {
     }
 }
 
-fn parse_assignment(lexer: &mut Lexer) -> RAstExpr {
+fn parse_assignment(lexer: &mut RLexer) -> RAstExpr {
     let left: RAstExpr = parse_comparison(lexer);
-    if lexer_try_consume(lexer, &Token::Assign) {
+    if rLexer_try_consume(lexer, &RToken::Assign) {
         let right: RAstExpr = parse_assignment(lexer);
         RAstExpr::Assign(box_new::<RAstExpr>(left), box_new::<RAstExpr>(right))
     } else {
@@ -1220,23 +1209,23 @@ fn parse_assignment(lexer: &mut Lexer) -> RAstExpr {
     }
 }
 
-fn parse_comparison(lexer: &mut Lexer) -> RAstExpr {
+fn parse_comparison(lexer: &mut RLexer) -> RAstExpr {
     let left: RAstExpr = parse_arithmetic(lexer);
 
-    match lexer_current_token(lexer) {
-        Token::Cmp(comparison) => {
-            let comparison: Comparison = comparison_clone(comparison);
-            lexer_next_token(lexer);
+    match rLexer_current_token(lexer) {
+        RToken::Cmp(comparison) => {
+            let comparison: RComparisonOp = comparison_clone(comparison);
+            rLexer_next_token(lexer);
 
             let right: RAstExpr = parse_arithmetic(lexer);
 
             let operator: RAstComparisonOp = match comparison {
-                Comparison::Eq => RAstComparisonOp::Eq,
-                Comparison::Ne => RAstComparisonOp::Ne,
-                Comparison::Gt => RAstComparisonOp::Gt,
-                Comparison::Lt => RAstComparisonOp::Lt,
-                Comparison::Geq => RAstComparisonOp::Ge,
-                Comparison::Leq => RAstComparisonOp::Le,
+                RComparisonOp::Eq => RAstComparisonOp::Eq,
+                RComparisonOp::Ne => RAstComparisonOp::Ne,
+                RComparisonOp::Gt => RAstComparisonOp::Gt,
+                RComparisonOp::Lt => RAstComparisonOp::Lt,
+                RComparisonOp::Geq => RAstComparisonOp::Ge,
+                RComparisonOp::Leq => RAstComparisonOp::Le,
             };
 
             RAstExpr::Binary(
@@ -1249,19 +1238,19 @@ fn parse_comparison(lexer: &mut Lexer) -> RAstExpr {
     }
 }
 
-fn parse_arithmetic(lexer: &mut Lexer) -> RAstExpr {
+fn parse_arithmetic(lexer: &mut RLexer) -> RAstExpr {
     let mut left: RAstExpr = parse_term(lexer);
 
     while or(
-        lexer_current_token_eq(lexer, &Token::Plus),
-        lexer_current_token_eq(lexer, &Token::Minus),
+        rLexer_current_token_eq(lexer, &RToken::Plus),
+        rLexer_current_token_eq(lexer, &RToken::Minus),
     ) {
-        let operator: RAstArithmeticOp = match lexer_current_token(lexer) {
-            Token::Plus => RAstArithmeticOp::Add,
-            Token::Minus => RAstArithmeticOp::Sub,
+        let operator: RAstArithmeticOp = match rLexer_current_token(lexer) {
+            RToken::Plus => RAstArithmeticOp::Add,
+            RToken::Minus => RAstArithmeticOp::Sub,
             _ => panic("unreachable"),
         };
-        lexer_next_token(lexer);
+        rLexer_next_token(lexer);
 
         let right: RAstExpr = parse_term(lexer);
 
@@ -1274,23 +1263,23 @@ fn parse_arithmetic(lexer: &mut Lexer) -> RAstExpr {
     left
 }
 
-fn parse_term(lexer: &mut Lexer) -> RAstExpr {
+fn parse_term(lexer: &mut RLexer) -> RAstExpr {
     let mut left: RAstExpr = parse_cast(lexer);
 
     while or(
-        lexer_current_token_eq(lexer, &Token::Star),
+        rLexer_current_token_eq(lexer, &RToken::Star),
         or(
-            lexer_current_token_eq(lexer, &Token::Slash),
-            lexer_current_token_eq(lexer, &Token::Remainder),
+            rLexer_current_token_eq(lexer, &RToken::Slash),
+            rLexer_current_token_eq(lexer, &RToken::Remainder),
         ),
     ) {
-        let operator: RAstArithmeticOp = match lexer_current_token(lexer) {
-            Token::Star => RAstArithmeticOp::Mul,
-            Token::Slash => RAstArithmeticOp::Div,
-            Token::Remainder => RAstArithmeticOp::Rem,
+        let operator: RAstArithmeticOp = match rLexer_current_token(lexer) {
+            RToken::Star => RAstArithmeticOp::Mul,
+            RToken::Slash => RAstArithmeticOp::Div,
+            RToken::Remainder => RAstArithmeticOp::Rem,
             _ => panic("unreachable"),
         };
-        lexer_next_token(lexer);
+        rLexer_next_token(lexer);
 
         let right: RAstExpr = parse_cast(lexer);
 
@@ -1303,26 +1292,26 @@ fn parse_term(lexer: &mut Lexer) -> RAstExpr {
     left
 }
 
-fn parse_cast(lexer: &mut Lexer) -> RAstExpr {
+fn parse_cast(lexer: &mut RLexer) -> RAstExpr {
     let mut expression: RAstExpr = parse_unary(lexer);
 
-    while lexer_try_consume(lexer, &Token::As) {
-        let cast_type: RAstType = parse_type(lexer);
+    while rLexer_try_consume(lexer, &RToken::As) {
+        let cast_type: RType = parse_type(lexer);
         expression = RAstExpr::Cast(box_new::<RAstExpr>(expression), cast_type);
     }
     expression
 }
 
-fn parse_unary(lexer: &mut Lexer) -> RAstExpr {
-    match lexer_current_token(lexer) {
-        Token::Ampersand => {
-            lexer_next_token(lexer);
-            let mutable: bool = lexer_try_consume(lexer, &Token::Mut);
+fn parse_unary(lexer: &mut RLexer) -> RAstExpr {
+    match rLexer_current_token(lexer) {
+        RToken::Ampersand => {
+            rLexer_next_token(lexer);
+            let mutable: bool = rLexer_try_consume(lexer, &RToken::Mut);
             let inner: RAstExpr = parse_unary(lexer);
             RAstExpr::Unary(RAstUnaryOp::Reference(mutable), box_new::<RAstExpr>(inner))
         },
-        Token::Star => {
-            lexer_next_token(lexer);
+        RToken::Star => {
+            rLexer_next_token(lexer);
             let inner: RAstExpr = parse_unary(lexer);
             RAstExpr::Unary(RAstUnaryOp::Dereference, box_new::<RAstExpr>(inner))
         },
@@ -1330,18 +1319,22 @@ fn parse_unary(lexer: &mut Lexer) -> RAstExpr {
     }
 }
 
-fn parse_factor(lexer: &mut Lexer) -> RAstExpr {
-    match lexer_current_token(lexer) {
-        Token::Literal(_) => RAstExpr::Literal(parse_literal(lexer)),
-        Token::Identifier(_) => {
+fn parse_factor(lexer: &mut RLexer) -> RAstExpr {
+    match rLexer_current_token(lexer) {
+        RToken::Literal(literal) => {
+            let literal: RLiteral = rLiteral_clone(literal);
+            rLexer_next_token(lexer);
+            RAstExpr::Literal(literal)
+        },
+        RToken::Identifier(_) => {
             let first_identifier: String = expect_identifier(lexer);
 
-            if lexer_current_token_eq(lexer, &Token::DoubleColon) {
+            if rLexer_current_token_eq(lexer, &RToken::DoubleColon) {
                 let path: RAstPath = parse_path(lexer, first_identifier);
 
-                expect_token(lexer, &Token::LParen);
+                expect_token(lexer, &RToken::LParen);
                 parse_call(lexer, path)
-            } else if lexer_current_token_eq(lexer, &Token::LParen) {
+            } else if rLexer_current_token_eq(lexer, &RToken::LParen) {
                 let mut path_segments: Vec<String> = vec_new::<String>();
                 vec_push::<String>(&mut path_segments, first_identifier);
                 parse_call(lexer, RAstPath::Path(path_segments))
@@ -1349,20 +1342,20 @@ fn parse_factor(lexer: &mut Lexer) -> RAstExpr {
                 RAstExpr::VariableUse(first_identifier)
             }
         },
-        Token::LParen => {
-            lexer_next_token(lexer);
+        RToken::LParen => {
+            rLexer_next_token(lexer);
             let expression: RAstExpr = parse_expression(lexer);
-            expect_token(lexer, &Token::RParen);
+            expect_token(lexer, &RToken::RParen);
             expression
         },
-        Token::Unsafe => {
-            lexer_next_token(lexer);
+        RToken::Unsafe => {
+            rLexer_next_token(lexer);
             RAstExpr::Block(true, parse_block(lexer))
         },
-        Token::LBrace => RAstExpr::Block(false, parse_block(lexer)),
-        Token::If => RAstExpr::If(parse_if(lexer)),
-        Token::While => parse_while(lexer),
-        Token::Match => parse_match(lexer),
+        RToken::LBrace => RAstExpr::Block(false, parse_block(lexer)),
+        RToken::If => RAstExpr::If(parse_if(lexer)),
+        RToken::While => parse_while(lexer),
+        RToken::Match => parse_match(lexer),
         token => {
             let mut message: String = string("unexpected token: ");
             string_push_string(&mut message, &token_to_string(token));
@@ -1371,13 +1364,13 @@ fn parse_factor(lexer: &mut Lexer) -> RAstExpr {
     }
 }
 
-fn parse_if(lexer: &mut Lexer) -> RAstIf {
-    expect_token(lexer, &Token::If);
+fn parse_if(lexer: &mut RLexer) -> RAstIf {
+    expect_token(lexer, &RToken::If);
     let condition: RAstExpr = parse_expression(lexer);
     let then_block: RAstBlock = parse_block(lexer);
 
-    let else_branch: Option<RAstElse> = if lexer_try_consume(lexer, &Token::Else) {
-        if lexer_current_token_eq(lexer, &Token::If) {
+    let else_branch: Option<RAstElse> = if rLexer_try_consume(lexer, &RToken::Else) {
+        if rLexer_current_token_eq(lexer, &RToken::If) {
             let else_if: RAstIf = parse_if(lexer);
             Option::Some(RAstElse::If(box_new::<RAstIf>(else_if)))
         } else {
@@ -1391,83 +1384,87 @@ fn parse_if(lexer: &mut Lexer) -> RAstIf {
     RAstIf::If(box_new::<RAstExpr>(condition), then_block, else_branch)
 }
 
-fn parse_while(lexer: &mut Lexer) -> RAstExpr {
-    expect_token(lexer, &Token::While);
+fn parse_while(lexer: &mut RLexer) -> RAstExpr {
+    expect_token(lexer, &RToken::While);
     let condition: RAstExpr = parse_expression(lexer);
     let body: RAstBlock = parse_block(lexer);
     RAstExpr::While(box_new::<RAstExpr>(condition), body)
 }
 
-fn parse_match(lexer: &mut Lexer) -> RAstExpr {
-    expect_token(lexer, &Token::Match);
+fn parse_match(lexer: &mut RLexer) -> RAstExpr {
+    expect_token(lexer, &RToken::Match);
     let value: RAstExpr = parse_expression(lexer);
-    expect_token(lexer, &Token::LBrace);
+    expect_token(lexer, &RToken::LBrace);
 
     let mut arms: Vec<RAstArm> = vec_new::<RAstArm>();
-    while not(lexer_current_token_eq(lexer, &Token::RBrace)) {
+    while not(rLexer_current_token_eq(lexer, &RToken::RBrace)) {
         let arm: RAstArm = parse_arm(lexer);
         vec_push::<RAstArm>(&mut arms, arm);
     }
-    expect_token(lexer, &Token::RBrace);
+    expect_token(lexer, &RToken::RBrace);
 
     RAstExpr::Match(box_new::<RAstExpr>(value), arms)
 }
 
-fn parse_arm(lexer: &mut Lexer) -> RAstArm {
+fn parse_arm(lexer: &mut RLexer) -> RAstArm {
     let mut patterns: Vec<RAstPattern> = vec_new::<RAstPattern>();
     let pattern: RAstPattern = parse_pattern(lexer);
     vec_push::<RAstPattern>(&mut patterns, pattern);
 
-    while lexer_try_consume(lexer, &Token::Pipe) {
+    while rLexer_try_consume(lexer, &RToken::Pipe) {
         let pattern: RAstPattern = parse_pattern(lexer);
         vec_push::<RAstPattern>(&mut patterns, pattern);
     }
 
-    expect_token(lexer, &Token::FatArrow);
+    expect_token(lexer, &RToken::FatArrow);
 
     let expression: RAstExpr = parse_expression(lexer);
-    expect_token(lexer, &Token::Comma);
+    expect_token(lexer, &RToken::Comma);
     RAstArm::Arm(patterns, expression)
 }
 
-fn parse_pattern(lexer: &mut Lexer) -> RAstPattern {
-    match lexer_current_token(lexer) {
-        Token::Literal(_) => RAstPattern::Literal(match parse_literal(lexer) {
-            RAstLiteral::Int(value) => RAstPatternLiteral::Int(value),
-            RAstLiteral::Char(value) => RAstPatternLiteral::Char(value),
-            RAstLiteral::Bool(value) => RAstPatternLiteral::Bool(value),
-            RAstLiteral::String(_) => {
-                parse_error(lexer, &string("matching on string literals is unsupported"))
-            },
-        }),
-        Token::Mut => {
-            lexer_next_token(lexer);
+fn parse_pattern(lexer: &mut RLexer) -> RAstPattern {
+    match rLexer_current_token(lexer) {
+        RToken::Literal(literal) => {
+            let pattern: RAstPattern = RAstPattern::Literal(match literal {
+                RLiteral::Int(value) => RAstPatternLiteral::Int(*value),
+                RLiteral::Char(value) => RAstPatternLiteral::Char(*value),
+                RLiteral::Bool(value) => RAstPatternLiteral::Bool(*value),
+                RLiteral::String(_) => {
+                    parse_error(lexer, &string("matching on string literals is unsupported"))
+                },
+            });
+            rLexer_next_token(lexer);
+            pattern
+        },
+        RToken::Mut => {
+            rLexer_next_token(lexer);
             let identifier: String = expect_identifier(lexer);
             RAstPattern::Identifier(true, identifier)
         },
-        Token::Identifier(_) => {
+        RToken::Identifier(_) => {
             let identifier: String = expect_identifier(lexer);
 
             if string_eq(&identifier, &string("_")) {
                 RAstPattern::Wildcard
-            } else if lexer_try_consume(lexer, &Token::DoubleColon) {
+            } else if rLexer_try_consume(lexer, &RToken::DoubleColon) {
                 let variant_name: String = expect_identifier(lexer);
 
                 let mut fields: Vec<RAstPattern> = vec_new::<RAstPattern>();
-                if lexer_try_consume(lexer, &Token::LParen) {
-                    if not(lexer_current_token_eq(lexer, &Token::RParen)) {
+                if rLexer_try_consume(lexer, &RToken::LParen) {
+                    if not(rLexer_current_token_eq(lexer, &RToken::RParen)) {
                         let pattern: RAstPattern = parse_pattern(lexer);
                         vec_push::<RAstPattern>(&mut fields, pattern);
 
                         while and(
-                            lexer_try_consume(lexer, &Token::Comma),
-                            not(lexer_current_token_eq(lexer, &Token::RParen)),
+                            rLexer_try_consume(lexer, &RToken::Comma),
+                            not(rLexer_current_token_eq(lexer, &RToken::RParen)),
                         ) {
                             let pattern: RAstPattern = parse_pattern(lexer);
                             vec_push::<RAstPattern>(&mut fields, pattern);
                         }
                     }
-                    expect_token(lexer, &Token::RParen);
+                    expect_token(lexer, &RToken::RParen);
                 }
 
                 RAstPattern::EnumVariant(identifier, variant_name, fields)
@@ -1483,55 +1480,35 @@ fn parse_pattern(lexer: &mut Lexer) -> RAstPattern {
     }
 }
 
-fn parse_call(lexer: &mut Lexer, callee: RAstPath) -> RAstExpr {
-    expect_token(lexer, &Token::LParen);
+fn parse_call(lexer: &mut RLexer, callee: RAstPath) -> RAstExpr {
+    expect_token(lexer, &RToken::LParen);
 
     let mut arguments: Vec<RAstExpr> = vec_new::<RAstExpr>();
-    if not(lexer_current_token_eq(lexer, &Token::RParen)) {
+    if not(rLexer_current_token_eq(lexer, &RToken::RParen)) {
         let first_argument: RAstExpr = parse_expression(lexer);
         vec_push::<RAstExpr>(&mut arguments, first_argument);
 
         while and(
-            lexer_try_consume(lexer, &Token::Comma),
-            not(lexer_current_token_eq(lexer, &Token::RParen)),
+            rLexer_try_consume(lexer, &RToken::Comma),
+            not(rLexer_current_token_eq(lexer, &RToken::RParen)),
         ) {
             let argument: RAstExpr = parse_expression(lexer);
             vec_push::<RAstExpr>(&mut arguments, argument);
         }
     }
-    expect_token(lexer, &Token::RParen);
+    expect_token(lexer, &RToken::RParen);
 
     RAstExpr::Call(callee, arguments)
 }
 
-fn parse_path(lexer: &mut Lexer, first_segment: String) -> RAstPath {
+fn parse_path(lexer: &mut RLexer, first_segment: String) -> RAstPath {
     let mut segments: Vec<String> = vec_new::<String>();
     vec_push::<String>(&mut segments, first_segment);
-    while lexer_try_consume(lexer, &Token::DoubleColon) {
+    while rLexer_try_consume(lexer, &RToken::DoubleColon) {
         let segment: String = expect_identifier(lexer);
         vec_push::<String>(&mut segments, segment);
     }
     RAstPath::Path(segments)
-}
-
-fn parse_literal(lexer: &mut Lexer) -> RAstLiteral {
-    match lexer_current_token(lexer) {
-        Token::Literal(literal) => {
-            let literal: RAstLiteral = match literal {
-                Literal::Int(value) => RAstLiteral::Int(*value),
-                Literal::String(value) => RAstLiteral::String(string_clone(value)),
-                Literal::Char(value) => RAstLiteral::Char(*value),
-                Literal::Bool(value) => RAstLiteral::Bool(*value),
-            };
-            lexer_next_token(lexer);
-            literal
-        },
-        token => {
-            let mut message: String = string("expected literal, but got: ");
-            string_push_string(&mut message, &token_to_string(token));
-            parse_error(lexer, &message);
-        },
-    }
 }
 
 // TODO: This should be shorter. E.g. add a name to FnSignature, which can be used in the AST.
@@ -1543,17 +1520,17 @@ fn collect_items(ast: &RAst) -> StringMap<Item> {
     while i < vec_len::<RAstItem>(ast_items) {
         match vec_at::<RAstItem>(ast_items, i) {
             RAstItem::Function(RAstFunction::Function(is_unsafe, name, params, return_type, _)) => {
-                let mut param_types: Vec<RAstType> = vec_new::<RAstType>();
+                let mut param_types: Vec<RType> = vec_new::<RType>();
                 let mut param_index: usize = 0;
                 while param_index < vec_len::<RAstVariable>(params) {
                     let RAstVariable::Variable(_, parameter_type): &RAstVariable =
                         vec_at::<RAstVariable>(params, param_index);
-                    vec_push::<RAstType>(&mut param_types, rAstType_clone(parameter_type));
+                    vec_push::<RType>(&mut param_types, rType_clone(parameter_type));
                     param_index = param_index + 1;
                 }
 
                 let signature: FnSignature =
-                    FnSignature::Fn(param_types, rAstType_clone(return_type), *is_unsafe);
+                    FnSignature::Fn(param_types, rType_clone(return_type), *is_unsafe);
                 stringMap_insert::<Item>(&mut items, string_clone(name), Item::Function(signature));
             },
             RAstItem::Enum(enum_item) => {
@@ -1565,11 +1542,11 @@ fn collect_items(ast: &RAst) -> StringMap<Item> {
                     let variant: &RAstVariant = vec_at::<RAstVariant>(variants, i);
                     let RAstVariant::Variant(variant_name, fields): &RAstVariant = variant;
 
-                    let mut cloned_fields: Vec<RAstType> = vec_new::<RAstType>();
+                    let mut cloned_fields: Vec<RType> = vec_new::<RType>();
                     let mut field_index: usize = 0;
-                    while field_index < vec_len::<RAstType>(fields) {
-                        let field_type: &RAstType = vec_at::<RAstType>(fields, field_index);
-                        vec_push::<RAstType>(&mut cloned_fields, rAstType_clone(field_type));
+                    while field_index < vec_len::<RType>(fields) {
+                        let field_type: &RType = vec_at::<RType>(fields, field_index);
+                        vec_push::<RType>(&mut cloned_fields, rType_clone(field_type));
                         field_index = field_index + 1;
                     }
                     vec_push::<RAstVariant>(
@@ -1589,17 +1566,17 @@ fn collect_items(ast: &RAst) -> StringMap<Item> {
                     let RAstExternFunction::ExternFunction(name, params, return_type): &RAstExternFunction =
                         function;
 
-                    let mut param_types: Vec<RAstType> = vec_new::<RAstType>();
+                    let mut param_types: Vec<RType> = vec_new::<RType>();
                     let mut param_index: usize = 0;
                     while param_index < vec_len::<RAstVariable>(params) {
                         let RAstVariable::Variable(_, parameter_type): &RAstVariable =
                             vec_at::<RAstVariable>(params, param_index);
-                        vec_push::<RAstType>(&mut param_types, rAstType_clone(parameter_type));
+                        vec_push::<RType>(&mut param_types, rType_clone(parameter_type));
                         param_index = param_index + 1;
                     }
 
                     let signature: FnSignature =
-                        FnSignature::Fn(param_types, rAstType_clone(return_type), true);
+                        FnSignature::Fn(param_types, rType_clone(return_type), true);
                     stringMap_insert::<Item>(
                         &mut items,
                         string_clone(name),
@@ -1617,11 +1594,11 @@ fn collect_items(ast: &RAst) -> StringMap<Item> {
 /// Semantic analysis state.
 enum Semantic {
     /// global items, local symbol table, current function return type, unsafe context depth
-    Semantic(StringMap<Item>, StringMapStack<Variable>, RAstType, usize),
+    Semantic(StringMap<Item>, StringMapStack<Variable>, RType, usize),
 }
 
 fn semantic_new(items: StringMap<Item>) -> Semantic {
-    Semantic::Semantic(items, stringMapStack_new::<Variable>(), RAstType::Unit, 0)
+    Semantic::Semantic(items, stringMapStack_new::<Variable>(), RType::Unit, 0)
 }
 
 fn semantic_globals(Semantic::Semantic(globals, _, _, _): &Semantic) -> &StringMap<Item> {
@@ -1642,12 +1619,12 @@ fn semantic_locals_mut(semantic: &mut Semantic) -> &mut StringMapStack<Variable>
     locals
 }
 
-fn semantic_current_fn_return_type(semantic: &Semantic) -> &RAstType {
+fn semantic_current_fn_return_type(semantic: &Semantic) -> &RType {
     let Semantic::Semantic(_, _, return_type, _): &Semantic = semantic;
     return_type
 }
 
-fn semantic_set_current_fn_return_type(semantic: &mut Semantic, ty: RAstType) {
+fn semantic_set_current_fn_return_type(semantic: &mut Semantic, ty: RType) {
     let Semantic::Semantic(_, _, return_type, _): &mut Semantic = semantic;
     *return_type = ty;
 }
@@ -1691,8 +1668,8 @@ fn semantic_check_run(ast: &RAst, items: StringMap<Item>) -> StringMap<Item> {
 }
 
 /// Check if the given types are equal, otherwise throw an error.
-fn semantic_expect_exact_type_match(left: &RAstType, right: &RAstType) {
-    if not(rAstType_eq(left, right)) {
+fn semantic_expect_type_match(left: &RType, right: &RType) {
+    if not(rType_eq(left, right)) {
         semantic_check_error("types do not match perfectly");
     }
 }
@@ -1703,20 +1680,20 @@ fn semantic_expect_exact_type_match(left: &RAstType, right: &RAstType) {
 /// 1. a == b
 /// 2. a == Never
 /// 3. b == Never
-fn semantic_expect_rough_type_match(left: &RAstType, right: &RAstType) {
+fn semantic_expect_coerced_type_match(left: &RType, right: &RType) {
     if not(type_matches(left, right)) {
         semantic_check_error("type mismatch");
     }
 }
 
-fn semantic_expect_numeric_type(ty: &RAstType) {
-    if not(rAstType_is_numeric(ty)) {
+fn semantic_expect_numeric_type(ty: &RType) {
+    if not(rType_is_numeric(ty)) {
         semantic_check_error("expected numeric type");
     }
 }
 
-fn semantic_expect_bool_type(ty: &RAstType) {
-    if not(rAstType_eq(ty, &RAstType::Bool)) {
+fn semantic_expect_bool_type(ty: &RType) {
+    if not(rType_eq(ty, &RType::Bool)) {
         semantic_check_error("expected bool type");
     }
 }
@@ -1726,7 +1703,7 @@ fn semantic_lookup_variable(semantic: &Semantic, name: &String) -> Option<Variab
     match stringMapStack_lookup::<Variable>(semantic_locals(semantic), name) {
         Option::Some(entry) => {
             let Variable::Variable(variable_type, mutable) = entry;
-            Option::Some(Variable::Variable(rAstType_clone(variable_type), *mutable))
+            Option::Some(Variable::Variable(rType_clone(variable_type), *mutable))
         },
         Option::None => Option::None,
     }
@@ -1756,7 +1733,7 @@ fn semantic_leave_scope(semantic: &mut Semantic) -> bool {
 fn semantic_insert_variable(
     semantic: &mut Semantic,
     name: String,
-    variable_type: RAstType,
+    variable_type: RType,
     mutable: bool,
 ) -> bool {
     stringMapStack_insert::<Variable>(
@@ -1769,7 +1746,7 @@ fn semantic_insert_variable(
 /// Local variable entry.
 enum Variable {
     /// type, is mutable
-    Variable(RAstType, bool),
+    Variable(RType, bool),
 }
 
 /// A global item, i.e. either a function or an enum.
@@ -1781,7 +1758,7 @@ enum Item {
 /// A type that represents the (type) signature of a function.
 enum FnSignature {
     /// parameter types, return type, is unsafe
-    Fn(Vec<RAstType>, RAstType, bool),
+    Fn(Vec<RType>, RType, bool),
 }
 
 /// Different operations that can be done when casting a value.
@@ -1807,37 +1784,37 @@ enum CastOperation {
 
 /// Return the CastOperation that is applicable from `left_type` to `right_type` for Rust AST types.
 /// See documentation of CastOperation for more details.
-fn castOperation_get_cast_operation(left_type: &RAstType, right_type: &RAstType) -> CastOperation {
-    if rAstType_eq(left_type, right_type) {
+fn castOperation_get_cast_operation(left_type: &RType, right_type: &RType) -> CastOperation {
+    if rType_eq(left_type, right_type) {
         return CastOperation::None;
     }
 
     match left_type {
-        RAstType::U8 => match right_type {
-            RAstType::Usize => CastOperation::ZeroExtend,
-            RAstType::Char => CastOperation::None,
+        RType::U8 => match right_type {
+            RType::Usize => CastOperation::ZeroExtend,
+            RType::Char => CastOperation::None,
             _ => CastOperation::Invalid,
         },
-        RAstType::Usize => match right_type {
-            RAstType::U8 => CastOperation::Truncate,
-            RAstType::RawPointerMut(_) => CastOperation::IntToPtr,
+        RType::Usize => match right_type {
+            RType::U8 => CastOperation::Truncate,
+            RType::RawPointerMut(_) => CastOperation::IntToPtr,
             _ => CastOperation::Invalid,
         },
-        RAstType::Bool => match right_type {
-            RAstType::U8 | RAstType::Usize => CastOperation::ZeroExtend,
+        RType::Bool => match right_type {
+            RType::U8 | RType::Usize => CastOperation::ZeroExtend,
             _ => CastOperation::Invalid,
         },
-        RAstType::Char => match right_type {
-            RAstType::Usize => CastOperation::ZeroExtend,
-            RAstType::U8 => CastOperation::None,
+        RType::Char => match right_type {
+            RType::Usize => CastOperation::ZeroExtend,
+            RType::U8 => CastOperation::None,
             _ => CastOperation::Invalid,
         },
-        RAstType::Reference(left_inner, mutable) => match right_type {
-            RAstType::RawPointerMut(right_inner) => {
+        RType::Reference(left_inner, mutable) => match right_type {
+            RType::RawPointerMut(right_inner) => {
                 if and(
-                    rAstType_eq(
-                        box_deref::<RAstType>(left_inner),
-                        box_deref::<RAstType>(right_inner),
+                    rType_eq(
+                        box_deref::<RType>(left_inner),
+                        box_deref::<RType>(right_inner),
                     ),
                     *mutable,
                 ) {
@@ -1848,9 +1825,9 @@ fn castOperation_get_cast_operation(left_type: &RAstType, right_type: &RAstType)
             },
             _ => CastOperation::Invalid,
         },
-        RAstType::RawPointerMut(_) => match right_type {
-            RAstType::RawPointerMut(_) => CastOperation::None,
-            RAstType::Usize => CastOperation::PtrToInt,
+        RType::RawPointerMut(_) => match right_type {
+            RType::RawPointerMut(_) => CastOperation::None,
+            RType::Usize => CastOperation::PtrToInt,
             _ => CastOperation::Invalid,
         },
         _ => CastOperation::Invalid,
@@ -1882,7 +1859,7 @@ fn semantic_check_function(semantic: &mut Semantic, function: &RAstFunction) {
     let RAstFunction::Function(is_unsafe, _, parameters, return_type, body): &RAstFunction =
         function;
 
-    semantic_set_current_fn_return_type(semantic, rAstType_clone(return_type));
+    semantic_set_current_fn_return_type(semantic, rType_clone(return_type));
     semantic_enter_scope(semantic);
 
     let mut i: usize = 0;
@@ -1896,7 +1873,7 @@ fn semantic_check_function(semantic: &mut Semantic, function: &RAstFunction) {
                 let already_used: bool = semantic_insert_variable(
                     semantic,
                     string_clone(name),
-                    rAstType_clone(parameter_type),
+                    rType_clone(parameter_type),
                     *is_mutable,
                 );
                 if already_used {
@@ -1908,22 +1885,22 @@ fn semantic_check_function(semantic: &mut Semantic, function: &RAstFunction) {
         i = i + 1;
     }
 
-    let block_type: RAstType = semantic_check_block(semantic, body, *is_unsafe);
-    semantic_expect_rough_type_match(&block_type, return_type);
+    let block_type: RType = semantic_check_block(semantic, body, *is_unsafe);
+    semantic_expect_coerced_type_match(&block_type, return_type);
 
     semantic_leave_scope(semantic);
-    semantic_set_current_fn_return_type(semantic, RAstType::Unit);
+    semantic_set_current_fn_return_type(semantic, RType::Unit);
 }
 
 /// Analyze one block and return its resulting type.
-fn semantic_check_block(semantic: &mut Semantic, block: &RAstBlock, is_unsafe: bool) -> RAstType {
+fn semantic_check_block(semantic: &mut Semantic, block: &RAstBlock, is_unsafe: bool) -> RType {
     let RAstBlock::Block(statements, tail): &RAstBlock = block;
     if is_unsafe {
         semantic_push_unsafe_context(semantic);
     }
     semantic_enter_scope(semantic);
 
-    let mut statement_flow_type: RAstType = RAstType::Unit;
+    let mut statement_flow_type: RType = RType::Unit;
     let mut i: usize = 0;
     let len: usize = vec_len::<RAstStatement>(statements);
     while i < len {
@@ -1933,25 +1910,25 @@ fn semantic_check_block(semantic: &mut Semantic, block: &RAstBlock, is_unsafe: b
                 semantic_check_binding(semantic, variable, box_deref::<RAstExpr>(value));
             },
             RAstStatement::Expression(expression) => {
-                let ty: RAstType =
+                let ty: RType =
                     semantic_check_expression(semantic, box_deref::<RAstExpr>(expression));
-                if rAstType_eq(&ty, &RAstType::Never) {
-                    statement_flow_type = RAstType::Never;
+                if rType_eq(&ty, &RType::Never) {
+                    statement_flow_type = RType::Never;
                 }
             },
         }
         i = i + 1;
     }
 
-    let mut block_type: RAstType = match tail {
+    let mut block_type: RType = match tail {
         Option::Some(expression) => {
             semantic_check_expression(semantic, box_deref::<RAstExpr>(expression))
         },
-        Option::None => RAstType::Unit,
+        Option::None => RType::Unit,
     };
 
-    if rAstType_eq(&statement_flow_type, &RAstType::Never) {
-        block_type = RAstType::Never;
+    if rType_eq(&statement_flow_type, &RType::Never) {
+        block_type = RType::Never;
     }
 
     if is_unsafe {
@@ -1964,8 +1941,8 @@ fn semantic_check_block(semantic: &mut Semantic, block: &RAstBlock, is_unsafe: b
 /// Analyze one let-binding statement.
 fn semantic_check_binding(semantic: &mut Semantic, variable: &RAstVariable, value: &RAstExpr) {
     let RAstVariable::Variable(pattern, binding_type): &RAstVariable = variable;
-    let actual_type: RAstType = semantic_check_expression(semantic, value);
-    semantic_expect_exact_type_match(binding_type, &actual_type);
+    let actual_type: RType = semantic_check_expression(semantic, value);
+    semantic_expect_type_match(binding_type, &actual_type);
 
     match pattern {
         RAstPattern::Identifier(is_mutable, lvalue_name) => {
@@ -1973,7 +1950,7 @@ fn semantic_check_binding(semantic: &mut Semantic, variable: &RAstVariable, valu
             let _ = semantic_insert_variable(
                 semantic,
                 string_clone(lvalue_name),
-                rAstType_clone(binding_type),
+                rType_clone(binding_type),
                 *is_mutable,
             );
         },
@@ -1982,7 +1959,7 @@ fn semantic_check_binding(semantic: &mut Semantic, variable: &RAstVariable, valu
 }
 
 /// Analyze one expression and return its type.
-fn semantic_check_expression(semantic: &mut Semantic, expression: &RAstExpr) -> RAstType {
+fn semantic_check_expression(semantic: &mut Semantic, expression: &RAstExpr) -> RType {
     match expression {
         RAstExpr::Return(returned) => semantic_check_return(semantic, returned),
         RAstExpr::Assign(left, right) => semantic_check_assignment(
@@ -2002,7 +1979,7 @@ fn semantic_check_expression(semantic: &mut Semantic, expression: &RAstExpr) -> 
         RAstExpr::Unary(operator, value) => {
             semantic_check_unary_op(semantic, operator, box_deref::<RAstExpr>(value))
         },
-        RAstExpr::Literal(literal) => rastLiteral_type(literal),
+        RAstExpr::Literal(literal) => rLiteral_type(literal),
         RAstExpr::VariableUse(name) => semantic_check_variable_use(semantic, name),
         RAstExpr::Call(callee, arguments) => semantic_check_call(semantic, callee, arguments),
         RAstExpr::Block(is_unsafe, block) => semantic_check_block(semantic, block, *is_unsafe),
@@ -2016,38 +1993,27 @@ fn semantic_check_expression(semantic: &mut Semantic, expression: &RAstExpr) -> 
     }
 }
 
-fn semantic_check_return(semantic: &mut Semantic, returned: &Option<Box<RAstExpr>>) -> RAstType {
+fn semantic_check_return(semantic: &mut Semantic, returned: &Option<Box<RAstExpr>>) -> RType {
     match returned {
         Option::Some(expression) => {
-            let ty: RAstType =
-                semantic_check_expression(semantic, box_deref::<RAstExpr>(expression));
-            semantic_expect_exact_type_match(&ty, semantic_current_fn_return_type(semantic));
+            let ty: RType = semantic_check_expression(semantic, box_deref::<RAstExpr>(expression));
+            semantic_expect_type_match(&ty, semantic_current_fn_return_type(semantic));
         },
         Option::None => {
-            semantic_expect_exact_type_match(
-                &RAstType::Unit,
-                semantic_current_fn_return_type(semantic),
-            );
+            semantic_expect_type_match(&RType::Unit, semantic_current_fn_return_type(semantic));
         },
     }
-    RAstType::Never
+    RType::Never
 }
 
-fn semantic_check_assignment(
-    semantic: &mut Semantic,
-    left: &RAstExpr,
-    right: &RAstExpr,
-) -> RAstType {
-    let right_type: RAstType = semantic_check_expression(semantic, right);
-    let left_type: RAstType = semantic_check_assignment_lvalue_type(semantic, left);
-    semantic_expect_exact_type_match(&left_type, &right_type);
-    RAstType::Unit
+fn semantic_check_assignment(semantic: &mut Semantic, left: &RAstExpr, right: &RAstExpr) -> RType {
+    let right_type: RType = semantic_check_expression(semantic, right);
+    let left_type: RType = semantic_check_assignment_lvalue_type(semantic, left);
+    semantic_expect_type_match(&left_type, &right_type);
+    RType::Unit
 }
 
-fn semantic_check_assignment_lvalue_type(
-    semantic: &mut Semantic,
-    expression: &RAstExpr,
-) -> RAstType {
+fn semantic_check_assignment_lvalue_type(semantic: &mut Semantic, expression: &RAstExpr) -> RType {
     match expression {
         RAstExpr::VariableUse(name) => match semantic_lookup_variable(semantic, name) {
             Option::Some(Variable::Variable(variable_type, mutable)) => {
@@ -2059,20 +2025,20 @@ fn semantic_check_assignment_lvalue_type(
             Option::None => semantic_check_error("undefined variable"),
         },
         RAstExpr::Unary(RAstUnaryOp::Dereference, value) => {
-            let pointer_type: RAstType =
+            let pointer_type: RType =
                 semantic_check_expression(semantic, box_deref::<RAstExpr>(value));
             match pointer_type {
-                RAstType::Reference(inner, mutable) => {
+                RType::Reference(inner, mutable) => {
                     if not(mutable) {
                         semantic_check_error("invalid assignment using immutable reference");
                     }
-                    rAstType_clone(box_deref::<RAstType>(&inner))
+                    rType_clone(box_deref::<RType>(&inner))
                 },
-                RAstType::RawPointerMut(inner) => {
+                RType::RawPointerMut(inner) => {
                     if not(semantic_is_unsafe_context(semantic)) {
                         semantic_check_error("raw pointer dereference requires unsafe");
                     }
-                    rAstType_clone(box_deref::<RAstType>(&inner))
+                    rType_clone(box_deref::<RType>(&inner))
                 },
                 _ => semantic_check_error("invalid assignment to an expression"),
             }
@@ -2086,25 +2052,25 @@ fn semantic_check_binary_op(
     operator: &RAstBinaryOp,
     left: &RAstExpr,
     right: &RAstExpr,
-) -> RAstType {
-    let left_type: RAstType = semantic_check_expression(semantic, left);
-    let right_type: RAstType = semantic_check_expression(semantic, right);
-    semantic_expect_exact_type_match(&left_type, &right_type);
+) -> RType {
+    let left_type: RType = semantic_check_expression(semantic, left);
+    let right_type: RType = semantic_check_expression(semantic, right);
+    semantic_expect_type_match(&left_type, &right_type);
 
     match operator {
         RAstBinaryOp::Arithmetic(_) => {
             semantic_expect_numeric_type(&left_type);
             left_type
         },
-        RAstBinaryOp::Comparison(_) => RAstType::Bool,
+        RAstBinaryOp::Comparison(_) => RType::Bool,
     }
 }
 
-fn semantic_check_cast(semantic: &mut Semantic, value: &RAstExpr, to_type: &RAstType) -> RAstType {
-    let from_type: RAstType = semantic_check_expression(semantic, value);
+fn semantic_check_cast(semantic: &mut Semantic, value: &RAstExpr, to_type: &RType) -> RType {
+    let from_type: RType = semantic_check_expression(semantic, value);
     match castOperation_get_cast_operation(&from_type, to_type) {
         CastOperation::Invalid => semantic_check_error("invalid cast"),
-        _ => rAstType_clone(to_type),
+        _ => rType_clone(to_type),
     }
 }
 
@@ -2112,7 +2078,7 @@ fn semantic_check_unary_op(
     semantic: &mut Semantic,
     operator: &RAstUnaryOp,
     value: &RAstExpr,
-) -> RAstType {
+) -> RType {
     match operator {
         RAstUnaryOp::Reference(mutable_ref) => match value {
             RAstExpr::VariableUse(name) => match semantic_lookup_variable(semantic, name) {
@@ -2120,24 +2086,24 @@ fn semantic_check_unary_op(
                     if and(*mutable_ref, not(mutable_var)) {
                         semantic_check_error("cannot take mutable reference to immutable variable");
                     }
-                    RAstType::Reference(box_new::<RAstType>(ty), *mutable_ref)
+                    RType::Reference(box_new::<RType>(ty), *mutable_ref)
                 },
                 _ => semantic_check_error("undefined variable"),
             },
             _ => {
-                let ty: RAstType = semantic_check_expression(semantic, value);
-                RAstType::Reference(box_new::<RAstType>(ty), *mutable_ref)
+                let ty: RType = semantic_check_expression(semantic, value);
+                RType::Reference(box_new::<RType>(ty), *mutable_ref)
             },
         },
         RAstUnaryOp::Dereference => {
-            let ty: RAstType = semantic_check_expression(semantic, value);
+            let ty: RType = semantic_check_expression(semantic, value);
             match ty {
-                RAstType::Reference(pointed, _) => rAstType_clone(box_deref::<RAstType>(&pointed)),
-                RAstType::RawPointerMut(pointed) => {
+                RType::Reference(pointed, _) => rType_clone(box_deref::<RType>(&pointed)),
+                RType::RawPointerMut(pointed) => {
                     if not(semantic_is_unsafe_context(semantic)) {
                         semantic_check_error("raw pointer dereference requires unsafe context");
                     }
-                    rAstType_clone(box_deref::<RAstType>(&pointed))
+                    rType_clone(box_deref::<RType>(&pointed))
                 },
                 _ => semantic_check_error("cannot dereference this expression"),
             }
@@ -2145,7 +2111,7 @@ fn semantic_check_unary_op(
     }
 }
 
-fn semantic_check_variable_use(semantic: &mut Semantic, name: &String) -> RAstType {
+fn semantic_check_variable_use(semantic: &mut Semantic, name: &String) -> RType {
     match semantic_lookup_variable(semantic, name) {
         Option::Some(Variable::Variable(ty, _)) => ty,
         _ => semantic_check_error("undefined variable"),
@@ -2156,7 +2122,7 @@ fn semantic_check_call(
     semantic: &mut Semantic,
     callee: &RAstPath,
     arguments: &Vec<RAstExpr>,
-) -> RAstType {
+) -> RType {
     let function_name: String = rAstPath_to_string(callee);
 
     let FnSignature::Fn(parameter_types, return_type, is_unsafe): FnSignature =
@@ -2172,11 +2138,11 @@ fn semantic_check_call(
     let mut i: usize = 0;
     while i < vec_len::<RAstExpr>(arguments) {
         let argument: &RAstExpr = vec_at::<RAstExpr>(arguments, i);
-        let arg_type: RAstType = semantic_check_expression(semantic, argument);
+        let arg_type: RType = semantic_check_expression(semantic, argument);
 
-        match vec_get::<RAstType>(&parameter_types, i) {
+        match vec_get::<RType>(&parameter_types, i) {
             Option::Some(ty) => {
-                semantic_expect_exact_type_match(ty, &arg_type);
+                semantic_expect_type_match(ty, &arg_type);
             },
             _ => {
                 semantic_check_error("function call has more arguments than there are parameters");
@@ -2189,52 +2155,44 @@ fn semantic_check_call(
     return_type
 }
 
-fn semantic_check_if(semantic: &mut Semantic, if_expression: &RAstIf) -> RAstType {
+fn semantic_check_if(semantic: &mut Semantic, if_expression: &RAstIf) -> RType {
     let RAstIf::If(condition, then_block, else_branch): &RAstIf = if_expression;
-    let condition_type: RAstType =
+    let condition_type: RType =
         semantic_check_expression(semantic, box_deref::<RAstExpr>(condition));
     semantic_expect_bool_type(&condition_type);
 
-    let then_type: RAstType = semantic_check_block(semantic, then_block, false);
+    let then_type: RType = semantic_check_block(semantic, then_block, false);
     match else_branch {
         Option::Some(else_branch) => {
-            let else_type: RAstType = match else_branch {
+            let else_type: RType = match else_branch {
                 RAstElse::If(nested_if) => {
                     semantic_check_if(semantic, box_deref::<RAstIf>(nested_if))
                 },
                 RAstElse::Block(block) => semantic_check_block(semantic, block, false),
             };
-            semantic_expect_rough_type_match(&then_type, &else_type);
+            semantic_expect_coerced_type_match(&then_type, &else_type);
 
-            rAstType_coerce(then_type, else_type)
+            rType_coerce(then_type, else_type)
         },
-        Option::None => RAstType::Unit,
+        Option::None => RType::Unit,
     }
 }
 
-fn semantic_check_while(
-    semantic: &mut Semantic,
-    condition: &RAstExpr,
-    body: &RAstBlock,
-) -> RAstType {
-    let condition_type: RAstType = semantic_check_expression(semantic, condition);
+fn semantic_check_while(semantic: &mut Semantic, condition: &RAstExpr, body: &RAstBlock) -> RType {
+    let condition_type: RType = semantic_check_expression(semantic, condition);
     semantic_expect_bool_type(&condition_type);
-    let body_type: RAstType = semantic_check_block(semantic, body, false);
-    semantic_expect_rough_type_match(&RAstType::Unit, &body_type);
-    RAstType::Unit
+    let body_type: RType = semantic_check_block(semantic, body, false);
+    semantic_expect_coerced_type_match(&RType::Unit, &body_type);
+    RType::Unit
 }
 
-fn semantic_check_match(
-    semantic: &mut Semantic,
-    value: &RAstExpr,
-    arms: &Vec<RAstArm>,
-) -> RAstType {
+fn semantic_check_match(semantic: &mut Semantic, value: &RAstExpr, arms: &Vec<RAstArm>) -> RType {
     if vec_len::<RAstArm>(arms) == 0 {
         semantic_check_error("match requires at least one arm");
     }
 
-    let expr_type: RAstType = semantic_check_expression(semantic, value);
-    let mut return_type: RAstType = RAstType::Never;
+    let expr_type: RType = semantic_check_expression(semantic, value);
+    let mut return_type: RType = RType::Never;
 
     let mut i: usize = 0;
     while i < vec_len::<RAstArm>(arms) {
@@ -2260,33 +2218,33 @@ fn semantic_check_match(
             j = j + 1;
         }
 
-        let arm_type: RAstType = semantic_check_expression(semantic, expression);
-        semantic_expect_rough_type_match(&return_type, &arm_type);
+        let arm_type: RType = semantic_check_expression(semantic, expression);
+        semantic_expect_coerced_type_match(&return_type, &arm_type);
 
-        return_type = rAstType_coerce(return_type, arm_type);
+        return_type = rType_coerce(return_type, arm_type);
         i = i + 1;
     }
     return_type
 }
 
-fn semantic_check_pattern(pattern: &RAstPattern, expression_type: &RAstType) {
-    let pattern_type: RAstType = match pattern {
+fn semantic_check_pattern(pattern: &RAstPattern, expression_type: &RType) {
+    let pattern_type: RType = match pattern {
         RAstPattern::Literal(literal) => match literal {
             RAstPatternLiteral::Int(_) => {
-                if rAstType_is_numeric(expression_type) {
+                if rType_is_numeric(expression_type) {
                     return; // numeric expression matches on numeric pattern
                 } else {
-                    RAstType::Usize
+                    RType::Usize
                 }
             },
-            RAstPatternLiteral::Char(_) => RAstType::Char,
-            RAstPatternLiteral::Bool(_) => RAstType::Bool,
+            RAstPatternLiteral::Char(_) => RType::Char,
+            RAstPatternLiteral::Bool(_) => RType::Bool,
         },
         RAstPattern::Identifier(_, _) | RAstPattern::Wildcard => return, // type agnostic
-        RAstPattern::EnumVariant(enum_name, _, _) => RAstType::Custom(string_clone(enum_name)),
+        RAstPattern::EnumVariant(enum_name, _, _) => RType::Custom(string_clone(enum_name)),
     };
 
-    semantic_expect_exact_type_match(&pattern_type, &expression_type);
+    semantic_expect_type_match(&pattern_type, &expression_type);
 }
 
 // -----------------------------------------------------------------
@@ -2335,7 +2293,7 @@ fn codegen_pop_scope(Codegen::Codegen(_, _, _, stack, _): &mut Codegen) -> bool 
 }
 
 /// Insert one variable slot into the current scope.
-fn codegen_scope_insert(codegen: &mut Codegen, name: String, ty: RAstType, pointer_name: String) {
+fn codegen_scope_insert(codegen: &mut Codegen, name: String, ty: RType, pointer_name: String) {
     let Codegen::Codegen(_, _, _, stack, _): &mut Codegen = codegen;
     let _ = stringMapStack_insert::<STPair>(stack, name, STPair::ST(pointer_name, ty));
 }
@@ -2344,7 +2302,7 @@ fn codegen_scope_insert(codegen: &mut Codegen, name: String, ty: RAstType, point
 fn codegen_scope_lookup(Codegen::Codegen(_, _, _, stack, _): &Codegen, name: &String) -> STPair {
     match stringMapStack_lookup::<STPair>(stack, name) {
         Option::Some(variable) => stPair_clone(variable),
-        Option::None => STPair::ST(string_new(), RAstType::Unit), // should not be reachable
+        Option::None => STPair::ST(string_new(), RType::Unit), // should not be reachable
     }
 }
 
@@ -2389,7 +2347,7 @@ fn codegen_next_label(codegen: &mut Codegen, suffix: &str) -> String {
 
 /// Pair that contains a String and a Rust Type
 enum STPair {
-    ST(String, RAstType),
+    ST(String, RType),
 }
 
 /// Emit LLVM-IR for a full Rust AST.
@@ -2433,13 +2391,13 @@ fn codegen_function(codegen: &mut Codegen, function: &RAstFunction) {
     let llvm_return_type: String = if string_eq(function_name, &string("main")) {
         codegen_mark_as_main(codegen, true);
 
-        if rAstType_eq(&return_type, &RAstType::Unit) {
+        if rType_eq(&return_type, &RType::Unit) {
             string("i64")
         } else {
-            rAstType_to_llvm_name(&return_type)
+            rType_to_llvm_name(&return_type)
         }
     } else {
-        rAstType_to_llvm_name(&return_type)
+        rType_to_llvm_name(&return_type)
     };
 
     codegen_emit_function_header(codegen, function_name, &llvm_return_type, parameters);
@@ -2459,7 +2417,7 @@ fn codegen_function(codegen: &mut Codegen, function: &RAstFunction) {
                 codegen_emit_store(codegen, param_type, &param_register, &param_ptr);
 
                 let name: String = string_clone(name);
-                codegen_scope_insert(codegen, name, rAstType_clone(param_type), param_ptr);
+                codegen_scope_insert(codegen, name, rType_clone(param_type), param_ptr);
             },
             _ => {},
         }
@@ -2469,16 +2427,16 @@ fn codegen_function(codegen: &mut Codegen, function: &RAstFunction) {
 
     let STPair::ST(value_name, block_type): STPair = codegen_block(codegen, body);
     match &return_type {
-        RAstType::Unit | RAstType::Never => {
+        RType::Unit | RType::Never => {
             if codegen_is_main(codegen) {
                 // exit with success
-                codegen_emit_ret_value(codegen, &RAstType::Usize, &integer_to_string(0));
+                codegen_emit_ret_value(codegen, &RType::Usize, &integer_to_string(0));
             } else {
                 codegen_emit_ret_void(codegen);
             }
         },
         _ => {
-            if rAstType_eq(&block_type, &RAstType::Never) {
+            if rType_eq(&block_type, &RType::Never) {
                 // return dummy value, it is never reached anyway
                 codegen_emit_ret_value(codegen, &return_type, &integer_to_string(0));
             } else {
@@ -2498,7 +2456,7 @@ fn codegen_block(codegen: &mut Codegen, block: &RAstBlock) -> STPair {
     codegen_push_scope(codegen);
 
     let mut i: usize = 0;
-    let mut block_type: RAstType = RAstType::Unit;
+    let mut block_type: RType = RType::Unit;
     while i < vec_len::<RAstStatement>(statements) {
         let statement: &RAstStatement = vec_at::<RAstStatement>(statements, i);
         match statement {
@@ -2511,9 +2469,9 @@ fn codegen_block(codegen: &mut Codegen, block: &RAstBlock) -> STPair {
                 let STPair::ST(_, ty): STPair =
                     codegen_expression(codegen, box_deref::<RAstExpr>(expression));
 
-                if rAstType_eq(&ty, &RAstType::Never) {
+                if rType_eq(&ty, &RType::Never) {
                     // the rest of the block becomes unreachable, so the block type becomes Never
-                    block_type = RAstType::Never;
+                    block_type = RType::Never;
                 }
             },
         }
@@ -2522,12 +2480,12 @@ fn codegen_block(codegen: &mut Codegen, block: &RAstBlock) -> STPair {
 
     let STPair::ST(name, mut ty) = match tail {
         Option::Some(expression) => codegen_expression(codegen, box_deref::<RAstExpr>(expression)),
-        Option::None => STPair::ST(string_new(), RAstType::Unit),
+        Option::None => STPair::ST(string_new(), RType::Unit),
     };
 
-    if rAstType_eq(&block_type, &RAstType::Never) {
+    if rType_eq(&block_type, &RType::Never) {
         // set type of block to Never to indicate that it doesn't return normally
-        ty = RAstType::Never;
+        ty = RType::Never;
     }
 
     codegen_pop_scope(codegen);
@@ -2547,7 +2505,7 @@ fn codegen_binding(codegen: &mut Codegen, variable: &RAstVariable, value: &RAstE
                 codegen_emit_store(codegen, binding_type, &rvalue_name, &lvalue_pointer);
 
                 let name: String = string_clone(lvalue_name);
-                codegen_scope_insert(codegen, name, rAstType_clone(binding_type), lvalue_pointer);
+                codegen_scope_insert(codegen, name, rType_clone(binding_type), lvalue_pointer);
             }
         },
         _ => {},
@@ -2601,14 +2559,14 @@ fn codegen_return(codegen: &mut Codegen, returned: &Option<Box<RAstExpr>>) -> ST
         // return;
         Option::None => {
             if codegen_is_main(codegen) {
-                codegen_emit_ret_value(codegen, &RAstType::Usize, &string("0"));
+                codegen_emit_ret_value(codegen, &RType::Usize, &string("0"));
             } else {
                 codegen_emit_ret_void(codegen);
             }
         },
     }
 
-    STPair::ST(string_new(), RAstType::Never)
+    STPair::ST(string_new(), RType::Never)
 }
 
 /// Emit LLVM-IR for an assignment expression.
@@ -2617,7 +2575,7 @@ fn codegen_assignment(codegen: &mut Codegen, left: &RAstExpr, right: &RAstExpr) 
     let STPair::ST(pointer_name, left_type): STPair = codegen_assignment_lvalue(codegen, left);
 
     codegen_emit_store(codegen, &left_type, &right_name, &pointer_name);
-    STPair::ST(right_name, RAstType::Unit)
+    STPair::ST(right_name, RType::Unit)
 }
 
 fn codegen_assignment_lvalue(codegen: &mut Codegen, expression: &RAstExpr) -> STPair {
@@ -2629,18 +2587,18 @@ fn codegen_assignment_lvalue(codegen: &mut Codegen, expression: &RAstExpr) -> ST
                 codegen_expression(codegen, box_deref::<RAstExpr>(value));
 
             match pointer_type {
-                RAstType::Reference(inner, _) => {
-                    let ty: RAstType = rAstType_clone(box_deref::<RAstType>(&inner));
+                RType::Reference(inner, _) => {
+                    let ty: RType = rType_clone(box_deref::<RType>(&inner));
                     STPair::ST(pointer_name, ty)
                 },
-                RAstType::RawPointerMut(inner) => {
-                    let ty: RAstType = rAstType_clone(box_deref::<RAstType>(&inner));
+                RType::RawPointerMut(inner) => {
+                    let ty: RType = rType_clone(box_deref::<RType>(&inner));
                     STPair::ST(pointer_name, ty)
                 },
-                _ => STPair::ST(string_new(), RAstType::Unit), // should not be reachable
+                _ => STPair::ST(string_new(), RType::Unit), // should not be reachable
             }
         },
-        _ => STPair::ST(string_new(), RAstType::Unit), // should not be reachable
+        _ => STPair::ST(string_new(), RType::Unit), // should not be reachable
     }
 }
 
@@ -2661,15 +2619,15 @@ fn codegen_binary_op(
         },
         RAstBinaryOp::Comparison(op) => {
             let name: String = codegen_emit_icmp(codegen, op, &op_type, &left_name, &right_name);
-            STPair::ST(name, RAstType::Bool)
+            STPair::ST(name, RType::Bool)
         },
     }
 }
 
 /// Emit LLVM-IR for a cast expression.
-fn codegen_cast(codegen: &mut Codegen, value: &RAstExpr, to_type: &RAstType) -> STPair {
+fn codegen_cast(codegen: &mut Codegen, value: &RAstExpr, to_type: &RType) -> STPair {
     let STPair::ST(from_name, from_type): STPair = codegen_expression(codegen, value);
-    let to_type: RAstType = rAstType_clone(to_type);
+    let to_type: RType = rType_clone(to_type);
 
     match castOperation_get_cast_operation(&from_type, &to_type) {
         CastOperation::ZeroExtend => {
@@ -2701,7 +2659,7 @@ fn codegen_unary_op(codegen: &mut Codegen, operator: &RAstUnaryOp, value: &RAstE
                 let STPair::ST(pointer_name, ty): STPair = codegen_scope_lookup(codegen, name);
                 STPair::ST(
                     pointer_name,
-                    RAstType::Reference(box_new::<RAstType>(ty), *mutable_ref),
+                    RType::Reference(box_new::<RType>(ty), *mutable_ref),
                 )
             },
             _ => {
@@ -2710,17 +2668,17 @@ fn codegen_unary_op(codegen: &mut Codegen, operator: &RAstUnaryOp, value: &RAstE
                 codegen_emit_store(codegen, &ty, &name, &reference);
                 STPair::ST(
                     reference,
-                    RAstType::Reference(box_new::<RAstType>(ty), *mutable_ref),
+                    RType::Reference(box_new::<RType>(ty), *mutable_ref),
                 )
             },
         },
 
         RAstUnaryOp::Dereference => {
             let STPair::ST(name, ty): STPair = codegen_expression(codegen, value);
-            let inner_type: RAstType = match ty {
-                RAstType::Reference(pointed, _) => rAstType_clone(box_deref::<RAstType>(&pointed)),
-                RAstType::RawPointerMut(pointed) => rAstType_clone(box_deref::<RAstType>(&pointed)),
-                _ => RAstType::Unit, // should be unreachable
+            let inner_type: RType = match ty {
+                RType::Reference(pointed, _) => rType_clone(box_deref::<RType>(&pointed)),
+                RType::RawPointerMut(pointed) => rType_clone(box_deref::<RType>(&pointed)),
+                _ => RType::Unit, // should be unreachable
             };
             let name: String = codegen_emit_load(codegen, &inner_type, &name);
             STPair::ST(name, inner_type)
@@ -2729,14 +2687,14 @@ fn codegen_unary_op(codegen: &mut Codegen, operator: &RAstUnaryOp, value: &RAstE
 }
 
 /// Emit LLVM-IR for a literal expression.
-fn codegen_literal(literal: &RAstLiteral) -> STPair {
+fn codegen_literal(literal: &RLiteral) -> STPair {
     match literal {
-        RAstLiteral::Int(value) => STPair::ST(integer_to_string(*value), RAstType::Usize),
-        RAstLiteral::Char(value) => STPair::ST(integer_to_string(*value as usize), RAstType::Char),
-        RAstLiteral::Bool(value) => STPair::ST(integer_to_string(*value as usize), RAstType::Bool),
-        RAstLiteral::String(_) => STPair::ST(
+        RLiteral::Int(value) => STPair::ST(integer_to_string(*value), RType::Usize),
+        RLiteral::Char(value) => STPair::ST(integer_to_string(*value as usize), RType::Char),
+        RLiteral::Bool(value) => STPair::ST(integer_to_string(*value as usize), RType::Bool),
+        RLiteral::String(_) => STPair::ST(
             string_new(),
-            RAstType::Reference(box_new::<RAstType>(RAstType::Custom(string("str"))), false),
+            RType::Reference(box_new::<RType>(RType::Custom(string("str"))), false),
         ),
     }
 }
@@ -2757,7 +2715,7 @@ fn codegen_variable_use(codegen: &mut Codegen, variable_name: &String) -> STPair
 fn codegen_call(codegen: &mut Codegen, callee: &RAstPath, arguments: &Vec<RAstExpr>) -> STPair {
     let function_name: String = rAstPath_to_string(callee);
 
-    let mut arg_types: Vec<RAstType> = vec_new::<RAstType>();
+    let mut arg_types: Vec<RType> = vec_new::<RType>();
     let mut arg_values: Vec<String> = vec_new::<String>();
     let mut i: usize = 0;
     while i < vec_len::<RAstExpr>(arguments) {
@@ -2765,7 +2723,7 @@ fn codegen_call(codegen: &mut Codegen, callee: &RAstPath, arguments: &Vec<RAstEx
 
         let STPair::ST(arg_value, arg_type): STPair = codegen_expression(codegen, argument);
 
-        vec_push::<RAstType>(&mut arg_types, arg_type);
+        vec_push::<RType>(&mut arg_types, arg_type);
         vec_push::<String>(&mut arg_values, arg_value);
         i = i + 1;
     }
@@ -2802,7 +2760,7 @@ fn codegen_if(codegen: &mut Codegen, if_expression: &RAstIf) -> STPair {
 
     // Allocate memory for potential result value, though size is still unknown.
     // In the event that the result type is unit, this instruction will be removed later.
-    let result_pointer: String = codegen_emit_alloca(codegen, &RAstType::Unit, 1);
+    let result_pointer: String = codegen_emit_alloca(codegen, &RType::Unit, 1);
     let alloca_idx: usize = codegen_code_last_index(codegen);
 
     codegen_emit_br_conditional(codegen, &cond, &then_label, &else_label);
@@ -2833,9 +2791,9 @@ fn codegen_if(codegen: &mut Codegen, if_expression: &RAstIf) -> STPair {
                 codegen_emit_store(codegen, &else_type, &else_value, &result_pointer);
             }
 
-            if_type = rAstType_coerce(if_type, else_type);
+            if_type = rType_coerce(if_type, else_type);
         },
-        _ => if_type = RAstType::Unit, // else is implicitly unit, so type of if must be unit
+        _ => if_type = RType::Unit, // else is implicitly unit, so type of if must be unit
     }
 
     // end of else block, so jump to the end
@@ -2885,7 +2843,7 @@ fn codegen_while(codegen: &mut Codegen, condition: &RAstExpr, body: &RAstBlock) 
     // start block of rest of instructions
     codegen_emit_label(codegen, &end_label);
 
-    STPair::ST(string_new(), RAstType::Unit) // while always returns unit
+    STPair::ST(string_new(), RType::Unit) // while always returns unit
 }
 
 /// Emit LLVM-IR for a match expression.
@@ -2896,10 +2854,10 @@ fn codegen_match(codegen: &mut Codegen, value: &RAstExpr, arms: &Vec<RAstArm>) -
 
     // Allocate memory for potential result value, though size is still unknown.
     // In the event that the result type is unit, this instruction will be removed later.
-    let result_pointer: String = codegen_emit_alloca(codegen, &RAstType::Unit, 1);
+    let result_pointer: String = codegen_emit_alloca(codegen, &RType::Unit, 1);
     let alloca_idx: usize = codegen_code_last_index(codegen);
 
-    let mut return_type: RAstType = RAstType::Never; // still unknown, coercing arm types yields correct type
+    let mut return_type: RType = RType::Never; // still unknown, coercing arm types yields correct type
 
     let mut i: usize = 0;
     while i < vec_len::<RAstArm>(arms) {
@@ -2908,7 +2866,7 @@ fn codegen_match(codegen: &mut Codegen, value: &RAstExpr, arms: &Vec<RAstArm>) -
         let is_last_arm: bool = i == vec_len::<RAstArm>(arms) - 1;
         let arm: &RAstArm = vec_at::<RAstArm>(arms, i);
 
-        let arm_type: RAstType = codegen_arm(
+        let arm_type: RType = codegen_arm(
             codegen,
             arm,
             is_last_arm,
@@ -2918,7 +2876,7 @@ fn codegen_match(codegen: &mut Codegen, value: &RAstExpr, arms: &Vec<RAstArm>) -
             &end_label,
         );
 
-        return_type = rAstType_coerce(return_type, arm_type);
+        return_type = rType_coerce(return_type, arm_type);
         codegen_pop_scope(codegen);
         i = i + 1;
     }
@@ -2953,10 +2911,10 @@ fn codegen_arm(
     RAstArm::Arm(patterns, arm_expr): &RAstArm,
     is_last_arm: bool,
     expr_name: &String,
-    expr_type: &RAstType,
+    expr_type: &RType,
     result_pointer: &String,
     end_label: &String,
-) -> RAstType {
+) -> RType {
     let arm_label: String = codegen_next_label(codegen, "match.arm");
     let else_label: String = codegen_next_label(codegen, "match.else");
 
@@ -2996,7 +2954,7 @@ fn codegen_arm(
                 codegen_emit_store(codegen, &expr_type, &expr_name, &pointer_name);
 
                 let variable_name: String = string_clone(identifier);
-                let variable_type: RAstType = rAstType_clone(&expr_type);
+                let variable_type: RType = rType_clone(&expr_type);
                 codegen_scope_insert(codegen, variable_name, variable_type, pointer_name);
             },
             RAstPattern::Wildcard => {},
@@ -3077,7 +3035,7 @@ fn codegen_into_llvm(Codegen::Codegen(Code::Code(lines), _, _, _, _): Codegen) -
 fn codegen_emit_binary(
     codegen: &mut Codegen,
     op: &RAstArithmeticOp,
-    ty: &RAstType,
+    ty: &RType,
     lhs: &String,
     rhs: &String,
 ) -> String {
@@ -3096,7 +3054,7 @@ fn codegen_emit_binary(
     string_push_str(&mut line, " = ");
     string_push_str(&mut line, op_name);
     string_push(&mut line, ' ');
-    string_push_string(&mut line, &rAstType_to_llvm_name(ty));
+    string_push_string(&mut line, &rType_to_llvm_name(ty));
     string_push(&mut line, ' ');
     string_push_string(&mut line, lhs);
     string_push(&mut line, ',');
@@ -3114,7 +3072,7 @@ fn codegen_emit_binary(
 fn codegen_emit_icmp(
     codegen: &mut Codegen,
     op: &RAstComparisonOp,
-    ty: &RAstType,
+    ty: &RType,
     lhs: &String,
     rhs: &String,
 ) -> String {
@@ -3134,7 +3092,7 @@ fn codegen_emit_icmp(
     string_push_str(&mut line, " = icmp ");
     string_push_str(&mut line, op_name);
     string_push(&mut line, ' ');
-    string_push_string(&mut line, &rAstType_to_llvm_name(ty));
+    string_push_string(&mut line, &rType_to_llvm_name(ty));
     string_push(&mut line, ' ');
     string_push_string(&mut line, lhs);
     string_push(&mut line, ',');
@@ -3147,11 +3105,11 @@ fn codegen_emit_icmp(
 
 /// Emit a ret instruction:
 /// ret `ty` `value`
-fn codegen_emit_ret_value(codegen: &mut Codegen, ty: &RAstType, value: &String) {
+fn codegen_emit_ret_value(codegen: &mut Codegen, ty: &RType, value: &String) {
     let mut line: String = string_new();
     string_push_str(&mut line, "  ");
     string_push_str(&mut line, "ret ");
-    string_push_string(&mut line, &rAstType_to_llvm_name(ty));
+    string_push_string(&mut line, &rType_to_llvm_name(ty));
     string_push(&mut line, ' ');
     string_push_string(&mut line, value);
 
@@ -3211,8 +3169,8 @@ fn codegen_emit_br_conditional(
 fn codegen_emit_cast(
     codegen: &mut Codegen,
     op: &str,
-    from_type: &RAstType,
-    to_type: &RAstType,
+    from_type: &RType,
+    to_type: &RType,
     value: &String,
 ) -> String {
     let name: String = codegen_next_register(codegen);
@@ -3223,11 +3181,11 @@ fn codegen_emit_cast(
     string_push_str(&mut line, " = ");
     string_push_str(&mut line, op);
     string_push(&mut line, ' ');
-    string_push_string(&mut line, &rAstType_to_llvm_name(from_type));
+    string_push_string(&mut line, &rType_to_llvm_name(from_type));
     string_push(&mut line, ' ');
     string_push_string(&mut line, value);
     string_push_str(&mut line, " to ");
-    string_push_string(&mut line, &rAstType_to_llvm_name(to_type));
+    string_push_string(&mut line, &rType_to_llvm_name(to_type));
     string_push(&mut line, '\n');
 
     codegen_emit_line(codegen, line);
@@ -3240,8 +3198,8 @@ fn codegen_emit_cast(
 /// and return `name`.
 fn codegen_emit_zext(
     codegen: &mut Codegen,
-    from_type: &RAstType,
-    to_type: &RAstType,
+    from_type: &RType,
+    to_type: &RType,
     value: &String,
 ) -> String {
     codegen_emit_cast(codegen, "zext", from_type, to_type, value)
@@ -3252,8 +3210,8 @@ fn codegen_emit_zext(
 /// and return `name`.
 fn codegen_emit_trunc(
     codegen: &mut Codegen,
-    from_type: &RAstType,
-    to_type: &RAstType,
+    from_type: &RType,
+    to_type: &RType,
     value: &String,
 ) -> String {
     codegen_emit_cast(codegen, "trunc", from_type, to_type, value)
@@ -3264,8 +3222,8 @@ fn codegen_emit_trunc(
 /// and return `name`.
 fn codegen_emit_inttoptr(
     codegen: &mut Codegen,
-    from_type: &RAstType,
-    to_type: &RAstType,
+    from_type: &RType,
+    to_type: &RType,
     value: &String,
 ) -> String {
     codegen_emit_cast(codegen, "inttoptr", from_type, to_type, value)
@@ -3276,8 +3234,8 @@ fn codegen_emit_inttoptr(
 /// and return `name`.
 fn codegen_emit_ptrtoint(
     codegen: &mut Codegen,
-    from_type: &RAstType,
-    to_type: &RAstType,
+    from_type: &RType,
+    to_type: &RType,
     value: &String,
 ) -> String {
     codegen_emit_cast(codegen, "ptrtoint", from_type, to_type, value)
@@ -3286,14 +3244,14 @@ fn codegen_emit_ptrtoint(
 /// Emit an alloca instruction:
 /// `name` = alloca `ty`, i64 `num_elements`
 /// and return `name`.
-fn codegen_emit_alloca(codegen: &mut Codegen, ty: &RAstType, num_elements: usize) -> String {
+fn codegen_emit_alloca(codegen: &mut Codegen, ty: &RType, num_elements: usize) -> String {
     let name: String = codegen_next_register(codegen);
 
     let mut line: String = string_new();
     string_push_str(&mut line, "  ");
     string_push_string(&mut line, &name);
     string_push_str(&mut line, " = alloca ");
-    string_push_string(&mut line, &rAstType_to_llvm_name(ty));
+    string_push_string(&mut line, &rType_to_llvm_name(ty));
     string_push_str(&mut line, ", i64 ");
     string_push_string(&mut line, &integer_to_string(num_elements));
 
@@ -3304,10 +3262,10 @@ fn codegen_emit_alloca(codegen: &mut Codegen, ty: &RAstType, num_elements: usize
 
 /// Emit a store instruction:
 /// store `ty` `value`, ptr `pointer`.
-fn codegen_emit_store(codegen: &mut Codegen, ty: &RAstType, value: &String, pointer: &String) {
+fn codegen_emit_store(codegen: &mut Codegen, ty: &RType, value: &String, pointer: &String) {
     let mut line: String = string_new();
     string_push_str(&mut line, "  store ");
-    string_push_string(&mut line, &rAstType_to_llvm_name(ty));
+    string_push_string(&mut line, &rType_to_llvm_name(ty));
     string_push(&mut line, ' ');
     string_push_string(&mut line, value);
     string_push(&mut line, ',');
@@ -3319,13 +3277,13 @@ fn codegen_emit_store(codegen: &mut Codegen, ty: &RAstType, value: &String, poin
 
 /// Emit a load instruction:
 /// `name` = load `ty`, `ptr` pointer`.
-fn codegen_emit_load(codegen: &mut Codegen, ty: &RAstType, pointer: &String) -> String {
+fn codegen_emit_load(codegen: &mut Codegen, ty: &RType, pointer: &String) -> String {
     let name: String = codegen_next_register(codegen);
     let mut line: String = string_new();
     string_push_str(&mut line, "  ");
     string_push_string(&mut line, &name);
     string_push_str(&mut line, " = load ");
-    string_push_string(&mut line, &rAstType_to_llvm_name(ty));
+    string_push_string(&mut line, &rType_to_llvm_name(ty));
     string_push(&mut line, ',');
     string_push_str(&mut line, " ptr ");
     string_push_string(&mut line, pointer);
@@ -3339,8 +3297,8 @@ fn codegen_emit_load(codegen: &mut Codegen, ty: &RAstType, pointer: &String) -> 
 fn codegen_emit_call_value(
     codegen: &mut Codegen,
     function_name: &String,
-    return_type: &RAstType,
-    argument_types: &Vec<RAstType>,
+    return_type: &RType,
+    argument_types: &Vec<RType>,
     argument_values: &Vec<String>,
 ) -> String {
     let name: String = codegen_next_register(codegen);
@@ -3349,17 +3307,17 @@ fn codegen_emit_call_value(
     string_push_str(&mut line, "  ");
     string_push_string(&mut line, &name);
     string_push_str(&mut line, " = call ");
-    string_push_string(&mut line, &rAstType_to_llvm_name(return_type));
+    string_push_string(&mut line, &rType_to_llvm_name(return_type));
     string_push_str(&mut line, " @");
     string_push_string(&mut line, function_name);
     string_push(&mut line, '(');
 
     let mut i: usize = 0;
-    let len: usize = vec_len::<RAstType>(argument_types);
+    let len: usize = vec_len::<RType>(argument_types);
     while i < len {
-        let argument_type: &RAstType = vec_at::<RAstType>(argument_types, i);
+        let argument_type: &RType = vec_at::<RType>(argument_types, i);
         let argument_value: &String = vec_at::<String>(argument_values, i);
-        string_push_string(&mut line, &rAstType_to_llvm_name(argument_type));
+        string_push_string(&mut line, &rType_to_llvm_name(argument_type));
         string_push(&mut line, ' ');
         string_push_string(&mut line, argument_value);
 
@@ -3379,7 +3337,7 @@ fn codegen_emit_call_value(
 fn codegen_emit_call_void(
     codegen: &mut Codegen,
     function_name: &String,
-    argument_types: &Vec<RAstType>,
+    argument_types: &Vec<RType>,
     argument_values: &Vec<String>,
 ) {
     let mut line: String = string_new();
@@ -3388,11 +3346,11 @@ fn codegen_emit_call_void(
     string_push(&mut line, '(');
 
     let mut i: usize = 0;
-    let len: usize = vec_len::<RAstType>(argument_types);
+    let len: usize = vec_len::<RType>(argument_types);
     while i < len {
-        let argument_type: &RAstType = vec_at::<RAstType>(argument_types, i);
+        let argument_type: &RType = vec_at::<RType>(argument_types, i);
         let argument_value: &String = vec_at::<String>(argument_values, i);
-        string_push_string(&mut line, &rAstType_to_llvm_name(argument_type));
+        string_push_string(&mut line, &rType_to_llvm_name(argument_type));
         string_push(&mut line, ' ');
         string_push_string(&mut line, argument_value);
 
@@ -3432,7 +3390,7 @@ fn codegen_emit_function_header(
             _ => string("arg"),
         };
 
-        string_push_string(&mut line, &rAstType_to_llvm_name(parameter_type));
+        string_push_string(&mut line, &rType_to_llvm_name(parameter_type));
         string_push_str(&mut line, " %");
         string_push_string(&mut line, &parameter_name);
 
@@ -3451,11 +3409,11 @@ fn codegen_emit_declare(
     codegen: &mut Codegen,
     fn_name: &String,
     parameters: &Vec<RAstVariable>,
-    return_type: &RAstType,
+    return_type: &RType,
 ) {
     let mut line: String = string_new();
     string_push_str(&mut line, "declare ");
-    string_push_string(&mut line, &rAstType_to_llvm_name(return_type));
+    string_push_string(&mut line, &rType_to_llvm_name(return_type));
     string_push_str(&mut line, " @");
     string_push_string(&mut line, fn_name);
     string_push_str(&mut line, "(");
@@ -3466,7 +3424,7 @@ fn codegen_emit_declare(
         let RAstVariable::Variable(_, parameter_type): &RAstVariable =
             vec_at::<RAstVariable>(parameters, i);
 
-        string_push_string(&mut line, &rAstType_to_llvm_name(parameter_type));
+        string_push_string(&mut line, &rType_to_llvm_name(parameter_type));
 
         i = i + 1;
         if i < len {
@@ -3480,12 +3438,7 @@ fn codegen_emit_declare(
 
 /// Fixup a previously emitted alloca instruction without changing the destination register.
 // TODO: assumes a lot about the emitted LLVM-IR, make this more robust.
-fn codegen_fixup_alloca(
-    codegen: &mut Codegen,
-    index: usize,
-    new_type: &RAstType,
-    new_count: usize,
-) {
+fn codegen_fixup_alloca(codegen: &mut Codegen, index: usize, new_type: &RType, new_count: usize) {
     let Code::Code(lines): &mut Code = codegen_code_mut(codegen);
 
     let old_alloca: &String = vec_at::<String>(lines, index);
@@ -3506,7 +3459,7 @@ fn codegen_fixup_alloca(
         i = i + 1;
     }
 
-    string_push_string(&mut new_alloca, &rAstType_to_llvm_name(new_type));
+    string_push_string(&mut new_alloca, &rType_to_llvm_name(new_type));
     string_push_str(&mut new_alloca, ", i64 ");
     string_push_string(&mut new_alloca, &integer_to_string(new_count));
 
@@ -3524,7 +3477,7 @@ fn codegen_fixup_alloca(
 // -----------------------------------------------------------------
 
 /// Tokens produced by the LLVM lexer.
-enum LlvmToken {
+enum LToken {
     Define,          // "define"
     Declare,         // "declare"
     Ret,             // "ret"
@@ -3575,58 +3528,58 @@ enum LlvmToken {
     Eof,
 }
 
-/// A type that encapsulates the state of the lexer for the LLVM-IR parser.
-enum LlvmLexer {
+/// The lexer state of the scanned LLVM-IR code.
+enum LLexer {
     /// LLVM-IR human-readable source file, current token
-    Lexer(SourceFile, LlvmToken),
+    Lexer(SourceFile, LToken),
 }
 
 /// Create a new LLVM lexer and scan the first token.
-fn llvmLexer_new(source: String) -> LlvmLexer {
+fn lLexer_new(source: String) -> LLexer {
     let source_file: SourceFile = SourceFile::SourceFile(source, 0, 1, 0);
-    let mut lexer: LlvmLexer = LlvmLexer::Lexer(source_file, LlvmToken::Eof);
-    llvmLexer_next_token(&mut lexer);
+    let mut lexer: LLexer = LLexer::Lexer(source_file, LToken::Eof);
+    lLexer_next_token(&mut lexer);
     lexer
 }
 
 /// Get the lexer source file.
-fn llvmLexer_sourcefile(LlvmLexer::Lexer(source, _): &LlvmLexer) -> &SourceFile {
+fn lLexer_sourcefile(LLexer::Lexer(source, _): &LLexer) -> &SourceFile {
     source
 }
 
 /// Get the lexer source file.
-fn llvmLexer_sourcefile_mut(LlvmLexer::Lexer(source, _): &mut LlvmLexer) -> &mut SourceFile {
+fn lLexer_sourcefile_mut(LLexer::Lexer(source, _): &mut LLexer) -> &mut SourceFile {
     source
 }
 
 /// Get the current lexer token.
-fn llvmLexer_current_token(LlvmLexer::Lexer(_, token): &LlvmLexer) -> &LlvmToken {
+fn lLexer_current_token(LLexer::Lexer(_, token): &LLexer) -> &LToken {
     token
 }
 
 /// Set the current lexer token.
-fn llvmLexer_set_current_token(LlvmLexer::Lexer(_, old_token): &mut LlvmLexer, token: LlvmToken) {
+fn lLexer_set_current_token(LLexer::Lexer(_, old_token): &mut LLexer, token: LToken) {
     *old_token = token;
 }
 
 /// Peek the current source character.
-fn llvmLexer_peek_char(lexer: &LlvmLexer) -> Option<char> {
-    let SourceFile::SourceFile(string, index, _, _): &SourceFile = llvmLexer_sourcefile(lexer);
+fn lLexer_peek_char(lexer: &LLexer) -> Option<char> {
+    let SourceFile::SourceFile(string, index, _, _): &SourceFile = lLexer_sourcefile(lexer);
     string_get(string, *index)
 }
 
 /// Peek the next source character after the current one and return true if it is the expected
 /// character
-fn llvmLexer_next_char_eq(lexer: &LlvmLexer, expected: char) -> bool {
-    let SourceFile::SourceFile(content, index, _, _): &SourceFile = llvmLexer_sourcefile(lexer);
+fn lLexer_next_char_eq(lexer: &LLexer, expected: char) -> bool {
+    let SourceFile::SourceFile(content, index, _, _): &SourceFile = lLexer_sourcefile(lexer);
     match string_get(content, *index + 1) {
         Option::Some(character) => character == expected,
         _ => false,
     }
 }
 
-fn llvmLexer_expect_char(lexer: &mut LlvmLexer, expected: char) {
-    match llvmLexer_consume_char(lexer) {
+fn lLexer_expect_char(lexer: &mut LLexer, expected: char) {
+    match lLexer_consume_char(lexer) {
         Option::Some(c) => {
             if c != expected {
                 panic("unexpected character");
@@ -3637,9 +3590,9 @@ fn llvmLexer_expect_char(lexer: &mut LlvmLexer, expected: char) {
 }
 
 /// Consume and return the current source character.
-fn llvmLexer_consume_char(lexer: &mut LlvmLexer) -> Option<char> {
+fn lLexer_consume_char(lexer: &mut LLexer) -> Option<char> {
     let SourceFile::SourceFile(source, index, line, last_newline_idx): &mut SourceFile =
-        llvmLexer_sourcefile_mut(lexer);
+        lLexer_sourcefile_mut(lexer);
 
     let current: Option<char> = string_get(source, *index);
     *index = *index + 1;
@@ -3657,42 +3610,42 @@ fn llvmLexer_consume_char(lexer: &mut LlvmLexer) -> Option<char> {
 }
 
 /// Consume and return the next token.
-fn llvmLexer_next_token(lexer: &mut LlvmLexer) -> LlvmToken {
-    llvmLexer_skip_whitespace_and_comments(lexer);
+fn lLexer_next_token(lexer: &mut LLexer) -> LToken {
+    lLexer_skip_whitespace_and_comments(lexer);
 
-    let token: LlvmToken = match llvmLexer_peek_char(lexer) {
+    let token: LToken = match lLexer_peek_char(lexer) {
         Option::Some(ch) => {
-            if and(ch == 'c', llvmLexer_next_char_eq(lexer, '"')) {
-                let value: String = llvmLexer_scan_cstring(lexer);
-                LlvmToken::CString(value)
+            if and(ch == 'c', lLexer_next_char_eq(lexer, '"')) {
+                let value: String = lLexer_scan_cstring(lexer);
+                LToken::CString(value)
             } else if or(is_alpha(ch), ch == '.') {
-                let ident: String = llvmLexer_scan_identifier_or_keyword(lexer);
+                let ident: String = lLexer_scan_identifier_or_keyword(lexer);
                 llvm_identifier_to_token(ident)
             } else if is_digit(ch) {
-                let value: usize = llvmLexer_scan_integer(lexer);
-                LlvmToken::Integer(value)
+                let value: usize = lLexer_scan_integer(lexer);
+                LToken::Integer(value)
             } else {
-                llvmLexer_scan_symbol(lexer)
+                lLexer_scan_symbol(lexer)
             }
         },
-        Option::None => LlvmToken::Eof,
+        Option::None => LToken::Eof,
     };
 
-    llvmLexer_set_current_token(lexer, llvmToken_clone(&token));
+    lLexer_set_current_token(lexer, llvmToken_clone(&token));
     token
 }
 
 /// Scan and return a c"..." string literal.
-fn llvmLexer_scan_cstring(lexer: &mut LlvmLexer) -> String {
+fn lLexer_scan_cstring(lexer: &mut LLexer) -> String {
     let mut literal: String = string_new();
-    llvmLexer_expect_char(lexer, 'c');
-    llvmLexer_expect_char(lexer, '"');
+    lLexer_expect_char(lexer, 'c');
+    lLexer_expect_char(lexer, '"');
 
     while true {
-        match llvmLexer_consume_char(lexer) {
+        match lLexer_consume_char(lexer) {
             Option::Some('"') => return literal,
             Option::Some('\\') => {
-                let character: char = llvmLexer_scan_escape(lexer);
+                let character: char = lLexer_scan_escape(lexer);
                 string_push(&mut literal, character);
             },
             Option::Some(ch) => string_push(&mut literal, ch),
@@ -3702,11 +3655,11 @@ fn llvmLexer_scan_cstring(lexer: &mut LlvmLexer) -> String {
     literal // satisfy compiler
 }
 
-fn llvmLexer_scan_escape(lexer: &mut LlvmLexer) -> char {
-    match llvmLexer_consume_char(lexer) {
+fn lLexer_scan_escape(lexer: &mut LLexer) -> char {
+    match lLexer_consume_char(lexer) {
         Option::Some(hex_digit) => {
             if is_hexadecimal_digit(hex_digit) {
-                match llvmLexer_consume_char(lexer) {
+                match lLexer_consume_char(lexer) {
                     Option::Some(second_hex_digit) => {
                         let mut char_byte: String = string_new();
                         string_push(&mut char_byte, hex_digit);
@@ -3724,13 +3677,13 @@ fn llvmLexer_scan_escape(lexer: &mut LlvmLexer) -> char {
     }
 }
 
-fn llvmLexer_scan_identifier_or_keyword(lexer: &mut LlvmLexer) -> String {
+fn lLexer_scan_identifier_or_keyword(lexer: &mut LLexer) -> String {
     let mut identifier: String = string_new();
     while true {
-        match llvmLexer_peek_char(lexer) {
+        match lLexer_peek_char(lexer) {
             Option::Some(ch) => {
                 if is_alphanumeric_or_dot(ch) {
-                    llvmLexer_consume_char(lexer);
+                    lLexer_consume_char(lexer);
                     string_push(&mut identifier, ch);
                 } else {
                     return identifier;
@@ -3742,87 +3695,87 @@ fn llvmLexer_scan_identifier_or_keyword(lexer: &mut LlvmLexer) -> String {
     identifier // satisfy compiler
 }
 
-fn llvm_identifier_to_token(identifier: String) -> LlvmToken {
+fn llvm_identifier_to_token(identifier: String) -> LToken {
     if string_eq(&identifier, &string("define")) {
-        LlvmToken::Define
+        LToken::Define
     } else if string_eq(&identifier, &string("declare")) {
-        LlvmToken::Declare
+        LToken::Declare
     } else if string_eq(&identifier, &string("ret")) {
-        LlvmToken::Ret
+        LToken::Ret
     } else if string_eq(&identifier, &string("inttoptr")) {
-        LlvmToken::IntToPtr
+        LToken::IntToPtr
     } else if string_eq(&identifier, &string("ptrtoint")) {
-        LlvmToken::PtrToInt
+        LToken::PtrToInt
     } else if string_eq(&identifier, &string("br")) {
-        LlvmToken::Br
+        LToken::Br
     } else if string_eq(&identifier, &string("label")) {
-        LlvmToken::Label
+        LToken::Label
     } else if string_eq(&identifier, &string("add")) {
-        LlvmToken::Add
+        LToken::Add
     } else if string_eq(&identifier, &string("sub")) {
-        LlvmToken::Sub
+        LToken::Sub
     } else if string_eq(&identifier, &string("mul")) {
-        LlvmToken::Mul
+        LToken::Mul
     } else if string_eq(&identifier, &string("udiv")) {
-        LlvmToken::Udiv
+        LToken::Udiv
     } else if string_eq(&identifier, &string("urem")) {
-        LlvmToken::Urem
+        LToken::Urem
     } else if string_eq(&identifier, &string("icmp")) {
-        LlvmToken::Icmp
+        LToken::Icmp
     } else if string_eq(&identifier, &string("zext")) {
-        LlvmToken::Zext
+        LToken::Zext
     } else if string_eq(&identifier, &string("trunc")) {
-        LlvmToken::Trunc
+        LToken::Trunc
     } else if string_eq(&identifier, &string("alloca")) {
-        LlvmToken::Alloca
+        LToken::Alloca
     } else if string_eq(&identifier, &string("store")) {
-        LlvmToken::Store
+        LToken::Store
     } else if string_eq(&identifier, &string("load")) {
-        LlvmToken::Load
+        LToken::Load
     } else if string_eq(&identifier, &string("to")) {
-        LlvmToken::To
+        LToken::To
     } else if string_eq(&identifier, &string("call")) {
-        LlvmToken::Call
+        LToken::Call
     } else if string_eq(&identifier, &string("getelementptr")) {
-        LlvmToken::Gep
+        LToken::Gep
     } else if string_eq(&identifier, &string("constant")) {
-        LlvmToken::Constant
+        LToken::Constant
     } else if string_eq(&identifier, &string("eq")) {
-        LlvmToken::Eq
+        LToken::Eq
     } else if string_eq(&identifier, &string("ne")) {
-        LlvmToken::Ne
+        LToken::Ne
     } else if string_eq(&identifier, &string("ugt")) {
-        LlvmToken::Ugt
+        LToken::Ugt
     } else if string_eq(&identifier, &string("uge")) {
-        LlvmToken::Uge
+        LToken::Uge
     } else if string_eq(&identifier, &string("ult")) {
-        LlvmToken::Ult
+        LToken::Ult
     } else if string_eq(&identifier, &string("ule")) {
-        LlvmToken::Ule
+        LToken::Ule
     } else if string_eq(&identifier, &string("ptr")) {
-        LlvmToken::Ptr
+        LToken::Ptr
     } else if string_eq(&identifier, &string("i64")) {
-        LlvmToken::I64
+        LToken::I64
     } else if string_eq(&identifier, &string("i8")) {
-        LlvmToken::I8
+        LToken::I8
     } else if string_eq(&identifier, &string("i1")) {
-        LlvmToken::I1
+        LToken::I1
     } else if string_eq(&identifier, &string("void")) {
-        LlvmToken::Void
+        LToken::Void
     } else {
-        LlvmToken::Identifier(identifier)
+        LToken::Identifier(identifier)
     }
 }
 
-fn llvmLexer_scan_integer(lexer: &mut LlvmLexer) -> usize {
+fn lLexer_scan_integer(lexer: &mut LLexer) -> usize {
     let mut value: usize = 0;
     while true {
-        match llvmLexer_peek_char(lexer) {
+        match lLexer_peek_char(lexer) {
             Option::Some(ch) => {
                 if is_digit(ch) {
                     let digit: usize = (ch as usize) - ('0' as usize);
                     value = value * 10 + digit;
-                    llvmLexer_consume_char(lexer);
+                    lLexer_consume_char(lexer);
                 } else {
                     return value;
                 }
@@ -3833,32 +3786,32 @@ fn llvmLexer_scan_integer(lexer: &mut LlvmLexer) -> usize {
     value
 }
 
-fn llvmLexer_scan_symbol(lexer: &mut LlvmLexer) -> LlvmToken {
-    match unwrap::<char>(llvmLexer_consume_char(lexer)) {
-        '@' => LlvmToken::At,
-        '%' => LlvmToken::Percent,
-        '(' => LlvmToken::LParen,
-        ')' => LlvmToken::RParen,
-        '{' => LlvmToken::LBrace,
-        '}' => LlvmToken::RBrace,
-        '[' => LlvmToken::LBracket,
-        ']' => LlvmToken::RBracket,
-        ',' => LlvmToken::Comma,
-        '=' => LlvmToken::Assign,
-        ':' => LlvmToken::Colon,
+fn lLexer_scan_symbol(lexer: &mut LLexer) -> LToken {
+    match unwrap::<char>(lLexer_consume_char(lexer)) {
+        '@' => LToken::At,
+        '%' => LToken::Percent,
+        '(' => LToken::LParen,
+        ')' => LToken::RParen,
+        '{' => LToken::LBrace,
+        '}' => LToken::RBrace,
+        '[' => LToken::LBracket,
+        ']' => LToken::RBracket,
+        ',' => LToken::Comma,
+        '=' => LToken::Assign,
+        ':' => LToken::Colon,
         _ => panic("unsupported token in LLVM input"),
     }
 }
 
-fn llvmLexer_skip_whitespace_and_comments(lexer: &mut LlvmLexer) {
+fn lLexer_skip_whitespace_and_comments(lexer: &mut LLexer) {
     while true {
-        match llvmLexer_peek_char(lexer) {
+        match lLexer_peek_char(lexer) {
             Option::Some(ch) => {
                 if is_whitespace(ch) {
-                    llvmLexer_consume_char(lexer);
+                    lLexer_consume_char(lexer);
                 } else if ch == ';' {
-                    llvmLexer_consume_char(lexer);
-                    llvmLexer_skip_line(lexer);
+                    lLexer_consume_char(lexer);
+                    lLexer_skip_line(lexer);
                 } else {
                     return;
                 }
@@ -3868,9 +3821,9 @@ fn llvmLexer_skip_whitespace_and_comments(lexer: &mut LlvmLexer) {
     }
 }
 
-fn llvmLexer_skip_line(lexer: &mut LlvmLexer) {
+fn lLexer_skip_line(lexer: &mut LLexer) {
     while true {
-        match llvmLexer_consume_char(lexer) {
+        match lLexer_consume_char(lexer) {
             Option::Some('\n') => return,
             Option::Some(_) => (),
             Option::None => return,
@@ -3882,78 +3835,74 @@ fn llvmLexer_skip_line(lexer: &mut LlvmLexer) {
 // ------------------------- Parser --------------------------------
 // -----------------------------------------------------------------
 
-/// The parser for LLVM-IR.
-enum LParser {
-    Parser(LlvmLexer, LlvmAst, LlvmLocalSymTable),
+/// The parser state for a LLVM-IR module.
+enum Parser {
+    Parser(LLexer, LAst, LLocalSymTable),
 }
 
 /// Create an LLVM parser and prime the first token.
-fn llvmParser_new(source: String) -> LParser {
-    LParser::Parser(
-        llvmLexer_new(source),
-        llvmAst_new(),
-        llvmLocalSymTable_new(),
-    )
+fn parser_new(source: String) -> Parser {
+    Parser::Parser(lLexer_new(source), lAst_new(), lLocalSymbolTable_new())
 }
 
 /// Get immutable parser lexer access.
-fn llvmParser_lexer(LParser::Parser(lexer, _, _): &LParser) -> &LlvmLexer {
+fn parser_lexer(Parser::Parser(lexer, _, _): &Parser) -> &LLexer {
     lexer
 }
 
 /// Get mutable parser lexer access.
-fn llvmParser_lexer_mut(LParser::Parser(lexer, _, _): &mut LParser) -> &mut LlvmLexer {
+fn parser_lexer_mut(Parser::Parser(lexer, _, _): &mut Parser) -> &mut LLexer {
     lexer
 }
 
 /// Get mutable parser AST access.
-fn llvmParser_ast_mut(LParser::Parser(_, ast, _): &mut LParser) -> &mut LlvmAst {
+fn parser_ast_mut(Parser::Parser(_, ast, _): &mut Parser) -> &mut LAst {
     ast
 }
 
-fn llvmParser_local(LParser::Parser(_, _, local): &LParser) -> &LlvmLocalSymTable {
+fn parser_local(Parser::Parser(_, _, local): &Parser) -> &LLocalSymTable {
     local
 }
 
-fn llvmParser_local_mut(LParser::Parser(_, _, local): &mut LParser) -> &mut LlvmLocalSymTable {
+fn parser_local_mut(Parser::Parser(_, _, local): &mut Parser) -> &mut LLocalSymTable {
     local
 }
 
 /// Parse LLVM source into LLVM AST.
-fn llvmParser_parse_to_ast(source: String) -> LlvmAst {
-    let mut parser: LParser = llvmParser_new(source);
-    llvmParser_parse_language(&mut parser);
-    let LParser::Parser(_, ast, _): LParser = parser;
+fn parser_parse_to_ast(source: String) -> LAst {
+    let mut parser: Parser = parser_new(source);
+    parser_parse_language(&mut parser);
+    let Parser::Parser(_, ast, _): Parser = parser;
     ast
 }
 
 /// Get current LLVM parser token.
-fn llvmParser_current_token(parser: &LParser) -> &LlvmToken {
-    llvmLexer_current_token(llvmParser_lexer(parser))
+fn parser_current_token(parser: &Parser) -> &LToken {
+    lLexer_current_token(parser_lexer(parser))
 }
 
 /// Consume and return the current LLVM parser token.
-fn llvmParser_consume_current_token(parser: &mut LParser) -> LlvmToken {
-    let lexer: &LlvmLexer = llvmParser_lexer(parser);
-    let token: LlvmToken = llvmToken_clone(llvmLexer_current_token(lexer));
-    llvmParser_next_token(parser);
+fn parser_consume_current_token(parser: &mut Parser) -> LToken {
+    let lexer: &LLexer = parser_lexer(parser);
+    let token: LToken = llvmToken_clone(lLexer_current_token(lexer));
+    parser_next_token(parser);
     token
 }
 
 /// Advance and return next LLVM parser token.
-fn llvmParser_next_token(parser: &mut LParser) -> LlvmToken {
-    llvmLexer_next_token(llvmParser_lexer_mut(parser))
+fn parser_next_token(parser: &mut Parser) -> LToken {
+    lLexer_next_token(parser_lexer_mut(parser))
 }
 
 /// Check whether parser current token equals expected token.
-fn llvmParser_current_token_eq(parser: &LParser, token: &LlvmToken) -> bool {
-    llvmToken_eq(llvmParser_current_token(parser), token)
+fn parser_current_token_eq(parser: &Parser, token: &LToken) -> bool {
+    llvmToken_eq(parser_current_token(parser), token)
 }
 
 /// Try consuming one token and report success.
-fn llvmParser_try_consume(parser: &mut LParser, token: &LlvmToken) -> bool {
-    if llvmParser_current_token_eq(parser, token) {
-        llvmParser_next_token(parser);
+fn parser_try_consume(parser: &mut Parser, token: &LToken) -> bool {
+    if parser_current_token_eq(parser, token) {
+        parser_next_token(parser);
         true
     } else {
         false
@@ -3961,216 +3910,217 @@ fn llvmParser_try_consume(parser: &mut LParser, token: &LlvmToken) -> bool {
 }
 
 /// Require and consume one token.
-fn llvmParser_expect_token(parser: &mut LParser, token: &LlvmToken) {
-    if not(llvmParser_try_consume(parser, token)) {
-        let message: String = llvmParser_expected_message(parser, &llvmToken_to_string(token));
-        llvmParser_error(parser, &message);
+fn parser_expect_token(parser: &mut Parser, token: &LToken) {
+    if not(parser_try_consume(parser, token)) {
+        let message: String = parser_expected_message(parser, &llvmToken_to_string(token));
+        parser_error(parser, &message);
     }
 }
 
 /// Read and consume one identifier token.
-fn llvmParser_expect_identifier(parser: &mut LParser) -> String {
-    match llvmParser_current_token(parser) {
-        LlvmToken::Identifier(identifier) => {
+fn parser_expect_identifier(parser: &mut Parser) -> String {
+    match parser_current_token(parser) {
+        LToken::Identifier(identifier) => {
             let value: String = string_clone(identifier);
-            llvmParser_next_token(parser);
+            parser_next_token(parser);
             value
         },
         _ => {
-            let message: String = llvmParser_expected_message(parser, &string("LLVM identifier"));
-            llvmParser_error(parser, &message)
+            let message: String = parser_expected_message(parser, &string("LLVM identifier"));
+            parser_error(parser, &message)
         },
     }
 }
 
-fn llvmParser_expect_value_type(parser: &LParser, value: &LlvmValue, expected: &LlvmType) {
-    if not(llvmParser_value_has_type(parser, value, expected)) {
-        llvmParser_error(parser, &string("LLVM value does not match expected type"));
+fn parser_expect_value_type(parser: &Parser, value: &LValue, expected: &LType) {
+    if not(parser_value_has_type(parser, value, expected)) {
+        parser_error(parser, &string("LLVM value does not match expected type"));
     }
 }
 
-fn llvmParser_value_has_type(parser: &LParser, value: &LlvmValue, expected: &LlvmType) -> bool {
+fn parser_value_has_type(parser: &Parser, value: &LValue, expected: &LType) -> bool {
     match value {
-        LlvmValue::Register(name) => {
-            match llvmLocalSymTable_lookup_register_type(llvmParser_local(parser), name) {
+        LValue::Register(name) => {
+            match lLocalSymbolTable_lookup_register_type(parser_local(parser), name) {
                 Option::Some(actual) => llvmType_eq(actual, expected),
                 Option::None => false,
             }
         },
-        LlvmValue::Literal(_) => match expected {
-            LlvmType::I1 | LlvmType::I8 | LlvmType::I64 => true, // allow overflows
+        LValue::Literal(_) => match expected {
+            LType::I1 | LType::I8 | LType::I64 => true, // allow overflows
             _ => false,
         },
-        LlvmValue::Global(_) => match expected {
-            LlvmType::Ptr => true,
+        LValue::Global(_) => match expected {
+            LType::Ptr => true,
             _ => false,
         },
     }
 }
 
 /// Return true if the current token indicates the start of a new instruction.
-fn llvmParser_is_instruction_start(parser: &mut LParser) -> bool {
-    match llvmParser_current_token(parser) {
-        LlvmToken::RBrace | LlvmToken::Identifier(_) => false,
+fn parser_is_instruction_start(parser: &mut Parser) -> bool {
+    match parser_current_token(parser) {
+        LToken::RBrace | LToken::Identifier(_) => false,
         _ => true,
     }
 }
 
-enum LlvmAst {
-    AST(Vec<LlvmGlobal>, StringMap<LlvmFunction>),
+/// Abstract syntax tree of a LLVM-IR module.
+enum LAst {
+    AST(Vec<LGlobal>, StringMap<LFunction>),
 }
 
 /// Top-level LLVM global data.
-enum LlvmGlobal {
+enum LGlobal {
     /// name, bytes
     String(String, String),
 }
 
 /// Create an empty LLVM AST.
-fn llvmAst_new() -> LlvmAst {
-    LlvmAst::AST(vec_new::<LlvmGlobal>(), stringMap_new::<LlvmFunction>())
+fn lAst_new() -> LAst {
+    LAst::AST(vec_new::<LGlobal>(), stringMap_new::<LFunction>())
 }
 
 /// Get immutable access to the top-level globals list.
-fn llvmAst_globals(LlvmAst::AST(globals, _): &LlvmAst) -> &Vec<LlvmGlobal> {
+fn lAst_globals(LAst::AST(globals, _): &LAst) -> &Vec<LGlobal> {
     globals
 }
 
 /// Get mutable access to the top-level globals list.
-fn llvmAst_globals_mut(LlvmAst::AST(globals, _): &mut LlvmAst) -> &mut Vec<LlvmGlobal> {
+fn lAst_globals_mut(LAst::AST(globals, _): &mut LAst) -> &mut Vec<LGlobal> {
     globals
 }
 
 /// Insert a global entry into the AST. Returns false on duplicate name.
-fn llvmAst_insert_global(ast: &mut LlvmAst, name: String, global: LlvmGlobal) -> bool {
-    let globals: &Vec<LlvmGlobal> = llvmAst_globals(ast);
+fn lAst_insert_global(ast: &mut LAst, name: String, global: LGlobal) -> bool {
+    let globals: &Vec<LGlobal> = lAst_globals(ast);
 
     let mut i: usize = 0;
-    while i < vec_len::<LlvmGlobal>(globals) {
-        let LlvmGlobal::String(existing_name, _): &LlvmGlobal = vec_at::<LlvmGlobal>(globals, i);
+    while i < vec_len::<LGlobal>(globals) {
+        let LGlobal::String(existing_name, _): &LGlobal = vec_at::<LGlobal>(globals, i);
         if string_eq(existing_name, &name) {
             return false;
         }
         i = i + 1;
     }
 
-    vec_push::<LlvmGlobal>(llvmAst_globals_mut(ast), global);
+    vec_push::<LGlobal>(lAst_globals_mut(ast), global);
     true
 }
 
 /// Get immutable access to the top-level function map.
-fn llvmAst_functions(LlvmAst::AST(_, functions): &LlvmAst) -> &StringMap<LlvmFunction> {
+fn lAst_functions(LAst::AST(_, functions): &LAst) -> &StringMap<LFunction> {
     functions
 }
 
 /// Get mutable access to the top-level function map.
-fn llvmAst_functions_mut(LlvmAst::AST(_, functions): &mut LlvmAst) -> &mut StringMap<LlvmFunction> {
+fn lAst_functions_mut(LAst::AST(_, functions): &mut LAst) -> &mut StringMap<LFunction> {
     functions
 }
 
 /// Insert a function entry into the AST. Returns false on duplicate name.
-fn llvmAst_insert_function(ast: &mut LlvmAst, name: String, function: LlvmFunction) -> bool {
-    if stringMap_contains::<LlvmFunction>(llvmAst_functions(ast), &name) {
+fn lAst_insert_function(ast: &mut LAst, name: String, function: LFunction) -> bool {
+    if stringMap_contains::<LFunction>(lAst_functions(ast), &name) {
         false
     } else {
-        stringMap_insert::<LlvmFunction>(llvmAst_functions_mut(ast), name, function);
+        stringMap_insert::<LFunction>(lAst_functions_mut(ast), name, function);
         true
     }
 }
 
 /// Lookup a function in the AST by name.
-fn llvmAst_lookup_function(ast: &LlvmAst, name: String) -> &LlvmFunction {
-    match stringMap_get::<LlvmFunction>(llvmAst_functions(ast), &name) {
+fn lAst_lookup_function(ast: &LAst, name: String) -> &LFunction {
+    match stringMap_get::<LFunction>(lAst_functions(ast), &name) {
         Option::Some(function) => function,
         Option::None => panic("unknown LLVM function"),
     }
 }
 
 /// Local symbol table for LLVM to track virtual register
-enum LlvmLocalSymTable {
-    Registers(StringMap<LlvmType>),
+enum LLocalSymTable {
+    Registers(StringMap<LType>),
 }
 
 /// Create an empty LLVM local symbol table.
-fn llvmLocalSymTable_new() -> LlvmLocalSymTable {
-    LlvmLocalSymTable::Registers(stringMap_new::<LlvmType>())
+fn lLocalSymbolTable_new() -> LLocalSymTable {
+    LLocalSymTable::Registers(stringMap_new::<LType>())
 }
 
 /// Clear local register table buckets.
-fn llvmLocalSymTable_clear(symtable: &mut LlvmLocalSymTable) {
+fn lLocalSymbolTable_clear(symtable: &mut LLocalSymTable) {
     match symtable {
-        LlvmLocalSymTable::Registers(registers) => *registers = stringMap_new::<LlvmType>(),
+        LLocalSymTable::Registers(registers) => *registers = stringMap_new::<LType>(),
     }
 }
 
 /// Insert register name. Returns false on duplicate.
-fn llvmLocalSymTable_insert_register(
-    LlvmLocalSymTable::Registers(registers): &mut LlvmLocalSymTable,
+fn lLocalSymbolTable_insert_register(
+    LLocalSymTable::Registers(registers): &mut LLocalSymTable,
     name: String,
-    ty: LlvmType,
+    ty: LType,
 ) -> bool {
     // Check SSA
-    if stringMap_contains::<LlvmType>(registers, &name) {
+    if stringMap_contains::<LType>(registers, &name) {
         false
     } else {
-        stringMap_insert::<LlvmType>(registers, name, ty);
+        stringMap_insert::<LType>(registers, name, ty);
         true
     }
 }
 
 /// Lookup a register type in the local symbol table.
-fn llvmLocalSymTable_lookup_register_type<'a>(
-    LlvmLocalSymTable::Registers(registers): &'a LlvmLocalSymTable,
+fn lLocalSymbolTable_lookup_register_type<'a>(
+    LLocalSymTable::Registers(registers): &'a LLocalSymTable,
     name: &String,
-) -> Option<&'a LlvmType> {
-    stringMap_get::<LlvmType>(registers, name)
+) -> Option<&'a LType> {
+    stringMap_get::<LType>(registers, name)
 }
 
 /// An executable LLVM-IR function.
-enum LlvmFunction {
+enum LFunction {
     /// return type, parameters, basic blocks
     // TODO: use StringMap for InstructionBlocks
-    Function(LlvmType, Vec<LlvmParameter>, Vec<InstructionBlock>),
+    Function(LType, Vec<LParameter>, Vec<InstructionBlock>),
     /// return type, parameters, builtin
-    BuiltIn(LlvmBuiltIn, LlvmType, Vec<LlvmParameter>),
+    BuiltIn(BuiltIn, LType, Vec<LParameter>),
 }
 
 /// Supported LLVM-IR declared functions.
-enum LlvmBuiltIn {
+enum BuiltIn {
     Exit,
     Malloc,
 }
 
 /// Represents a parameter of an LLVM function.
-enum LlvmParameter {
+enum LParameter {
     /// identifier, type
-    Parameter(String, LlvmType),
+    Parameter(String, LType),
 }
 
 /// Supported LLVM types in the subset.
 #[derive(Debug)]
-enum LlvmType {
+enum LType {
     I1,
     I8,
     I64,
     Ptr,
-    Array(usize, Box<LlvmType>),
+    Array(usize, Box<LType>),
     Void,
 }
 
-fn llvmType_bitwidth(ty: &LlvmType) -> usize {
+fn llvmType_bitwidth(ty: &LType) -> usize {
     match ty {
-        LlvmType::I1 => 1,
-        LlvmType::I8 => 8,
-        LlvmType::I64 => 64,
-        LlvmType::Ptr => size_of::<usize>() * 8,
-        LlvmType::Array(len, inner) => *len * llvmType_bitwidth(box_deref::<LlvmType>(inner)),
-        LlvmType::Void => 0,
+        LType::I1 => 1,
+        LType::I8 => 8,
+        LType::I64 => 64,
+        LType::Ptr => size_of::<usize>() * 8,
+        LType::Array(len, inner) => *len * llvmType_bitwidth(box_deref::<LType>(inner)),
+        LType::Void => 0,
     }
 }
 
 /// Return the size of an LLVM type in bytes.
-fn llvmType_size(ty: &LlvmType) -> usize {
+fn llvmType_size(ty: &LType) -> usize {
     max(1, llvmType_bitwidth(ty) / 8)
 }
 
@@ -4221,17 +4171,17 @@ fn instructionBlock_fetch_instructions(
 enum Instruction {
     Assignment(AssignInstruction),
     /// stored type, value, address
-    Store(LlvmType, LlvmValue, LlvmValue),
+    Store(LType, LValue, LValue),
     Call(Call),
     /// return type, optional value
-    Ret(LlvmType, Option<LlvmValue>),
+    Ret(LType, Option<LValue>),
     Br(Branch),
 }
 
 /// A `call` instruction.
 enum Call {
     /// return type, callee, arguments
-    Call(LlvmType, String, Vec<LlvmTypedValue>),
+    Call(LType, String, Vec<LTypedValue>),
 }
 
 /// Represents "br", either a conditional or unconditional jump.
@@ -4239,7 +4189,7 @@ enum Branch {
     /// label
     Unconditional(String),
     /// condition, then label, else label
-    Conditional(LlvmValue, String, String),
+    Conditional(LValue, String, String),
 }
 
 /// Represents an assignment instruction.
@@ -4250,18 +4200,18 @@ enum AssignInstruction {
 /// Represents the right-hand-side of an assignment
 enum AssignOp {
     /// operation, type, left operand, right operand
-    Binary(BinaryOp, LlvmType, LlvmValue, LlvmValue),
+    Binary(BinaryOp, LType, LValue, LValue),
     /// operation, operand type, left operand, right operand
-    Icmp(IcmpOp, LlvmType, LlvmValue, LlvmValue),
+    Icmp(IcmpOp, LType, LValue, LValue),
     /// operation, target type, value
-    Cast(CastOp, LlvmType, LlvmValue),
+    Cast(CastOp, LType, LValue),
     /// allocated type, number of elements
-    Alloca(LlvmType, usize),
+    Alloca(LType, usize),
     /// loaded type, address
-    Load(LlvmType, LlvmValue),
+    Load(LType, LValue),
     Call(Call),
     /// type, pointer, indexes
-    Gep(LlvmType, LlvmValue, Vec<LlvmTypedValue>),
+    Gep(LType, LValue, Vec<LTypedValue>),
 }
 
 /// Binary operations that can only appear in assignments.
@@ -4291,21 +4241,21 @@ enum CastOp {
     PtrToInt,
 }
 
-fn assignOp_get_type(operation: &AssignOp) -> LlvmType {
+fn assignOp_get_type(operation: &AssignOp) -> LType {
     match operation {
         AssignOp::Binary(_, ty, _, _) => llvmType_clone(ty),
-        AssignOp::Icmp(_, _, _, _) => LlvmType::I1,
+        AssignOp::Icmp(_, _, _, _) => LType::I1,
         AssignOp::Call(Call::Call(ty, _, _)) => llvmType_clone(ty),
         AssignOp::Cast(_, ty, _) => llvmType_clone(ty),
-        AssignOp::Alloca(_, _) => LlvmType::Ptr,
+        AssignOp::Alloca(_, _) => LType::Ptr,
         AssignOp::Load(ty, _) => llvmType_clone(ty),
-        AssignOp::Gep(_, _, _) => LlvmType::Ptr,
+        AssignOp::Gep(_, _, _) => LType::Ptr,
     }
 }
 
 /// Represents an LLVM value operand.
 #[derive(Debug)]
-enum LlvmValue {
+enum LValue {
     /// identifier
     Register(String),
     /// integer value
@@ -4316,97 +4266,96 @@ enum LlvmValue {
 
 /// Represents a value with a specified type.
 // TODO: drop this: the AST does not need to know about types. Parser ensures type safety.
-enum LlvmTypedValue {
-    Pair(LlvmType, LlvmValue),
+enum LTypedValue {
+    Pair(LType, LValue),
 }
 
-fn llvmParser_parse_language(parser: &mut LParser) {
-    while not(llvmParser_current_token_eq(parser, &LlvmToken::Eof)) {
-        match llvmParser_current_token(parser) {
-            LlvmToken::At => llvmParser_parse_string(parser),
-            LlvmToken::Define => llvmParser_parse_function(parser),
-            LlvmToken::Declare => llvmParser_parse_declare(parser),
+fn parser_parse_language(parser: &mut Parser) {
+    while not(parser_current_token_eq(parser, &LToken::Eof)) {
+        match parser_current_token(parser) {
+            LToken::At => parser_parse_string(parser),
+            LToken::Define => parser_parse_function(parser),
+            LToken::Declare => parser_parse_declare(parser),
             _ => {
                 let message: String =
-                    llvmParser_expected_message(parser, &string("LLVM top-level item"));
-                llvmParser_error(parser, &message)
+                    parser_expected_message(parser, &string("LLVM top-level item"));
+                parser_error(parser, &message)
             },
         }
     }
 }
 
-fn llvmParser_parse_string(parser: &mut LParser) {
-    let name: String = llvmParser_parse_global_name(parser);
-    llvmParser_expect_token(parser, &LlvmToken::Assign);
-    llvmParser_expect_token(parser, &LlvmToken::Constant);
-    llvmParser_parse_type(parser);
+fn parser_parse_string(parser: &mut Parser) {
+    let name: String = parser_parse_global_name(parser);
+    parser_expect_token(parser, &LToken::Assign);
+    parser_expect_token(parser, &LToken::Constant);
+    parser_parse_type(parser);
 
-    match llvmParser_current_token(parser) {
-        LlvmToken::CString(value) => {
+    match parser_current_token(parser) {
+        LToken::CString(value) => {
             let string_value: String = string_clone(value);
-            llvmParser_next_token(parser);
-            if not(llvmAst_insert_global(
-                llvmParser_ast_mut(parser),
+            parser_next_token(parser);
+            if not(lAst_insert_global(
+                parser_ast_mut(parser),
                 string_clone(&name),
-                LlvmGlobal::String(name, string_value),
+                LGlobal::String(name, string_value),
             )) {
-                llvmParser_error(parser, &string("duplicate LLVM global string"));
+                parser_error(parser, &string("duplicate LLVM global string"));
             }
         },
         _ => {
-            let message: String =
-                llvmParser_expected_message(parser, &string("LLVM c-string literal"));
-            llvmParser_error(parser, &message)
+            let message: String = parser_expected_message(parser, &string("LLVM c-string literal"));
+            parser_error(parser, &message)
         },
     }
 }
 
-fn llvmParser_parse_function(parser: &mut LParser) {
-    llvmParser_expect_token(parser, &LlvmToken::Define);
-    let return_type: LlvmType = llvmParser_parse_type(parser);
-    let function_name: String = llvmParser_parse_global_name(parser);
+fn parser_parse_function(parser: &mut Parser) {
+    parser_expect_token(parser, &LToken::Define);
+    let return_type: LType = parser_parse_type(parser);
+    let function_name: String = parser_parse_global_name(parser);
 
-    llvmLocalSymTable_clear(llvmParser_local_mut(parser));
+    lLocalSymbolTable_clear(parser_local_mut(parser));
 
-    let parameters: Vec<LlvmParameter> = llvmParser_parse_parameters(parser, true);
+    let parameters: Vec<LParameter> = parser_parse_parameters(parser, true);
 
-    llvmParser_expect_token(parser, &LlvmToken::LBrace);
-    let blocks: Vec<InstructionBlock> = llvmParser_parse_blocks(parser);
-    llvmParser_expect_token(parser, &LlvmToken::RBrace);
+    parser_expect_token(parser, &LToken::LBrace);
+    let blocks: Vec<InstructionBlock> = parser_parse_blocks(parser);
+    parser_expect_token(parser, &LToken::RBrace);
 
-    let function: LlvmFunction = LlvmFunction::Function(return_type, parameters, blocks);
-    if not(llvmAst_insert_function(
-        llvmParser_ast_mut(parser),
+    let function: LFunction = LFunction::Function(return_type, parameters, blocks);
+    if not(lAst_insert_function(
+        parser_ast_mut(parser),
         function_name,
         function,
     )) {
-        llvmParser_error(parser, &string("duplicate LLVM function definition"));
+        parser_error(parser, &string("duplicate LLVM function definition"));
     }
 }
 
-fn llvmParser_parse_declare(parser: &mut LParser) {
-    llvmParser_expect_token(parser, &LlvmToken::Declare);
-    let return_type: LlvmType = llvmParser_parse_type(parser);
-    let function_name: String = llvmParser_parse_global_name(parser);
+fn parser_parse_declare(parser: &mut Parser) {
+    parser_expect_token(parser, &LToken::Declare);
+    let return_type: LType = parser_parse_type(parser);
+    let function_name: String = parser_parse_global_name(parser);
 
-    llvmLocalSymTable_clear(llvmParser_local_mut(parser));
-    let parameters: Vec<LlvmParameter> = llvmParser_parse_parameters(parser, false);
+    lLocalSymbolTable_clear(parser_local_mut(parser));
+    let parameters: Vec<LParameter> = parser_parse_parameters(parser, false);
 
-    let builtin: LlvmBuiltIn = if string_eq(&function_name, &string("malloc")) {
-        LlvmBuiltIn::Malloc
+    let builtin: BuiltIn = if string_eq(&function_name, &string("malloc")) {
+        BuiltIn::Malloc
     } else if string_eq(&function_name, &string("exit")) {
-        LlvmBuiltIn::Exit
+        BuiltIn::Exit
     } else {
-        llvmParser_error(parser, &string("unknown declared function"));
+        parser_error(parser, &string("unknown declared function"));
     };
 
-    let function: LlvmFunction = LlvmFunction::BuiltIn(builtin, return_type, parameters);
-    if not(llvmAst_insert_function(
-        llvmParser_ast_mut(parser),
+    let function: LFunction = LFunction::BuiltIn(builtin, return_type, parameters);
+    if not(lAst_insert_function(
+        parser_ast_mut(parser),
         function_name,
         function,
     )) {
-        llvmParser_error(parser, &string("duplicate LLVM function declaration"));
+        parser_error(parser, &string("duplicate LLVM function declaration"));
     }
 }
 
@@ -4415,51 +4364,51 @@ fn llvmParser_parse_declare(parser: &mut LParser) {
 /// * `parser`: The parser state
 /// * `require_names`: True, if the parameters are named (function definition). False, if they are
 /// not (function declaration).
-fn llvmParser_parse_parameters(parser: &mut LParser, named: bool) -> Vec<LlvmParameter> {
-    let mut parameters: Vec<LlvmParameter> = vec_new::<LlvmParameter>();
+fn parser_parse_parameters(parser: &mut Parser, named: bool) -> Vec<LParameter> {
+    let mut parameters: Vec<LParameter> = vec_new::<LParameter>();
 
-    llvmParser_expect_token(parser, &LlvmToken::LParen);
+    parser_expect_token(parser, &LToken::LParen);
 
-    if not(llvmParser_current_token_eq(parser, &LlvmToken::RParen)) {
-        let parameter_type: LlvmType = llvmParser_parse_type(parser);
-        let param_name: String = llvmParser_parse_parameter_name(parser, 0);
-        llvmLocalSymTable_insert_register(
-            llvmParser_local_mut(parser),
+    if not(parser_current_token_eq(parser, &LToken::RParen)) {
+        let parameter_type: LType = parser_parse_type(parser);
+        let param_name: String = parser_parse_parameter_name(parser, 0);
+        lLocalSymbolTable_insert_register(
+            parser_local_mut(parser),
             string_clone(&param_name),
             llvmType_clone(&parameter_type),
         );
 
-        let parameter: LlvmParameter = LlvmParameter::Parameter(param_name, parameter_type);
-        vec_push::<LlvmParameter>(&mut parameters, parameter);
+        let parameter: LParameter = LParameter::Parameter(param_name, parameter_type);
+        vec_push::<LParameter>(&mut parameters, parameter);
 
-        while llvmParser_current_token_eq(parser, &LlvmToken::Comma) {
-            llvmParser_next_token(parser);
+        while parser_current_token_eq(parser, &LToken::Comma) {
+            parser_next_token(parser);
 
-            let parameter_type: LlvmType = llvmParser_parse_type(parser);
+            let parameter_type: LType = parser_parse_type(parser);
             let param_name: String =
-                llvmParser_parse_parameter_name(parser, vec_len::<LlvmParameter>(&parameters));
+                parser_parse_parameter_name(parser, vec_len::<LParameter>(&parameters));
 
             if named {
-                if not(llvmLocalSymTable_insert_register(
-                    llvmParser_local_mut(parser),
+                if not(lLocalSymbolTable_insert_register(
+                    parser_local_mut(parser),
                     string_clone(&param_name),
                     llvmType_clone(&parameter_type),
                 )) {
-                    llvmParser_error(parser, &string("duplicate parameters in LLVM function"));
+                    parser_error(parser, &string("duplicate parameters in LLVM function"));
                 }
             }
 
-            let parameter: LlvmParameter = LlvmParameter::Parameter(param_name, parameter_type);
-            vec_push::<LlvmParameter>(&mut parameters, parameter);
+            let parameter: LParameter = LParameter::Parameter(param_name, parameter_type);
+            vec_push::<LParameter>(&mut parameters, parameter);
         }
     }
-    llvmParser_expect_token(parser, &LlvmToken::RParen);
+    parser_expect_token(parser, &LToken::RParen);
     parameters
 }
 
-fn llvmParser_parse_parameter_name(parser: &mut LParser, index: usize) -> String {
-    if llvmParser_current_token_eq(parser, &LlvmToken::Percent) {
-        llvmParser_parse_register(parser)
+fn parser_parse_parameter_name(parser: &mut Parser, index: usize) -> String {
+    if parser_current_token_eq(parser, &LToken::Percent) {
+        parser_parse_register(parser)
     } else {
         let mut name: String = string("arg");
         string_push_string(&mut name, &integer_to_string(index));
@@ -4467,121 +4416,121 @@ fn llvmParser_parse_parameter_name(parser: &mut LParser, index: usize) -> String
     }
 }
 
-fn llvmParser_parse_global_name(parser: &mut LParser) -> String {
-    llvmParser_expect_token(parser, &LlvmToken::At);
-    llvmParser_expect_identifier(parser)
+fn parser_parse_global_name(parser: &mut Parser) -> String {
+    parser_expect_token(parser, &LToken::At);
+    parser_expect_identifier(parser)
 }
 
-fn llvmParser_parse_blocks(parser: &mut LParser) -> Vec<InstructionBlock> {
+fn parser_parse_blocks(parser: &mut Parser) -> Vec<InstructionBlock> {
     let mut blocks: Vec<InstructionBlock> = vec_new::<InstructionBlock>();
-    while not(llvmParser_current_token_eq(parser, &LlvmToken::RBrace)) {
-        let block: InstructionBlock = llvmParser_parse_block(parser);
+    while not(parser_current_token_eq(parser, &LToken::RBrace)) {
+        let block: InstructionBlock = parser_parse_block(parser);
         vec_push::<InstructionBlock>(&mut blocks, block);
     }
     blocks
 }
 
-fn llvmParser_parse_block(parser: &mut LParser) -> InstructionBlock {
-    let label: String = llvmParser_expect_identifier(parser);
-    llvmParser_expect_token(parser, &LlvmToken::Colon);
+fn parser_parse_block(parser: &mut Parser) -> InstructionBlock {
+    let label: String = parser_expect_identifier(parser);
+    parser_expect_token(parser, &LToken::Colon);
     // TODO: insert into symbol table
 
     let mut instructions: Vec<Instruction> = vec_new::<Instruction>();
-    while llvmParser_is_instruction_start(parser) {
-        let instruction: Instruction = llvmParser_parse_instruction(parser);
+    while parser_is_instruction_start(parser) {
+        let instruction: Instruction = parser_parse_instruction(parser);
         vec_push::<Instruction>(&mut instructions, instruction);
     }
 
     InstructionBlock::Block(label, instructions)
 }
 
-fn llvmParser_parse_register(parser: &mut LParser) -> String {
-    llvmParser_expect_token(parser, &LlvmToken::Percent);
-    llvmParser_expect_identifier(parser)
+fn parser_parse_register(parser: &mut Parser) -> String {
+    parser_expect_token(parser, &LToken::Percent);
+    parser_expect_identifier(parser)
 }
 
-fn llvmParser_parse_instruction(parser: &mut LParser) -> Instruction {
-    match llvmParser_current_token(parser) {
-        LlvmToken::Ret => llvmParser_parse_return(parser),
-        LlvmToken::Br => llvmParser_parse_branch(parser),
-        LlvmToken::Percent => Instruction::Assignment(llvmParser_parse_assignment(parser)),
-        LlvmToken::Store => llvmParser_parse_store(parser),
-        LlvmToken::Call => {
-            llvmParser_next_token(parser);
-            Instruction::Call(llvmParser_parse_call(parser))
+fn parser_parse_instruction(parser: &mut Parser) -> Instruction {
+    match parser_current_token(parser) {
+        LToken::Ret => parser_parse_return(parser),
+        LToken::Br => parser_parse_branch(parser),
+        LToken::Percent => Instruction::Assignment(parser_parse_assignment(parser)),
+        LToken::Store => parser_parse_store(parser),
+        LToken::Call => {
+            parser_next_token(parser);
+            Instruction::Call(parser_parse_call(parser))
         },
         _ => {
-            let message: String = llvmParser_expected_message(parser, &string("LLVM instruction"));
-            llvmParser_error(parser, &message)
+            let message: String = parser_expected_message(parser, &string("LLVM instruction"));
+            parser_error(parser, &message)
         },
     }
 }
 
-fn llvmParser_parse_return(parser: &mut LParser) -> Instruction {
-    llvmParser_expect_token(parser, &LlvmToken::Ret);
-    let returned_type: LlvmType = llvmParser_parse_type(parser);
-    let return_value: Option<LlvmValue> = if llvmType_eq(&returned_type, &LlvmType::Void) {
+fn parser_parse_return(parser: &mut Parser) -> Instruction {
+    parser_expect_token(parser, &LToken::Ret);
+    let returned_type: LType = parser_parse_type(parser);
+    let return_value: Option<LValue> = if llvmType_eq(&returned_type, &LType::Void) {
         Option::None
     } else {
-        Option::Some(llvmParser_parse_value(parser))
+        Option::Some(parser_parse_value(parser))
     };
     Instruction::Ret(returned_type, return_value)
 }
 
-fn llvmParser_parse_branch(parser: &mut LParser) -> Instruction {
-    llvmParser_expect_token(parser, &LlvmToken::Br);
-    let branch: Branch = if llvmParser_try_consume(parser, &LlvmToken::Label) {
-        let target_label: String = llvmParser_parse_register(parser);
+fn parser_parse_branch(parser: &mut Parser) -> Instruction {
+    parser_expect_token(parser, &LToken::Br);
+    let branch: Branch = if parser_try_consume(parser, &LToken::Label) {
+        let target_label: String = parser_parse_register(parser);
         Branch::Unconditional(target_label)
     } else {
-        llvmParser_expect_token(parser, &LlvmToken::I1);
-        let condition: LlvmValue = llvmParser_parse_value(parser);
-        llvmParser_expect_token(parser, &LlvmToken::Comma);
+        parser_expect_token(parser, &LToken::I1);
+        let condition: LValue = parser_parse_value(parser);
+        parser_expect_token(parser, &LToken::Comma);
 
-        llvmParser_expect_token(parser, &LlvmToken::Label);
-        let then_label: String = llvmParser_parse_register(parser);
-        llvmParser_expect_token(parser, &LlvmToken::Comma);
+        parser_expect_token(parser, &LToken::Label);
+        let then_label: String = parser_parse_register(parser);
+        parser_expect_token(parser, &LToken::Comma);
 
-        llvmParser_expect_token(parser, &LlvmToken::Label);
-        let else_label: String = llvmParser_parse_register(parser);
+        parser_expect_token(parser, &LToken::Label);
+        let else_label: String = parser_parse_register(parser);
 
         Branch::Conditional(condition, then_label, else_label)
     };
     Instruction::Br(branch)
 }
 
-fn llvmParser_parse_assignment(parser: &mut LParser) -> AssignInstruction {
-    let target_register: String = llvmParser_parse_register(parser);
+fn parser_parse_assignment(parser: &mut Parser) -> AssignInstruction {
+    let target_register: String = parser_parse_register(parser);
 
-    llvmParser_expect_token(parser, &LlvmToken::Assign);
-    let operation: AssignOp = match llvmParser_consume_current_token(parser) {
-        LlvmToken::Add => llvmParser_parse_binary_assign(parser, BinaryOp::Add),
-        LlvmToken::Sub => llvmParser_parse_binary_assign(parser, BinaryOp::Sub),
-        LlvmToken::Mul => llvmParser_parse_binary_assign(parser, BinaryOp::Mul),
-        LlvmToken::Udiv => llvmParser_parse_binary_assign(parser, BinaryOp::Udiv),
-        LlvmToken::Urem => llvmParser_parse_binary_assign(parser, BinaryOp::Urem),
-        LlvmToken::Icmp => llvmParser_parse_icmp_assign(parser),
-        LlvmToken::Zext => llvmParser_parse_cast_assign(parser, CastOp::Zext),
-        LlvmToken::Trunc => llvmParser_parse_cast_assign(parser, CastOp::Trunc),
-        LlvmToken::IntToPtr => llvmParser_parse_cast_assign(parser, CastOp::IntToPtr),
-        LlvmToken::PtrToInt => llvmParser_parse_cast_assign(parser, CastOp::PtrToInt),
-        LlvmToken::Alloca => llvmParser_parse_alloca_assign(parser),
-        LlvmToken::Load => llvmParser_parse_load_assign(parser),
-        LlvmToken::Call => llvmParser_parse_call_assign(parser),
-        LlvmToken::Gep => llvmParser_parse_gep_assign(parser),
+    parser_expect_token(parser, &LToken::Assign);
+    let operation: AssignOp = match parser_consume_current_token(parser) {
+        LToken::Add => parser_parse_binary_assign(parser, BinaryOp::Add),
+        LToken::Sub => parser_parse_binary_assign(parser, BinaryOp::Sub),
+        LToken::Mul => parser_parse_binary_assign(parser, BinaryOp::Mul),
+        LToken::Udiv => parser_parse_binary_assign(parser, BinaryOp::Udiv),
+        LToken::Urem => parser_parse_binary_assign(parser, BinaryOp::Urem),
+        LToken::Icmp => parser_parse_icmp_assign(parser),
+        LToken::Zext => parser_parse_cast_assign(parser, CastOp::Zext),
+        LToken::Trunc => parser_parse_cast_assign(parser, CastOp::Trunc),
+        LToken::IntToPtr => parser_parse_cast_assign(parser, CastOp::IntToPtr),
+        LToken::PtrToInt => parser_parse_cast_assign(parser, CastOp::PtrToInt),
+        LToken::Alloca => parser_parse_alloca_assign(parser),
+        LToken::Load => parser_parse_load_assign(parser),
+        LToken::Call => parser_parse_call_assign(parser),
+        LToken::Gep => parser_parse_gep_assign(parser),
         _ => {
             let message: String =
-                llvmParser_expected_message(parser, &string("LLVM assignment operation"));
-            llvmParser_error(parser, &message)
+                parser_expected_message(parser, &string("LLVM assignment operation"));
+            parser_error(parser, &message)
         },
     };
 
-    if not(llvmLocalSymTable_insert_register(
-        llvmParser_local_mut(parser),
+    if not(lLocalSymbolTable_insert_register(
+        parser_local_mut(parser),
         string_clone(&target_register),
         assignOp_get_type(&operation),
     )) {
-        llvmParser_error(
+        parser_error(
             parser,
             &string("SSA violation: duplicate virtual register assignment"),
         );
@@ -4590,66 +4539,65 @@ fn llvmParser_parse_assignment(parser: &mut LParser) -> AssignInstruction {
     AssignInstruction::Assign(target_register, operation)
 }
 
-fn llvmParser_parse_binary_assign(parser: &mut LParser, operator: BinaryOp) -> AssignOp {
-    let ty: LlvmType = llvmParser_parse_type(parser);
-    let left: LlvmValue = llvmParser_parse_value(parser);
-    llvmParser_expect_token(parser, &LlvmToken::Comma);
-    let right: LlvmValue = llvmParser_parse_value(parser);
+fn parser_parse_binary_assign(parser: &mut Parser, operator: BinaryOp) -> AssignOp {
+    let ty: LType = parser_parse_type(parser);
+    let left: LValue = parser_parse_value(parser);
+    parser_expect_token(parser, &LToken::Comma);
+    let right: LValue = parser_parse_value(parser);
     AssignOp::Binary(operator, ty, left, right)
 }
 
-fn llvmParser_parse_icmp_assign(parser: &mut LParser) -> AssignOp {
-    let predicate: IcmpOp = match llvmParser_consume_current_token(parser) {
-        LlvmToken::Eq => IcmpOp::Eq,
-        LlvmToken::Ne => IcmpOp::Ne,
-        LlvmToken::Ugt => IcmpOp::Ugt,
-        LlvmToken::Uge => IcmpOp::Uge,
-        LlvmToken::Ult => IcmpOp::Ult,
-        LlvmToken::Ule => IcmpOp::Ule,
+fn parser_parse_icmp_assign(parser: &mut Parser) -> AssignOp {
+    let predicate: IcmpOp = match parser_consume_current_token(parser) {
+        LToken::Eq => IcmpOp::Eq,
+        LToken::Ne => IcmpOp::Ne,
+        LToken::Ugt => IcmpOp::Ugt,
+        LToken::Uge => IcmpOp::Uge,
+        LToken::Ult => IcmpOp::Ult,
+        LToken::Ule => IcmpOp::Ule,
         _ => {
-            let message: String =
-                llvmParser_expected_message(parser, &string("LLVM icmp operator"));
-            llvmParser_error(parser, &message)
+            let message: String = parser_expected_message(parser, &string("LLVM icmp operator"));
+            parser_error(parser, &message)
         },
     };
 
-    let ty: LlvmType = llvmParser_parse_type(parser);
-    let left: LlvmValue = llvmParser_parse_value(parser);
-    llvmParser_expect_value_type(parser, &left, &ty);
+    let ty: LType = parser_parse_type(parser);
+    let left: LValue = parser_parse_value(parser);
+    parser_expect_value_type(parser, &left, &ty);
 
-    llvmParser_expect_token(parser, &LlvmToken::Comma);
-    let right: LlvmValue = llvmParser_parse_value(parser);
-    llvmParser_expect_value_type(parser, &right, &ty);
+    parser_expect_token(parser, &LToken::Comma);
+    let right: LValue = parser_parse_value(parser);
+    parser_expect_value_type(parser, &right, &ty);
 
     AssignOp::Icmp(predicate, ty, left, right)
 }
 
-fn llvmParser_parse_call_assign(parser: &mut LParser) -> AssignOp {
-    let call: Call = llvmParser_parse_call(parser);
+fn parser_parse_call_assign(parser: &mut Parser) -> AssignOp {
+    let call: Call = parser_parse_call(parser);
 
     let Call::Call(return_type, _, _): &Call = &call;
-    if llvmType_eq(return_type, &LlvmType::Void) {
-        llvmParser_error(parser, &string("cannot assign void to a register"));
+    if llvmType_eq(return_type, &LType::Void) {
+        parser_error(parser, &string("cannot assign void to a register"));
     }
 
     AssignOp::Call(call)
 }
 
-fn llvmParser_parse_cast_assign(parser: &mut LParser, operator: CastOp) -> AssignOp {
-    let from_type: LlvmType = llvmParser_parse_type(parser);
+fn parser_parse_cast_assign(parser: &mut Parser, operator: CastOp) -> AssignOp {
+    let from_type: LType = parser_parse_type(parser);
 
-    let value: LlvmValue = llvmParser_parse_value(parser);
-    llvmParser_expect_value_type(parser, &value, &from_type);
+    let value: LValue = parser_parse_value(parser);
+    parser_expect_value_type(parser, &value, &from_type);
 
-    llvmParser_expect_token(parser, &LlvmToken::To);
-    let to_type: LlvmType = llvmParser_parse_type(parser);
+    parser_expect_token(parser, &LToken::To);
+    let to_type: LType = parser_parse_type(parser);
 
     match &operator {
         CastOp::Zext => {
             let from_bits: usize = llvmType_bitwidth(&from_type);
             let to_bits: usize = llvmType_bitwidth(&to_type);
             if not(from_bits < to_bits) {
-                llvmParser_error(
+                parser_error(
                     parser,
                     &string("invalid LLVM zext: source type must be smaller than target type"),
                 );
@@ -4659,35 +4607,35 @@ fn llvmParser_parse_cast_assign(parser: &mut LParser, operator: CastOp) -> Assig
             let from_bits: usize = llvmType_bitwidth(&from_type);
             let to_bits: usize = llvmType_bitwidth(&to_type);
             if not(from_bits > to_bits) {
-                llvmParser_error(
+                parser_error(
                     parser,
                     &string("invalid LLVM trunc: source type must be larger than target type"),
                 );
             }
         },
         CastOp::IntToPtr => {
-            if not(llvmType_eq(&from_type, &LlvmType::I64)) {
-                llvmParser_error(
+            if not(llvmType_eq(&from_type, &LType::I64)) {
+                parser_error(
                     parser,
                     &string("invalid LLVM inttoptr: source type must be i64"),
                 );
             }
-            if not(llvmType_eq(&to_type, &LlvmType::Ptr)) {
-                llvmParser_error(
+            if not(llvmType_eq(&to_type, &LType::Ptr)) {
+                parser_error(
                     parser,
                     &string("invalid LLVM inttoptr: target type must be ptr"),
                 );
             }
         },
         CastOp::PtrToInt => {
-            if not(llvmType_eq(&from_type, &LlvmType::Ptr)) {
-                llvmParser_error(
+            if not(llvmType_eq(&from_type, &LType::Ptr)) {
+                parser_error(
                     parser,
                     &string("invalid LLVM ptrtoint: source type must be ptr"),
                 );
             }
-            if not(llvmType_eq(&to_type, &LlvmType::I64)) {
-                llvmParser_error(
+            if not(llvmType_eq(&to_type, &LType::I64)) {
+                parser_error(
                     parser,
                     &string("invalid LLVM ptrtoint: target type must be i64"),
                 );
@@ -4698,155 +4646,154 @@ fn llvmParser_parse_cast_assign(parser: &mut LParser, operator: CastOp) -> Assig
     AssignOp::Cast(operator, to_type, value)
 }
 
-fn llvmParser_parse_alloca_assign(parser: &mut LParser) -> AssignOp {
-    let allocated_type: LlvmType = llvmParser_parse_type(parser);
-    llvmParser_expect_token(parser, &LlvmToken::Comma);
+fn parser_parse_alloca_assign(parser: &mut Parser) -> AssignOp {
+    let allocated_type: LType = parser_parse_type(parser);
+    parser_expect_token(parser, &LToken::Comma);
 
-    llvmParser_expect_token(parser, &LlvmToken::I64);
-    let num_elements: usize = llvmParser_parse_integer(parser);
+    parser_expect_token(parser, &LToken::I64);
+    let num_elements: usize = parser_parse_integer(parser);
 
     AssignOp::Alloca(allocated_type, num_elements)
 }
 
-fn llvmParser_parse_load_assign(parser: &mut LParser) -> AssignOp {
-    let loaded_type: LlvmType = llvmParser_parse_type(parser);
-    llvmParser_expect_token(parser, &LlvmToken::Comma);
+fn parser_parse_load_assign(parser: &mut Parser) -> AssignOp {
+    let loaded_type: LType = parser_parse_type(parser);
+    parser_expect_token(parser, &LToken::Comma);
 
-    llvmParser_expect_token(parser, &LlvmToken::Ptr);
-    let address: LlvmValue = llvmParser_parse_value(parser);
-    llvmParser_expect_value_type(parser, &address, &LlvmType::Ptr);
+    parser_expect_token(parser, &LToken::Ptr);
+    let address: LValue = parser_parse_value(parser);
+    parser_expect_value_type(parser, &address, &LType::Ptr);
 
     AssignOp::Load(loaded_type, address)
 }
 
-fn llvmParser_parse_gep_assign(parser: &mut LParser) -> AssignOp {
-    let base_type: LlvmType = llvmParser_parse_type(parser);
-    llvmParser_expect_token(parser, &LlvmToken::Comma);
-    llvmParser_expect_token(parser, &LlvmToken::Ptr);
-    let pointer_value: LlvmValue = llvmParser_parse_value(parser);
-    llvmParser_expect_token(parser, &LlvmToken::Comma);
+fn parser_parse_gep_assign(parser: &mut Parser) -> AssignOp {
+    let base_type: LType = parser_parse_type(parser);
+    parser_expect_token(parser, &LToken::Comma);
+    parser_expect_token(parser, &LToken::Ptr);
+    let pointer_value: LValue = parser_parse_value(parser);
+    parser_expect_token(parser, &LToken::Comma);
 
-    let mut indexes: Vec<LlvmTypedValue> = vec_new::<LlvmTypedValue>();
-    let first_index_type: LlvmType = llvmParser_parse_type(parser);
-    let first_index_value: LlvmValue = llvmParser_parse_value(parser);
-    llvmParser_expect_value_type(parser, &first_index_value, &first_index_type);
-    let first_index: LlvmTypedValue = LlvmTypedValue::Pair(first_index_type, first_index_value);
-    vec_push::<LlvmTypedValue>(&mut indexes, first_index);
-    while llvmParser_try_consume(parser, &LlvmToken::Comma) {
-        let index_type: LlvmType = llvmParser_parse_type(parser);
-        let index_value: LlvmValue = llvmParser_parse_value(parser);
-        llvmParser_expect_value_type(parser, &index_value, &index_type);
-        let index: LlvmTypedValue = LlvmTypedValue::Pair(index_type, index_value);
-        vec_push::<LlvmTypedValue>(&mut indexes, index);
+    let mut indexes: Vec<LTypedValue> = vec_new::<LTypedValue>();
+    let first_index_type: LType = parser_parse_type(parser);
+    let first_index_value: LValue = parser_parse_value(parser);
+    parser_expect_value_type(parser, &first_index_value, &first_index_type);
+    let first_index: LTypedValue = LTypedValue::Pair(first_index_type, first_index_value);
+    vec_push::<LTypedValue>(&mut indexes, first_index);
+    while parser_try_consume(parser, &LToken::Comma) {
+        let index_type: LType = parser_parse_type(parser);
+        let index_value: LValue = parser_parse_value(parser);
+        parser_expect_value_type(parser, &index_value, &index_type);
+        let index: LTypedValue = LTypedValue::Pair(index_type, index_value);
+        vec_push::<LTypedValue>(&mut indexes, index);
     }
 
     AssignOp::Gep(base_type, pointer_value, indexes)
 }
 
-fn llvmParser_parse_store(parser: &mut LParser) -> Instruction {
-    llvmParser_expect_token(parser, &LlvmToken::Store);
+fn parser_parse_store(parser: &mut Parser) -> Instruction {
+    parser_expect_token(parser, &LToken::Store);
 
-    let store_type: LlvmType = llvmParser_parse_type(parser);
-    let value: LlvmValue = llvmParser_parse_value(parser);
-    llvmParser_expect_value_type(parser, &value, &store_type);
+    let store_type: LType = parser_parse_type(parser);
+    let value: LValue = parser_parse_value(parser);
+    parser_expect_value_type(parser, &value, &store_type);
 
-    llvmParser_expect_token(parser, &LlvmToken::Comma);
-    llvmParser_expect_token(parser, &LlvmToken::Ptr);
+    parser_expect_token(parser, &LToken::Comma);
+    parser_expect_token(parser, &LToken::Ptr);
 
-    let address: LlvmValue = llvmParser_parse_value(parser);
-    llvmParser_expect_value_type(parser, &address, &LlvmType::Ptr);
+    let address: LValue = parser_parse_value(parser);
+    parser_expect_value_type(parser, &address, &LType::Ptr);
 
     Instruction::Store(store_type, value, address)
 }
 
-fn llvmParser_parse_call(parser: &mut LParser) -> Call {
-    let return_type: LlvmType = llvmParser_parse_type(parser);
-    let callee: String = llvmParser_parse_global_name(parser);
+fn parser_parse_call(parser: &mut Parser) -> Call {
+    let return_type: LType = parser_parse_type(parser);
+    let callee: String = parser_parse_global_name(parser);
 
-    llvmParser_expect_token(parser, &LlvmToken::LParen);
-    let mut arguments: Vec<LlvmTypedValue> = vec_new::<LlvmTypedValue>();
-    if not(llvmParser_current_token_eq(parser, &LlvmToken::RParen)) {
-        let arg_type: LlvmType = llvmParser_parse_type(parser);
-        let arg_value: LlvmValue = llvmParser_parse_value(parser);
-        llvmParser_expect_value_type(parser, &arg_value, &arg_type);
-        vec_push::<LlvmTypedValue>(&mut arguments, LlvmTypedValue::Pair(arg_type, arg_value));
+    parser_expect_token(parser, &LToken::LParen);
+    let mut arguments: Vec<LTypedValue> = vec_new::<LTypedValue>();
+    if not(parser_current_token_eq(parser, &LToken::RParen)) {
+        let arg_type: LType = parser_parse_type(parser);
+        let arg_value: LValue = parser_parse_value(parser);
+        parser_expect_value_type(parser, &arg_value, &arg_type);
+        vec_push::<LTypedValue>(&mut arguments, LTypedValue::Pair(arg_type, arg_value));
 
-        while llvmParser_current_token_eq(parser, &LlvmToken::Comma) {
-            llvmParser_next_token(parser);
+        while parser_current_token_eq(parser, &LToken::Comma) {
+            parser_next_token(parser);
 
-            let arg_type: LlvmType = llvmParser_parse_type(parser);
-            let arg_value: LlvmValue = llvmParser_parse_value(parser);
-            llvmParser_expect_value_type(parser, &arg_value, &arg_type);
-            vec_push::<LlvmTypedValue>(&mut arguments, LlvmTypedValue::Pair(arg_type, arg_value));
+            let arg_type: LType = parser_parse_type(parser);
+            let arg_value: LValue = parser_parse_value(parser);
+            parser_expect_value_type(parser, &arg_value, &arg_type);
+            vec_push::<LTypedValue>(&mut arguments, LTypedValue::Pair(arg_type, arg_value));
         }
     }
-    llvmParser_expect_token(parser, &LlvmToken::RParen);
+    parser_expect_token(parser, &LToken::RParen);
 
     Call::Call(return_type, callee, arguments)
 }
 
-fn llvmParser_parse_type(parser: &mut LParser) -> LlvmType {
-    match llvmParser_consume_current_token(parser) {
-        LlvmToken::I1 => LlvmType::I1,
-        LlvmToken::I8 => LlvmType::I8,
-        LlvmToken::I64 => LlvmType::I64,
-        LlvmToken::Void => LlvmType::Void,
-        LlvmToken::Ptr => LlvmType::Ptr,
-        LlvmToken::LBracket => {
-            let len: usize = llvmParser_parse_integer(parser);
-            match llvmParser_current_token(parser) {
-                LlvmToken::Identifier(separator) => {
+fn parser_parse_type(parser: &mut Parser) -> LType {
+    match parser_consume_current_token(parser) {
+        LToken::I1 => LType::I1,
+        LToken::I8 => LType::I8,
+        LToken::I64 => LType::I64,
+        LToken::Void => LType::Void,
+        LToken::Ptr => LType::Ptr,
+        LToken::LBracket => {
+            let len: usize = parser_parse_integer(parser);
+            match parser_current_token(parser) {
+                LToken::Identifier(separator) => {
                     if not(string_eq(separator, &string("x"))) {
                         let message: String =
-                            llvmParser_expected_message(parser, &string("x in LLVM array type"));
-                        llvmParser_error(parser, &message);
+                            parser_expected_message(parser, &string("x in LLVM array type"));
+                        parser_error(parser, &message);
                     }
-                    llvmParser_next_token(parser);
+                    parser_next_token(parser);
                 },
                 _ => {
                     let message: String =
-                        llvmParser_expected_message(parser, &string("x in LLVM array type"));
-                    llvmParser_error(parser, &message)
+                        parser_expected_message(parser, &string("x in LLVM array type"));
+                    parser_error(parser, &message)
                 },
             }
-            let inner: LlvmType = llvmParser_parse_type(parser);
-            llvmParser_expect_token(parser, &LlvmToken::RBracket);
-            LlvmType::Array(len, box_new::<LlvmType>(inner))
+            let inner: LType = parser_parse_type(parser);
+            parser_expect_token(parser, &LToken::RBracket);
+            LType::Array(len, box_new::<LType>(inner))
         },
         _ => {
-            let message: String = llvmParser_expected_message(parser, &string("LLVM type"));
-            llvmParser_error(parser, &message)
-        },
-    }
-}
-
-fn llvmParser_parse_value(parser: &mut LParser) -> LlvmValue {
-    match llvmParser_current_token(parser) {
-        LlvmToken::Percent => LlvmValue::Register(llvmParser_parse_register(parser)),
-        LlvmToken::At => LlvmValue::Global(llvmParser_parse_global_name(parser)),
-        LlvmToken::Integer(_) => LlvmValue::Literal(llvmParser_parse_integer(parser)),
-        _ => {
-            let message: String = llvmParser_expected_message(parser, &string("LLVM value"));
-            llvmParser_error(parser, &message)
+            let message: String = parser_expected_message(parser, &string("LLVM type"));
+            parser_error(parser, &message)
         },
     }
 }
 
-fn llvmParser_parse_integer(parser: &mut LParser) -> usize {
-    match llvmParser_consume_current_token(parser) {
-        LlvmToken::Integer(value) => value,
+fn parser_parse_value(parser: &mut Parser) -> LValue {
+    match parser_current_token(parser) {
+        LToken::Percent => LValue::Register(parser_parse_register(parser)),
+        LToken::At => LValue::Global(parser_parse_global_name(parser)),
+        LToken::Integer(_) => LValue::Literal(parser_parse_integer(parser)),
         _ => {
-            let message: String =
-                llvmParser_expected_message(parser, &string("LLVM integer literal"));
-            llvmParser_error(parser, &message)
+            let message: String = parser_expected_message(parser, &string("LLVM value"));
+            parser_error(parser, &message)
+        },
+    }
+}
+
+fn parser_parse_integer(parser: &mut Parser) -> usize {
+    match parser_consume_current_token(parser) {
+        LToken::Integer(value) => value,
+        _ => {
+            let message: String = parser_expected_message(parser, &string("LLVM integer literal"));
+            parser_error(parser, &message)
         },
     }
 }
 
 // ------------------------- Interpreter -----------------------------
 
-/// Execution control flow after one instruction.
-enum LlvmExecFlow {
+/// Execution control flow after one LLVM-IR instruction.
+enum ExecFlow {
     Continue,
     /// label
     Jump(String),
@@ -4994,13 +4941,12 @@ fn emu_allocate_heap(emulator: &mut Emu, size: usize) -> Option<usize> {
 }
 
 /// Load top-level LLVM string globals into the data segment.
-fn emu_load_globals(emulator: &mut Emu, ast: &LlvmAst) {
+fn emu_load_globals(emulator: &mut Emu, ast: &LAst) {
     let mut data_pointer: usize = emu_get_gp(emulator);
 
     let mut i: usize = 0;
-    while i < vec_len::<LlvmGlobal>(llvmAst_globals(ast)) {
-        let LlvmGlobal::String(name, value): &LlvmGlobal =
-            vec_at::<LlvmGlobal>(llvmAst_globals(ast), i);
+    while i < vec_len::<LGlobal>(lAst_globals(ast)) {
+        let LGlobal::String(name, value): &LGlobal = vec_at::<LGlobal>(lAst_globals(ast), i);
 
         let alloc_size: usize = emu_align_to_double(string_len(value));
         let address: usize = data_pointer;
@@ -5073,7 +5019,7 @@ fn emu_load_bytes(emulator: &Emu, address: usize, byte_count: usize) -> Option<u
 
 /// Parse and emulate LLVM source and return the return value of @main.
 fn emu_execute_llvm(source: String) -> usize {
-    let ast: LlvmAst = llvmParser_parse_to_ast(source);
+    let ast: LAst = parser_parse_to_ast(source);
 
     let main_name: String = string("main");
     let empty_args: Vec<usize> = vec_new::<usize>();
@@ -5087,37 +5033,37 @@ fn emu_execute_llvm(source: String) -> usize {
 /// Lookup a function by name and execute it.
 fn emu_execute_function_named(
     emulator: &mut Emu,
-    ast: &LlvmAst,
+    ast: &LAst,
     function_name: &String,
     arguments: &Vec<usize>,
 ) -> usize {
-    let function: &LlvmFunction = llvmAst_lookup_function(ast, string_clone(function_name));
+    let function: &LFunction = lAst_lookup_function(ast, string_clone(function_name));
     emu_execute_function(emulator, ast, function, arguments)
 }
 
 /// Execute the given function's body.
 fn emu_execute_function(
     emulator: &mut Emu,
-    ast: &LlvmAst,
-    function: &LlvmFunction,
+    ast: &LAst,
+    function: &LFunction,
     arguments: &Vec<usize>,
 ) -> usize {
     let previous_frame_size: usize = emu_get_frame_size(emulator);
     emu_set_frame_size(emulator, 0);
 
     match function {
-        LlvmFunction::BuiltIn(builtin, _, _) => {
+        LFunction::BuiltIn(builtin, _, _) => {
             let value: usize = emu_execute_builtin(emulator, builtin, arguments);
             emu_set_frame_size(emulator, previous_frame_size);
             return value;
         },
-        LlvmFunction::Function(_, parameters, blocks) => {
+        LFunction::Function(_, parameters, blocks) => {
             let mut virtual_registers: StringMap<usize> = stringMap_new::<usize>();
 
             let mut i: usize = 0;
-            while i < vec_len::<LlvmParameter>(parameters) {
-                let parameter: &LlvmParameter = vec_at::<LlvmParameter>(parameters, i);
-                let LlvmParameter::Parameter(name, _): &LlvmParameter = parameter;
+            while i < vec_len::<LParameter>(parameters) {
+                let parameter: &LParameter = vec_at::<LParameter>(parameters, i);
+                let LParameter::Parameter(name, _): &LParameter = parameter;
 
                 let value: &usize = vec_at::<usize>(arguments, i);
                 stringMap_insert::<usize>(&mut virtual_registers, string_clone(name), *value);
@@ -5133,13 +5079,13 @@ fn emu_execute_function(
                 let instructions: &Vec<Instruction> =
                     instructionBlock_fetch_instructions(blocks, string_clone(&current_label));
 
-                let flow: LlvmExecFlow =
+                let flow: ExecFlow =
                     emu_execute_instructions(emulator, ast, &mut virtual_registers, instructions);
 
                 match flow {
-                    LlvmExecFlow::Continue => panic("LLVM block did not terminate"),
-                    LlvmExecFlow::Jump(next_label) => current_label = next_label,
-                    LlvmExecFlow::Return(value) => {
+                    ExecFlow::Continue => panic("LLVM block did not terminate"),
+                    ExecFlow::Jump(next_label) => current_label = next_label,
+                    ExecFlow::Return(value) => {
                         emu_deallocate_stack_frame(emulator);
                         emu_set_frame_size(emulator, previous_frame_size);
                         return value;
@@ -5152,16 +5098,16 @@ fn emu_execute_function(
 }
 
 /// Execute one builtin function and return its value.
-fn emu_execute_builtin(emulator: &mut Emu, builtin: &LlvmBuiltIn, arguments: &Vec<usize>) -> usize {
+fn emu_execute_builtin(emulator: &mut Emu, builtin: &BuiltIn, arguments: &Vec<usize>) -> usize {
     match builtin {
-        LlvmBuiltIn::Malloc => {
+        BuiltIn::Malloc => {
             let value: usize = *vec_at::<usize>(arguments, 0);
             match emu_allocate_heap(emulator, value) {
                 Option::Some(address) => address,
                 Option::None => panic("heap overflow of emu"),
             }
         },
-        LlvmBuiltIn::Exit => {
+        BuiltIn::Exit => {
             let value: usize = *vec_at::<usize>(arguments, 0);
             emu_set_exit_code(emulator, value);
             value
@@ -5172,10 +5118,10 @@ fn emu_execute_builtin(emulator: &mut Emu, builtin: &LlvmBuiltIn, arguments: &Ve
 /// Execute a given list of instructions.
 fn emu_execute_instructions(
     emulator: &mut Emu,
-    ast: &LlvmAst,
+    ast: &LAst,
     registers: &mut StringMap<usize>,
     instructions: &Vec<Instruction>,
-) -> LlvmExecFlow {
+) -> ExecFlow {
     let mut i: usize = 0;
     while i < vec_len::<Instruction>(instructions) {
         let instruction: &Instruction = vec_at::<Instruction>(instructions, i);
@@ -5192,7 +5138,7 @@ fn emu_execute_instructions(
             },
 
             Instruction::Ret(return_type, return_value) => {
-                return LlvmExecFlow::Return(match return_value {
+                return ExecFlow::Return(match return_value {
                     Option::Some(value) => {
                         let value: usize = llvm_eval_value(emulator, registers, value);
                         llvm_overflow_value(value, &return_type)
@@ -5203,16 +5149,16 @@ fn emu_execute_instructions(
             Instruction::Br(branch) => {
                 return match branch {
                     Branch::Unconditional(target_label) => {
-                        LlvmExecFlow::Jump(string_clone(target_label))
+                        ExecFlow::Jump(string_clone(target_label))
                     },
                     Branch::Conditional(condition, then_label, else_label) => {
                         let condition_value: usize =
                             llvm_eval_value(emulator, registers, condition);
 
                         if condition_value == 1 {
-                            LlvmExecFlow::Jump(string_clone(then_label))
+                            ExecFlow::Jump(string_clone(then_label))
                         } else {
-                            LlvmExecFlow::Jump(string_clone(else_label))
+                            ExecFlow::Jump(string_clone(else_label))
                         }
                     },
                 };
@@ -5220,19 +5166,19 @@ fn emu_execute_instructions(
         }
 
         match emu_exit_code(emulator) {
-            Option::Some(code) => return LlvmExecFlow::Return(code),
+            Option::Some(code) => return ExecFlow::Return(code),
             Option::None => {},
         }
 
         i = i + 1;
     }
-    LlvmExecFlow::Continue
+    ExecFlow::Continue
 }
 
 /// Execute the given assignment instruction.
 fn emu_execute_assignment(
     emulator: &mut Emu,
-    ast: &LlvmAst,
+    ast: &LAst,
     registers: &mut StringMap<usize>,
     AssignInstruction::Assign(target, operation): &AssignInstruction,
 ) {
@@ -5243,7 +5189,7 @@ fn emu_execute_assignment(
 /// Evaluate the value of the assignment operation.
 fn emu_evaluate_assign_op(
     emulator: &mut Emu,
-    ast: &LlvmAst,
+    ast: &LAst,
     registers: &StringMap<usize>,
     operation: &AssignOp,
 ) -> usize {
@@ -5314,17 +5260,17 @@ fn emu_evaluate_assign_op(
 
         AssignOp::Gep(base_type, pointer, indexes) => {
             let mut address: usize = llvm_eval_value(emulator, registers, pointer);
-            let mut current_type: LlvmType = llvmType_clone(base_type);
+            let mut current_type: LType = llvmType_clone(base_type);
 
             let mut i: usize = 0;
-            while i < vec_len::<LlvmTypedValue>(indexes) {
-                let LlvmTypedValue::Pair(_, index_value): &LlvmTypedValue =
-                    vec_at::<LlvmTypedValue>(indexes, i);
+            while i < vec_len::<LTypedValue>(indexes) {
+                let LTypedValue::Pair(_, index_value): &LTypedValue =
+                    vec_at::<LTypedValue>(indexes, i);
                 let index: usize = llvm_eval_value(emulator, registers, index_value);
 
                 address = address + index * llvmType_size(&current_type);
                 current_type = match current_type {
-                    LlvmType::Array(_, inner) => llvmType_clone(box_deref::<LlvmType>(&inner)),
+                    LType::Array(_, inner) => llvmType_clone(box_deref::<LType>(&inner)),
                     other => other,
                 };
                 i = i + 1;
@@ -5337,17 +5283,17 @@ fn emu_evaluate_assign_op(
 /// Execute an LLVM call and return the raw result value.
 fn emu_execute_call(
     emulator: &mut Emu,
-    ast: &LlvmAst,
+    ast: &LAst,
     registers: &StringMap<usize>,
-    call_type: &LlvmType,
+    call_type: &LType,
     callee: &String,
-    arguments: &Vec<LlvmTypedValue>,
+    arguments: &Vec<LTypedValue>,
 ) -> usize {
     let mut arg_values: Vec<usize> = vec_new::<usize>();
     let mut i: usize = 0;
-    while i < vec_len::<LlvmTypedValue>(arguments) {
-        let argument: &LlvmTypedValue = vec_at::<LlvmTypedValue>(arguments, i);
-        let LlvmTypedValue::Pair(ty, argument_value): &LlvmTypedValue = argument;
+    while i < vec_len::<LTypedValue>(arguments) {
+        let argument: &LTypedValue = vec_at::<LTypedValue>(arguments, i);
+        let LTypedValue::Pair(ty, argument_value): &LTypedValue = argument;
 
         let value: usize = llvm_eval_value(emulator, registers, argument_value);
         let wrapped_value: usize = llvm_overflow_value(value, ty);
@@ -5361,10 +5307,10 @@ fn emu_execute_call(
 }
 
 /// Normalize a value so it wraps around according to the given type.
-fn llvm_overflow_value(value: usize, ty: &LlvmType) -> usize {
+fn llvm_overflow_value(value: usize, ty: &LType) -> usize {
     match ty {
-        LlvmType::I1 => value % 2,
-        LlvmType::I8 => value % 256,
+        LType::I1 => value % 2,
+        LType::I8 => value % 256,
         _ => value,
     }
 }
@@ -5373,9 +5319,9 @@ fn llvm_overflow_value(value: usize, ty: &LlvmType) -> usize {
 fn emu_execute_store(
     emulator: &mut Emu,
     registers: &StringMap<usize>,
-    store_type: &LlvmType,
-    value: &LlvmValue,
-    address: &LlvmValue,
+    store_type: &LType,
+    value: &LValue,
+    address: &LValue,
 ) {
     let raw_value: usize = llvm_eval_value(emulator, registers, value);
     let stored_value: usize = llvm_overflow_value(raw_value, store_type);
@@ -5393,14 +5339,14 @@ fn emu_execute_store(
 }
 
 /// Evaluate the value of a virtual register, global name or literal.
-fn llvm_eval_value(emulator: &Emu, registers: &StringMap<usize>, value: &LlvmValue) -> usize {
+fn llvm_eval_value(emulator: &Emu, registers: &StringMap<usize>, value: &LValue) -> usize {
     match value {
-        LlvmValue::Literal(number) => *number,
-        LlvmValue::Register(name) => match stringMap_get::<usize>(registers, name) {
+        LValue::Literal(number) => *number,
+        LValue::Register(name) => match stringMap_get::<usize>(registers, name) {
             Option::Some(register_value) => *register_value,
             Option::None => panic("unknown LLVM register"),
         },
-        LlvmValue::Global(name) => match stringMap_get::<usize>(emu_globals(emulator), name) {
+        LValue::Global(name) => match stringMap_get::<usize>(emu_globals(emulator), name) {
             Option::Some(value) => *value,
             Option::None => panic("unknown LLVM global value"),
         },
@@ -5465,12 +5411,12 @@ fn report_error(file: &SourceFile, message: &String) -> ! {
     exit_process(1);
 }
 
-fn lexer_error(lexer: &Lexer, message: &String) -> ! {
-    report_error(lexer_sourcefile(lexer), message)
+fn lexer_error(lexer: &RLexer, message: &String) -> ! {
+    report_error(rLexer_sourcefile(lexer), message)
 }
 
 /// Emit an error at the parser current location and abort.
-fn parse_error(lexer: &Lexer, message: &String) -> ! {
+fn parse_error(lexer: &RLexer, message: &String) -> ! {
     lexer_error(lexer, message)
 }
 
@@ -5483,15 +5429,15 @@ fn semantic_check_error(message: &str) -> ! {
 }
 
 /// Emit an LLVM parser error and panic.
-fn llvmParser_error(parser: &LParser, message: &String) -> ! {
-    let file: &SourceFile = llvmLexer_sourcefile(llvmParser_lexer(parser));
+fn parser_error(parser: &Parser, message: &String) -> ! {
+    let file: &SourceFile = lLexer_sourcefile(parser_lexer(parser));
     report_error(file, message)
 }
 
-fn llvmParser_expected_message(parser: &LParser, expected: &String) -> String {
+fn parser_expected_message(parser: &Parser, expected: &String) -> String {
     let mut message: String = string("expected ");
     string_push_string(&mut message, expected);
-    let token: &LlvmToken = llvmParser_current_token(parser);
+    let token: &LToken = parser_current_token(parser);
     string_push_str(&mut message, ", but got: ");
     string_push_string(&mut message, &llvmToken_to_string(token));
     message
@@ -5956,300 +5902,300 @@ fn stringMapStack_lookup<'a, T>(stack: &'a StringMapStack<T>, name: &String) -> 
 // --------------------------- Eq ---------------------------------
 // ----------------------------------------------------------------
 
-fn llvmType_eq(left: &LlvmType, right: &LlvmType) -> bool {
+fn llvmType_eq(left: &LType, right: &LType) -> bool {
     match left {
-        LlvmType::I1 => match right {
-            LlvmType::I1 => true,
+        LType::I1 => match right {
+            LType::I1 => true,
             _ => false,
         },
-        LlvmType::I8 => match right {
-            LlvmType::I8 => true,
+        LType::I8 => match right {
+            LType::I8 => true,
             _ => false,
         },
-        LlvmType::I64 => match right {
-            LlvmType::I64 => true,
+        LType::I64 => match right {
+            LType::I64 => true,
             _ => false,
         },
-        LlvmType::Ptr => match right {
-            LlvmType::Ptr => true,
+        LType::Ptr => match right {
+            LType::Ptr => true,
             _ => false,
         },
-        LlvmType::Array(left_len, left_inner) => match right {
-            LlvmType::Array(right_len, right_inner) => {
+        LType::Array(left_len, left_inner) => match right {
+            LType::Array(right_len, right_inner) => {
                 *left_len == *right_len
                     && llvmType_eq(
-                        box_deref::<LlvmType>(left_inner),
-                        box_deref::<LlvmType>(right_inner),
+                        box_deref::<LType>(left_inner),
+                        box_deref::<LType>(right_inner),
                     )
             },
             _ => false,
         },
-        LlvmType::Void => match right {
-            LlvmType::Void => true,
+        LType::Void => match right {
+            LType::Void => true,
             _ => false,
         },
     }
 }
 
 /// Check if two tokens are equal.
-fn token_eq(a: &Token, b: &Token) -> bool {
+fn token_eq(a: &RToken, b: &RToken) -> bool {
     match a {
-        Token::Unsafe => match b {
-            Token::Unsafe => true,
+        RToken::Unsafe => match b {
+            RToken::Unsafe => true,
             _ => false,
         },
-        Token::Fn => match b {
-            Token::Fn => true,
+        RToken::Fn => match b {
+            RToken::Fn => true,
             _ => false,
         },
-        Token::Enum => match b {
-            Token::Enum => true,
+        RToken::Enum => match b {
+            RToken::Enum => true,
             _ => false,
         },
-        Token::Extern => match b {
-            Token::Extern => true,
+        RToken::Extern => match b {
+            RToken::Extern => true,
             _ => false,
         },
-        Token::Let => match b {
-            Token::Let => true,
+        RToken::Let => match b {
+            RToken::Let => true,
             _ => false,
         },
-        Token::If => match b {
-            Token::If => true,
+        RToken::If => match b {
+            RToken::If => true,
             _ => false,
         },
-        Token::Else => match b {
-            Token::Else => true,
+        RToken::Else => match b {
+            RToken::Else => true,
             _ => false,
         },
-        Token::While => match b {
-            Token::While => true,
+        RToken::While => match b {
+            RToken::While => true,
             _ => false,
         },
-        Token::Return => match b {
-            Token::Return => true,
+        RToken::Return => match b {
+            RToken::Return => true,
             _ => false,
         },
-        Token::Match => match b {
-            Token::Match => true,
+        RToken::Match => match b {
+            RToken::Match => true,
             _ => false,
         },
-        Token::As => match b {
-            Token::As => true,
+        RToken::As => match b {
+            RToken::As => true,
             _ => false,
         },
-        Token::Mut => match b {
-            Token::Mut => true,
+        RToken::Mut => match b {
+            RToken::Mut => true,
             _ => false,
         },
-        Token::Pipe => match b {
-            Token::Pipe => true,
+        RToken::Pipe => match b {
+            RToken::Pipe => true,
             _ => false,
         },
-        Token::Ampersand => match b {
-            Token::Ampersand => true,
+        RToken::Ampersand => match b {
+            RToken::Ampersand => true,
             _ => false,
         },
-        Token::LBrace => match b {
-            Token::LBrace => true,
+        RToken::LBrace => match b {
+            RToken::LBrace => true,
             _ => false,
         },
-        Token::RBrace => match b {
-            Token::RBrace => true,
+        RToken::RBrace => match b {
+            RToken::RBrace => true,
             _ => false,
         },
-        Token::LParen => match b {
-            Token::LParen => true,
+        RToken::LParen => match b {
+            RToken::LParen => true,
             _ => false,
         },
-        Token::RParen => match b {
-            Token::RParen => true,
+        RToken::RParen => match b {
+            RToken::RParen => true,
             _ => false,
         },
-        Token::Colon => match b {
-            Token::Colon => true,
+        RToken::Colon => match b {
+            RToken::Colon => true,
             _ => false,
         },
-        Token::DoubleColon => match b {
-            Token::DoubleColon => true,
+        RToken::DoubleColon => match b {
+            RToken::DoubleColon => true,
             _ => false,
         },
-        Token::SemiColon => match b {
-            Token::SemiColon => true,
+        RToken::SemiColon => match b {
+            RToken::SemiColon => true,
             _ => false,
         },
-        Token::Comma => match b {
-            Token::Comma => true,
+        RToken::Comma => match b {
+            RToken::Comma => true,
             _ => false,
         },
-        Token::Assign => match b {
-            Token::Assign => true,
+        RToken::Assign => match b {
+            RToken::Assign => true,
             _ => false,
         },
-        Token::Bang => match b {
-            Token::Bang => true,
+        RToken::Bang => match b {
+            RToken::Bang => true,
             _ => false,
         },
-        Token::Cmp(left_comparison) => match b {
-            Token::Cmp(right_comparison) => comparison_eq(left_comparison, right_comparison),
+        RToken::Cmp(left_comparison) => match b {
+            RToken::Cmp(right_comparison) => comparison_eq(left_comparison, right_comparison),
             _ => false,
         },
-        Token::FatArrow => match b {
-            Token::FatArrow => true,
+        RToken::FatArrow => match b {
+            RToken::FatArrow => true,
             _ => false,
         },
-        Token::Plus => match b {
-            Token::Plus => true,
+        RToken::Plus => match b {
+            RToken::Plus => true,
             _ => false,
         },
-        Token::Minus => match b {
-            Token::Minus => true,
+        RToken::Minus => match b {
+            RToken::Minus => true,
             _ => false,
         },
-        Token::Star => match b {
-            Token::Star => true,
+        RToken::Star => match b {
+            RToken::Star => true,
             _ => false,
         },
-        Token::Slash => match b {
-            Token::Slash => true,
+        RToken::Slash => match b {
+            RToken::Slash => true,
             _ => false,
         },
-        Token::Remainder => match b {
-            Token::Remainder => true,
+        RToken::Remainder => match b {
+            RToken::Remainder => true,
             _ => false,
         },
-        Token::Usize => match b {
-            Token::Usize => true,
+        RToken::Usize => match b {
+            RToken::Usize => true,
             _ => false,
         },
-        Token::U8 => match b {
-            Token::U8 => true,
+        RToken::U8 => match b {
+            RToken::U8 => true,
             _ => false,
         },
-        Token::Bool => match b {
-            Token::Bool => true,
+        RToken::Bool => match b {
+            RToken::Bool => true,
             _ => false,
         },
-        Token::Char => match b {
-            Token::Char => true,
+        RToken::Char => match b {
+            RToken::Char => true,
             _ => false,
         },
-        Token::Str => match b {
-            Token::Str => true,
+        RToken::Str => match b {
+            RToken::Str => true,
             _ => false,
         },
-        Token::Arrow => match b {
-            Token::Arrow => true,
+        RToken::Arrow => match b {
+            RToken::Arrow => true,
             _ => false,
         },
-        Token::Literal(left_literal) => match b {
-            Token::Literal(right_literal) => literalToken_eq(left_literal, right_literal),
+        RToken::Literal(left_literal) => match b {
+            RToken::Literal(right_literal) => rLiteral_eq(left_literal, right_literal),
             _ => false,
         },
-        Token::Identifier(left) => match b {
-            Token::Identifier(right) => string_eq(left, right),
+        RToken::Identifier(left) => match b {
+            RToken::Identifier(right) => string_eq(left, right),
             _ => false,
         },
-        Token::Eof => match b {
-            Token::Eof => true,
+        RToken::Eof => match b {
+            RToken::Eof => true,
             _ => false,
         },
     }
 }
 
 /// Check if two comparison tokens are equal.
-fn comparison_eq(left: &Comparison, right: &Comparison) -> bool {
+fn comparison_eq(left: &RComparisonOp, right: &RComparisonOp) -> bool {
     match left {
-        Comparison::Eq => match right {
-            Comparison::Eq => true,
+        RComparisonOp::Eq => match right {
+            RComparisonOp::Eq => true,
             _ => false,
         },
-        Comparison::Ne => match right {
-            Comparison::Ne => true,
+        RComparisonOp::Ne => match right {
+            RComparisonOp::Ne => true,
             _ => false,
         },
-        Comparison::Gt => match right {
-            Comparison::Gt => true,
+        RComparisonOp::Gt => match right {
+            RComparisonOp::Gt => true,
             _ => false,
         },
-        Comparison::Lt => match right {
-            Comparison::Lt => true,
+        RComparisonOp::Lt => match right {
+            RComparisonOp::Lt => true,
             _ => false,
         },
-        Comparison::Geq => match right {
-            Comparison::Geq => true,
+        RComparisonOp::Geq => match right {
+            RComparisonOp::Geq => true,
             _ => false,
         },
-        Comparison::Leq => match right {
-            Comparison::Leq => true,
+        RComparisonOp::Leq => match right {
+            RComparisonOp::Leq => true,
             _ => false,
         },
     }
 }
 
 /// Check if two literal tokens are equal.
-fn literalToken_eq(left: &Literal, right: &Literal) -> bool {
+fn rLiteral_eq(left: &RLiteral, right: &RLiteral) -> bool {
     match left {
-        Literal::Int(left_value) => match right {
-            Literal::Int(right_value) => left_value == right_value,
+        RLiteral::Int(left_value) => match right {
+            RLiteral::Int(right_value) => left_value == right_value,
             _ => false,
         },
-        Literal::String(left_value) => match right {
-            Literal::String(right_value) => string_eq(left_value, right_value),
+        RLiteral::String(left_value) => match right {
+            RLiteral::String(right_value) => string_eq(left_value, right_value),
             _ => false,
         },
-        Literal::Char(left_value) => match right {
-            Literal::Char(right_value) => left_value == right_value,
+        RLiteral::Char(left_value) => match right {
+            RLiteral::Char(right_value) => left_value == right_value,
             _ => false,
         },
-        Literal::Bool(left_value) => match right {
-            Literal::Bool(right_value) => left_value == right_value,
+        RLiteral::Bool(left_value) => match right {
+            RLiteral::Bool(right_value) => left_value == right_value,
             _ => false,
         },
     }
 }
 
 /// Check two Rust AST types for equality.
-fn rAstType_eq(a: &RAstType, b: &RAstType) -> bool {
+fn rType_eq(a: &RType, b: &RType) -> bool {
     match a {
-        RAstType::U8 => match b {
-            RAstType::U8 => true,
+        RType::U8 => match b {
+            RType::U8 => true,
             _ => false,
         },
-        RAstType::Usize => match b {
-            RAstType::Usize => true,
+        RType::Usize => match b {
+            RType::Usize => true,
             _ => false,
         },
-        RAstType::Bool => match b {
-            RAstType::Bool => true,
+        RType::Bool => match b {
+            RType::Bool => true,
             _ => false,
         },
-        RAstType::Char => match b {
-            RAstType::Char => true,
+        RType::Char => match b {
+            RType::Char => true,
             _ => false,
         },
-        RAstType::Unit => match b {
-            RAstType::Unit => true,
+        RType::Unit => match b {
+            RType::Unit => true,
             _ => false,
         },
-        RAstType::Never => match b {
-            RAstType::Never => true,
+        RType::Never => match b {
+            RType::Never => true,
             _ => false,
         },
-        RAstType::Custom(left) => match b {
-            RAstType::Custom(right) => string_eq(left, right),
+        RType::Custom(left) => match b {
+            RType::Custom(right) => string_eq(left, right),
             _ => false,
         },
-        RAstType::Reference(left, left_mut) => match b {
-            RAstType::Reference(right, right_mut) => and(
+        RType::Reference(left, left_mut) => match b {
+            RType::Reference(right, right_mut) => and(
                 *left_mut == *right_mut,
-                rAstType_eq(box_deref::<RAstType>(left), box_deref::<RAstType>(right)),
+                rType_eq(box_deref::<RType>(left), box_deref::<RType>(right)),
             ),
             _ => false,
         },
-        RAstType::RawPointerMut(left) => match b {
-            RAstType::RawPointerMut(right) => {
-                rAstType_eq(box_deref::<RAstType>(left), box_deref::<RAstType>(right))
+        RType::RawPointerMut(left) => match b {
+            RType::RawPointerMut(right) => {
+                rType_eq(box_deref::<RType>(left), box_deref::<RType>(right))
             },
             _ => false,
         },
@@ -6257,198 +6203,198 @@ fn rAstType_eq(a: &RAstType, b: &RAstType) -> bool {
 }
 
 /// Check two LLVM tokens for equality.
-fn llvmToken_eq(left: &LlvmToken, right: &LlvmToken) -> bool {
+fn llvmToken_eq(left: &LToken, right: &LToken) -> bool {
     match left {
-        LlvmToken::Define => match right {
-            LlvmToken::Define => true,
+        LToken::Define => match right {
+            LToken::Define => true,
             _ => false,
         },
-        LlvmToken::Declare => match right {
-            LlvmToken::Declare => true,
+        LToken::Declare => match right {
+            LToken::Declare => true,
             _ => false,
         },
-        LlvmToken::Ret => match right {
-            LlvmToken::Ret => true,
+        LToken::Ret => match right {
+            LToken::Ret => true,
             _ => false,
         },
-        LlvmToken::IntToPtr => match right {
-            LlvmToken::IntToPtr => true,
+        LToken::IntToPtr => match right {
+            LToken::IntToPtr => true,
             _ => false,
         },
-        LlvmToken::PtrToInt => match right {
-            LlvmToken::PtrToInt => true,
+        LToken::PtrToInt => match right {
+            LToken::PtrToInt => true,
             _ => false,
         },
-        LlvmToken::Br => match right {
-            LlvmToken::Br => true,
+        LToken::Br => match right {
+            LToken::Br => true,
             _ => false,
         },
-        LlvmToken::Label => match right {
-            LlvmToken::Label => true,
+        LToken::Label => match right {
+            LToken::Label => true,
             _ => false,
         },
-        LlvmToken::Add => match right {
-            LlvmToken::Add => true,
+        LToken::Add => match right {
+            LToken::Add => true,
             _ => false,
         },
-        LlvmToken::Sub => match right {
-            LlvmToken::Sub => true,
+        LToken::Sub => match right {
+            LToken::Sub => true,
             _ => false,
         },
-        LlvmToken::Mul => match right {
-            LlvmToken::Mul => true,
+        LToken::Mul => match right {
+            LToken::Mul => true,
             _ => false,
         },
-        LlvmToken::Udiv => match right {
-            LlvmToken::Udiv => true,
+        LToken::Udiv => match right {
+            LToken::Udiv => true,
             _ => false,
         },
-        LlvmToken::Urem => match right {
-            LlvmToken::Urem => true,
+        LToken::Urem => match right {
+            LToken::Urem => true,
             _ => false,
         },
-        LlvmToken::Icmp => match right {
-            LlvmToken::Icmp => true,
+        LToken::Icmp => match right {
+            LToken::Icmp => true,
             _ => false,
         },
-        LlvmToken::Zext => match right {
-            LlvmToken::Zext => true,
+        LToken::Zext => match right {
+            LToken::Zext => true,
             _ => false,
         },
-        LlvmToken::Trunc => match right {
-            LlvmToken::Trunc => true,
+        LToken::Trunc => match right {
+            LToken::Trunc => true,
             _ => false,
         },
-        LlvmToken::Alloca => match right {
-            LlvmToken::Alloca => true,
+        LToken::Alloca => match right {
+            LToken::Alloca => true,
             _ => false,
         },
-        LlvmToken::Store => match right {
-            LlvmToken::Store => true,
+        LToken::Store => match right {
+            LToken::Store => true,
             _ => false,
         },
-        LlvmToken::Load => match right {
-            LlvmToken::Load => true,
+        LToken::Load => match right {
+            LToken::Load => true,
             _ => false,
         },
-        LlvmToken::To => match right {
-            LlvmToken::To => true,
+        LToken::To => match right {
+            LToken::To => true,
             _ => false,
         },
-        LlvmToken::Call => match right {
-            LlvmToken::Call => true,
+        LToken::Call => match right {
+            LToken::Call => true,
             _ => false,
         },
-        LlvmToken::Gep => match right {
-            LlvmToken::Gep => true,
+        LToken::Gep => match right {
+            LToken::Gep => true,
             _ => false,
         },
-        LlvmToken::Constant => match right {
-            LlvmToken::Constant => true,
+        LToken::Constant => match right {
+            LToken::Constant => true,
             _ => false,
         },
-        LlvmToken::Eq => match right {
-            LlvmToken::Eq => true,
+        LToken::Eq => match right {
+            LToken::Eq => true,
             _ => false,
         },
-        LlvmToken::Ne => match right {
-            LlvmToken::Ne => true,
+        LToken::Ne => match right {
+            LToken::Ne => true,
             _ => false,
         },
-        LlvmToken::Ugt => match right {
-            LlvmToken::Ugt => true,
+        LToken::Ugt => match right {
+            LToken::Ugt => true,
             _ => false,
         },
-        LlvmToken::Uge => match right {
-            LlvmToken::Uge => true,
+        LToken::Uge => match right {
+            LToken::Uge => true,
             _ => false,
         },
-        LlvmToken::Ult => match right {
-            LlvmToken::Ult => true,
+        LToken::Ult => match right {
+            LToken::Ult => true,
             _ => false,
         },
-        LlvmToken::Ule => match right {
-            LlvmToken::Ule => true,
+        LToken::Ule => match right {
+            LToken::Ule => true,
             _ => false,
         },
-        LlvmToken::Ptr => match right {
-            LlvmToken::Ptr => true,
+        LToken::Ptr => match right {
+            LToken::Ptr => true,
             _ => false,
         },
-        LlvmToken::I64 => match right {
-            LlvmToken::I64 => true,
+        LToken::I64 => match right {
+            LToken::I64 => true,
             _ => false,
         },
-        LlvmToken::I8 => match right {
-            LlvmToken::I8 => true,
+        LToken::I8 => match right {
+            LToken::I8 => true,
             _ => false,
         },
-        LlvmToken::I1 => match right {
-            LlvmToken::I1 => true,
+        LToken::I1 => match right {
+            LToken::I1 => true,
             _ => false,
         },
-        LlvmToken::Void => match right {
-            LlvmToken::Void => true,
+        LToken::Void => match right {
+            LToken::Void => true,
             _ => false,
         },
-        LlvmToken::At => match right {
-            LlvmToken::At => true,
+        LToken::At => match right {
+            LToken::At => true,
             _ => false,
         },
-        LlvmToken::Percent => match right {
-            LlvmToken::Percent => true,
+        LToken::Percent => match right {
+            LToken::Percent => true,
             _ => false,
         },
-        LlvmToken::LParen => match right {
-            LlvmToken::LParen => true,
+        LToken::LParen => match right {
+            LToken::LParen => true,
             _ => false,
         },
-        LlvmToken::RParen => match right {
-            LlvmToken::RParen => true,
+        LToken::RParen => match right {
+            LToken::RParen => true,
             _ => false,
         },
-        LlvmToken::LBrace => match right {
-            LlvmToken::LBrace => true,
+        LToken::LBrace => match right {
+            LToken::LBrace => true,
             _ => false,
         },
-        LlvmToken::RBrace => match right {
-            LlvmToken::RBrace => true,
+        LToken::RBrace => match right {
+            LToken::RBrace => true,
             _ => false,
         },
-        LlvmToken::LBracket => match right {
-            LlvmToken::LBracket => true,
+        LToken::LBracket => match right {
+            LToken::LBracket => true,
             _ => false,
         },
-        LlvmToken::RBracket => match right {
-            LlvmToken::RBracket => true,
+        LToken::RBracket => match right {
+            LToken::RBracket => true,
             _ => false,
         },
-        LlvmToken::Comma => match right {
-            LlvmToken::Comma => true,
+        LToken::Comma => match right {
+            LToken::Comma => true,
             _ => false,
         },
-        LlvmToken::Assign => match right {
-            LlvmToken::Assign => true,
+        LToken::Assign => match right {
+            LToken::Assign => true,
             _ => false,
         },
-        LlvmToken::Colon => match right {
-            LlvmToken::Colon => true,
+        LToken::Colon => match right {
+            LToken::Colon => true,
             _ => false,
         },
-        LlvmToken::CString(left_value) => match right {
-            LlvmToken::CString(right_value) => string_eq(left_value, right_value),
+        LToken::CString(left_value) => match right {
+            LToken::CString(right_value) => string_eq(left_value, right_value),
             _ => false,
         },
-        LlvmToken::Identifier(left_name) => match right {
-            LlvmToken::Identifier(right_name) => string_eq(left_name, right_name),
+        LToken::Identifier(left_name) => match right {
+            LToken::Identifier(right_name) => string_eq(left_name, right_name),
             _ => false,
         },
-        LlvmToken::Integer(left_value) => match right {
-            LlvmToken::Integer(right_value) => *left_value == *right_value,
+        LToken::Integer(left_value) => match right {
+            LToken::Integer(right_value) => *left_value == *right_value,
             _ => false,
         },
-        LlvmToken::Eof => match right {
-            LlvmToken::Eof => true,
+        LToken::Eof => match right {
+            LToken::Eof => true,
             _ => false,
         },
     }
@@ -6480,70 +6426,70 @@ fn string_eq(s1: &String, s2: &String) -> bool {
 // ----------------------------------------------------------------
 
 /// Clone a token value.
-fn token_clone(token: &Token) -> Token {
+fn token_clone(token: &RToken) -> RToken {
     match token {
-        Token::Unsafe => Token::Unsafe,
-        Token::Fn => Token::Fn,
-        Token::Enum => Token::Enum,
-        Token::Extern => Token::Extern,
-        Token::Let => Token::Let,
-        Token::If => Token::If,
-        Token::Else => Token::Else,
-        Token::While => Token::While,
-        Token::Return => Token::Return,
-        Token::Match => Token::Match,
-        Token::As => Token::As,
-        Token::Mut => Token::Mut,
-        Token::Ampersand => Token::Ampersand,
-        Token::LBrace => Token::LBrace,
-        Token::RBrace => Token::RBrace,
-        Token::LParen => Token::LParen,
-        Token::RParen => Token::RParen,
-        Token::Colon => Token::Colon,
-        Token::DoubleColon => Token::DoubleColon,
-        Token::SemiColon => Token::SemiColon,
-        Token::Comma => Token::Comma,
-        Token::Pipe => Token::Pipe,
-        Token::Assign => Token::Assign,
-        Token::Bang => Token::Bang,
-        Token::Cmp(comparison) => Token::Cmp(comparison_clone(comparison)),
-        Token::FatArrow => Token::FatArrow,
-        Token::Plus => Token::Plus,
-        Token::Minus => Token::Minus,
-        Token::Star => Token::Star,
-        Token::Slash => Token::Slash,
-        Token::Remainder => Token::Remainder,
-        Token::Usize => Token::Usize,
-        Token::U8 => Token::U8,
-        Token::Bool => Token::Bool,
-        Token::Char => Token::Char,
-        Token::Str => Token::Str,
-        Token::Arrow => Token::Arrow,
-        Token::Literal(literal) => Token::Literal(literalToken_clone(literal)),
-        Token::Identifier(value) => Token::Identifier(string_clone(value)),
-        Token::Eof => Token::Eof,
+        RToken::Unsafe => RToken::Unsafe,
+        RToken::Fn => RToken::Fn,
+        RToken::Enum => RToken::Enum,
+        RToken::Extern => RToken::Extern,
+        RToken::Let => RToken::Let,
+        RToken::If => RToken::If,
+        RToken::Else => RToken::Else,
+        RToken::While => RToken::While,
+        RToken::Return => RToken::Return,
+        RToken::Match => RToken::Match,
+        RToken::As => RToken::As,
+        RToken::Mut => RToken::Mut,
+        RToken::Ampersand => RToken::Ampersand,
+        RToken::LBrace => RToken::LBrace,
+        RToken::RBrace => RToken::RBrace,
+        RToken::LParen => RToken::LParen,
+        RToken::RParen => RToken::RParen,
+        RToken::Colon => RToken::Colon,
+        RToken::DoubleColon => RToken::DoubleColon,
+        RToken::SemiColon => RToken::SemiColon,
+        RToken::Comma => RToken::Comma,
+        RToken::Pipe => RToken::Pipe,
+        RToken::Assign => RToken::Assign,
+        RToken::Bang => RToken::Bang,
+        RToken::Cmp(comparison) => RToken::Cmp(comparison_clone(comparison)),
+        RToken::FatArrow => RToken::FatArrow,
+        RToken::Plus => RToken::Plus,
+        RToken::Minus => RToken::Minus,
+        RToken::Star => RToken::Star,
+        RToken::Slash => RToken::Slash,
+        RToken::Remainder => RToken::Remainder,
+        RToken::Usize => RToken::Usize,
+        RToken::U8 => RToken::U8,
+        RToken::Bool => RToken::Bool,
+        RToken::Char => RToken::Char,
+        RToken::Str => RToken::Str,
+        RToken::Arrow => RToken::Arrow,
+        RToken::Literal(literal) => RToken::Literal(rLiteral_clone(literal)),
+        RToken::Identifier(value) => RToken::Identifier(string_clone(value)),
+        RToken::Eof => RToken::Eof,
     }
 }
 
 /// Clone a comparison operator.
-fn comparison_clone(comparison: &Comparison) -> Comparison {
+fn comparison_clone(comparison: &RComparisonOp) -> RComparisonOp {
     match comparison {
-        Comparison::Eq => Comparison::Eq,
-        Comparison::Ne => Comparison::Ne,
-        Comparison::Gt => Comparison::Gt,
-        Comparison::Lt => Comparison::Lt,
-        Comparison::Geq => Comparison::Geq,
-        Comparison::Leq => Comparison::Leq,
+        RComparisonOp::Eq => RComparisonOp::Eq,
+        RComparisonOp::Ne => RComparisonOp::Ne,
+        RComparisonOp::Gt => RComparisonOp::Gt,
+        RComparisonOp::Lt => RComparisonOp::Lt,
+        RComparisonOp::Geq => RComparisonOp::Geq,
+        RComparisonOp::Leq => RComparisonOp::Leq,
     }
 }
 
 /// Clone a literal token payload.
-fn literalToken_clone(literal: &Literal) -> Literal {
+fn rLiteral_clone(literal: &RLiteral) -> RLiteral {
     match literal {
-        Literal::Int(value) => Literal::Int(*value),
-        Literal::String(value) => Literal::String(string_clone(value)),
-        Literal::Char(value) => Literal::Char(*value),
-        Literal::Bool(value) => Literal::Bool(*value),
+        RLiteral::Int(value) => RLiteral::Int(*value),
+        RLiteral::String(value) => RLiteral::String(string_clone(value)),
+        RLiteral::Char(value) => RLiteral::Char(*value),
+        RLiteral::Bool(value) => RLiteral::Bool(*value),
     }
 }
 
@@ -6551,109 +6497,109 @@ fn literalToken_clone(literal: &Literal) -> Literal {
 fn fnSignature_clone(signature: &FnSignature) -> FnSignature {
     match signature {
         FnSignature::Fn(parameter_types, return_type, is_unsafe) => {
-            let mut cloned_params: Vec<RAstType> = vec_new::<RAstType>();
+            let mut cloned_params: Vec<RType> = vec_new::<RType>();
             let mut i: usize = 0;
-            while i < vec_len::<RAstType>(parameter_types) {
-                let param: &RAstType = vec_at::<RAstType>(parameter_types, i);
-                vec_push::<RAstType>(&mut cloned_params, rAstType_clone(param));
+            while i < vec_len::<RType>(parameter_types) {
+                let param: &RType = vec_at::<RType>(parameter_types, i);
+                vec_push::<RType>(&mut cloned_params, rType_clone(param));
                 i = i + 1;
             }
-            FnSignature::Fn(cloned_params, rAstType_clone(return_type), *is_unsafe)
+            FnSignature::Fn(cloned_params, rType_clone(return_type), *is_unsafe)
         },
     }
 }
 
 /// Clone a Rust AST type value.
-fn rAstType_clone(t: &RAstType) -> RAstType {
+fn rType_clone(t: &RType) -> RType {
     match t {
-        RAstType::U8 => RAstType::U8,
-        RAstType::Usize => RAstType::Usize,
-        RAstType::Bool => RAstType::Bool,
-        RAstType::Char => RAstType::Char,
-        RAstType::Unit => RAstType::Unit,
-        RAstType::Never => RAstType::Never,
-        RAstType::Custom(name) => RAstType::Custom(string_clone(name)),
-        RAstType::Reference(inner, mutable) => RAstType::Reference(
-            box_new::<RAstType>(rAstType_clone(box_deref::<RAstType>(inner))),
+        RType::U8 => RType::U8,
+        RType::Usize => RType::Usize,
+        RType::Bool => RType::Bool,
+        RType::Char => RType::Char,
+        RType::Unit => RType::Unit,
+        RType::Never => RType::Never,
+        RType::Custom(name) => RType::Custom(string_clone(name)),
+        RType::Reference(inner, mutable) => RType::Reference(
+            box_new::<RType>(rType_clone(box_deref::<RType>(inner))),
             *mutable,
         ),
-        RAstType::RawPointerMut(inner) => RAstType::RawPointerMut(box_new::<RAstType>(
-            rAstType_clone(box_deref::<RAstType>(inner)),
-        )),
+        RType::RawPointerMut(inner) => {
+            RType::RawPointerMut(box_new::<RType>(rType_clone(box_deref::<RType>(inner))))
+        },
     }
 }
 
 /// Clone a STPair
 fn stPair_clone(STPair::ST(string, ty): &STPair) -> STPair {
-    STPair::ST(string_clone(string), rAstType_clone(ty))
+    STPair::ST(string_clone(string), rType_clone(ty))
 }
 
 /// Clone an LLVM token.
-fn llvmToken_clone(token: &LlvmToken) -> LlvmToken {
+fn llvmToken_clone(token: &LToken) -> LToken {
     match token {
-        LlvmToken::Define => LlvmToken::Define,
-        LlvmToken::Declare => LlvmToken::Declare,
-        LlvmToken::Ret => LlvmToken::Ret,
-        LlvmToken::IntToPtr => LlvmToken::IntToPtr,
-        LlvmToken::PtrToInt => LlvmToken::PtrToInt,
-        LlvmToken::Br => LlvmToken::Br,
-        LlvmToken::Label => LlvmToken::Label,
-        LlvmToken::Add => LlvmToken::Add,
-        LlvmToken::Sub => LlvmToken::Sub,
-        LlvmToken::Mul => LlvmToken::Mul,
-        LlvmToken::Udiv => LlvmToken::Udiv,
-        LlvmToken::Urem => LlvmToken::Urem,
-        LlvmToken::Icmp => LlvmToken::Icmp,
-        LlvmToken::Zext => LlvmToken::Zext,
-        LlvmToken::Trunc => LlvmToken::Trunc,
-        LlvmToken::Alloca => LlvmToken::Alloca,
-        LlvmToken::Store => LlvmToken::Store,
-        LlvmToken::Load => LlvmToken::Load,
-        LlvmToken::To => LlvmToken::To,
-        LlvmToken::Call => LlvmToken::Call,
-        LlvmToken::Gep => LlvmToken::Gep,
-        LlvmToken::Constant => LlvmToken::Constant,
-        LlvmToken::Eq => LlvmToken::Eq,
-        LlvmToken::Ne => LlvmToken::Ne,
-        LlvmToken::Ugt => LlvmToken::Ugt,
-        LlvmToken::Uge => LlvmToken::Uge,
-        LlvmToken::Ult => LlvmToken::Ult,
-        LlvmToken::Ule => LlvmToken::Ule,
-        LlvmToken::Ptr => LlvmToken::Ptr,
-        LlvmToken::I64 => LlvmToken::I64,
-        LlvmToken::I8 => LlvmToken::I8,
-        LlvmToken::I1 => LlvmToken::I1,
-        LlvmToken::Void => LlvmToken::Void,
-        LlvmToken::At => LlvmToken::At,
-        LlvmToken::Percent => LlvmToken::Percent,
-        LlvmToken::LParen => LlvmToken::LParen,
-        LlvmToken::RParen => LlvmToken::RParen,
-        LlvmToken::LBrace => LlvmToken::LBrace,
-        LlvmToken::RBrace => LlvmToken::RBrace,
-        LlvmToken::LBracket => LlvmToken::LBracket,
-        LlvmToken::RBracket => LlvmToken::RBracket,
-        LlvmToken::Comma => LlvmToken::Comma,
-        LlvmToken::Assign => LlvmToken::Assign,
-        LlvmToken::Colon => LlvmToken::Colon,
-        LlvmToken::CString(value) => LlvmToken::CString(string_clone(value)),
-        LlvmToken::Identifier(name) => LlvmToken::Identifier(string_clone(name)),
-        LlvmToken::Integer(value) => LlvmToken::Integer(*value),
-        LlvmToken::Eof => LlvmToken::Eof,
+        LToken::Define => LToken::Define,
+        LToken::Declare => LToken::Declare,
+        LToken::Ret => LToken::Ret,
+        LToken::IntToPtr => LToken::IntToPtr,
+        LToken::PtrToInt => LToken::PtrToInt,
+        LToken::Br => LToken::Br,
+        LToken::Label => LToken::Label,
+        LToken::Add => LToken::Add,
+        LToken::Sub => LToken::Sub,
+        LToken::Mul => LToken::Mul,
+        LToken::Udiv => LToken::Udiv,
+        LToken::Urem => LToken::Urem,
+        LToken::Icmp => LToken::Icmp,
+        LToken::Zext => LToken::Zext,
+        LToken::Trunc => LToken::Trunc,
+        LToken::Alloca => LToken::Alloca,
+        LToken::Store => LToken::Store,
+        LToken::Load => LToken::Load,
+        LToken::To => LToken::To,
+        LToken::Call => LToken::Call,
+        LToken::Gep => LToken::Gep,
+        LToken::Constant => LToken::Constant,
+        LToken::Eq => LToken::Eq,
+        LToken::Ne => LToken::Ne,
+        LToken::Ugt => LToken::Ugt,
+        LToken::Uge => LToken::Uge,
+        LToken::Ult => LToken::Ult,
+        LToken::Ule => LToken::Ule,
+        LToken::Ptr => LToken::Ptr,
+        LToken::I64 => LToken::I64,
+        LToken::I8 => LToken::I8,
+        LToken::I1 => LToken::I1,
+        LToken::Void => LToken::Void,
+        LToken::At => LToken::At,
+        LToken::Percent => LToken::Percent,
+        LToken::LParen => LToken::LParen,
+        LToken::RParen => LToken::RParen,
+        LToken::LBrace => LToken::LBrace,
+        LToken::RBrace => LToken::RBrace,
+        LToken::LBracket => LToken::LBracket,
+        LToken::RBracket => LToken::RBracket,
+        LToken::Comma => LToken::Comma,
+        LToken::Assign => LToken::Assign,
+        LToken::Colon => LToken::Colon,
+        LToken::CString(value) => LToken::CString(string_clone(value)),
+        LToken::Identifier(name) => LToken::Identifier(string_clone(name)),
+        LToken::Integer(value) => LToken::Integer(*value),
+        LToken::Eof => LToken::Eof,
     }
 }
 
 /// Clone an LLVM type.
-fn llvmType_clone(ty: &LlvmType) -> LlvmType {
+fn llvmType_clone(ty: &LType) -> LType {
     match ty {
-        LlvmType::I1 => LlvmType::I1,
-        LlvmType::I8 => LlvmType::I8,
-        LlvmType::I64 => LlvmType::I64,
-        LlvmType::Ptr => LlvmType::Ptr,
-        LlvmType::Array(len, inner) => LlvmType::Array(
+        LType::I1 => LType::I1,
+        LType::I8 => LType::I8,
+        LType::I64 => LType::I64,
+        LType::Ptr => LType::Ptr,
+        LType::Array(len, inner) => LType::Array(
             *len,
-            box_new::<LlvmType>(llvmType_clone(box_deref::<LlvmType>(inner))),
+            box_new::<LType>(llvmType_clone(box_deref::<LType>(inner))),
         ),
-        LlvmType::Void => LlvmType::Void,
+        LType::Void => LType::Void,
     }
 }
 
@@ -6822,142 +6768,142 @@ fn integer_to_string(mut integer: usize) -> String {
 }
 
 /// Convert a token into a string.
-fn token_to_string(token: &Token) -> String {
+fn token_to_string(token: &RToken) -> String {
     match token {
-        Token::Fn => string("fn"),
-        Token::Enum => string("enum"),
-        Token::Extern => string("extern"),
-        Token::Let => string("let"),
-        Token::If => string("if"),
-        Token::Else => string("else"),
-        Token::While => string("while"),
-        Token::Return => string("return"),
-        Token::Match => string("match"),
-        Token::As => string("as"),
-        Token::Unsafe => string("unsafe"),
-        Token::Mut => string("mut"),
-        Token::Ampersand => string("&"),
-        Token::LBrace => string("{"),
-        Token::RBrace => string("}"),
-        Token::LParen => string("("),
-        Token::RParen => string(")"),
-        Token::Colon => string(":"),
-        Token::DoubleColon => string("::"),
-        Token::SemiColon => string(";"),
-        Token::Comma => string(","),
-        Token::Pipe => string("|"),
-        Token::Assign => string("="),
-        Token::Bang => string("!"),
-        Token::Cmp(comparison) => comparison_to_string(comparison),
-        Token::FatArrow => string("=>"),
-        Token::Plus => string("+"),
-        Token::Minus => string("-"),
-        Token::Star => string("*"),
-        Token::Slash => string("/"),
-        Token::Remainder => string("%"),
-        Token::Usize => string("usize"),
-        Token::U8 => string("u8"),
-        Token::Bool => string("bool"),
-        Token::Char => string("char"),
-        Token::Str => string("str"),
-        Token::Arrow => string("->"),
-        Token::Literal(literal) => literal_to_string(literal),
-        Token::Identifier(name) => string_clone(name),
-        Token::Eof => string("<eof>"),
+        RToken::Fn => string("fn"),
+        RToken::Enum => string("enum"),
+        RToken::Extern => string("extern"),
+        RToken::Let => string("let"),
+        RToken::If => string("if"),
+        RToken::Else => string("else"),
+        RToken::While => string("while"),
+        RToken::Return => string("return"),
+        RToken::Match => string("match"),
+        RToken::As => string("as"),
+        RToken::Unsafe => string("unsafe"),
+        RToken::Mut => string("mut"),
+        RToken::Ampersand => string("&"),
+        RToken::LBrace => string("{"),
+        RToken::RBrace => string("}"),
+        RToken::LParen => string("("),
+        RToken::RParen => string(")"),
+        RToken::Colon => string(":"),
+        RToken::DoubleColon => string("::"),
+        RToken::SemiColon => string(";"),
+        RToken::Comma => string(","),
+        RToken::Pipe => string("|"),
+        RToken::Assign => string("="),
+        RToken::Bang => string("!"),
+        RToken::Cmp(comparison) => comparison_to_string(comparison),
+        RToken::FatArrow => string("=>"),
+        RToken::Plus => string("+"),
+        RToken::Minus => string("-"),
+        RToken::Star => string("*"),
+        RToken::Slash => string("/"),
+        RToken::Remainder => string("%"),
+        RToken::Usize => string("usize"),
+        RToken::U8 => string("u8"),
+        RToken::Bool => string("bool"),
+        RToken::Char => string("char"),
+        RToken::Str => string("str"),
+        RToken::Arrow => string("->"),
+        RToken::Literal(literal) => rLiteral_to_string(literal),
+        RToken::Identifier(name) => string_clone(name),
+        RToken::Eof => string("<eof>"),
     }
 }
 
 /// Convert an LLVM token into a string.
-fn llvmToken_to_string(token: &LlvmToken) -> String {
+fn llvmToken_to_string(token: &LToken) -> String {
     match token {
-        LlvmToken::Define => string("define"),
-        LlvmToken::Declare => string("declare"),
-        LlvmToken::Ret => string("ret"),
-        LlvmToken::IntToPtr => string("inttoptr"),
-        LlvmToken::PtrToInt => string("ptrtoint"),
-        LlvmToken::Br => string("br"),
-        LlvmToken::Label => string("label"),
-        LlvmToken::Add => string("add"),
-        LlvmToken::Sub => string("sub"),
-        LlvmToken::Mul => string("mul"),
-        LlvmToken::Udiv => string("udiv"),
-        LlvmToken::Urem => string("urem"),
-        LlvmToken::Icmp => string("icmp"),
-        LlvmToken::Zext => string("zext"),
-        LlvmToken::Trunc => string("trunc"),
-        LlvmToken::Alloca => string("alloca"),
-        LlvmToken::Store => string("store"),
-        LlvmToken::Load => string("load"),
-        LlvmToken::To => string("to"),
-        LlvmToken::Call => string("call"),
-        LlvmToken::Gep => string("getelementptr"),
-        LlvmToken::Constant => string("constant"),
-        LlvmToken::Eq => string("eq"),
-        LlvmToken::Ne => string("ne"),
-        LlvmToken::Ugt => string("ugt"),
-        LlvmToken::Uge => string("uge"),
-        LlvmToken::Ult => string("ult"),
-        LlvmToken::Ule => string("ule"),
-        LlvmToken::Ptr => string("ptr"),
-        LlvmToken::I64 => string("i64"),
-        LlvmToken::I8 => string("i8"),
-        LlvmToken::I1 => string("i1"),
-        LlvmToken::Void => string("void"),
-        LlvmToken::At => string("@"),
-        LlvmToken::Percent => string("%"),
-        LlvmToken::LParen => string("("),
-        LlvmToken::RParen => string(")"),
-        LlvmToken::LBrace => string("{"),
-        LlvmToken::RBrace => string("}"),
-        LlvmToken::LBracket => string("["),
-        LlvmToken::RBracket => string("]"),
-        LlvmToken::Comma => string(","),
-        LlvmToken::Assign => string("="),
-        LlvmToken::Colon => string(":"),
-        LlvmToken::CString(value) => {
+        LToken::Define => string("define"),
+        LToken::Declare => string("declare"),
+        LToken::Ret => string("ret"),
+        LToken::IntToPtr => string("inttoptr"),
+        LToken::PtrToInt => string("ptrtoint"),
+        LToken::Br => string("br"),
+        LToken::Label => string("label"),
+        LToken::Add => string("add"),
+        LToken::Sub => string("sub"),
+        LToken::Mul => string("mul"),
+        LToken::Udiv => string("udiv"),
+        LToken::Urem => string("urem"),
+        LToken::Icmp => string("icmp"),
+        LToken::Zext => string("zext"),
+        LToken::Trunc => string("trunc"),
+        LToken::Alloca => string("alloca"),
+        LToken::Store => string("store"),
+        LToken::Load => string("load"),
+        LToken::To => string("to"),
+        LToken::Call => string("call"),
+        LToken::Gep => string("getelementptr"),
+        LToken::Constant => string("constant"),
+        LToken::Eq => string("eq"),
+        LToken::Ne => string("ne"),
+        LToken::Ugt => string("ugt"),
+        LToken::Uge => string("uge"),
+        LToken::Ult => string("ult"),
+        LToken::Ule => string("ule"),
+        LToken::Ptr => string("ptr"),
+        LToken::I64 => string("i64"),
+        LToken::I8 => string("i8"),
+        LToken::I1 => string("i1"),
+        LToken::Void => string("void"),
+        LToken::At => string("@"),
+        LToken::Percent => string("%"),
+        LToken::LParen => string("("),
+        LToken::RParen => string(")"),
+        LToken::LBrace => string("{"),
+        LToken::RBrace => string("}"),
+        LToken::LBracket => string("["),
+        LToken::RBracket => string("]"),
+        LToken::Comma => string(","),
+        LToken::Assign => string("="),
+        LToken::Colon => string(":"),
+        LToken::CString(value) => {
             let mut string: String = string_new();
             string_push_str(&mut string, "c\"");
             string_push_string(&mut string, value);
             string_push(&mut string, '"');
             string
         },
-        LlvmToken::Identifier(name) => string_clone(name),
-        LlvmToken::Integer(value) => integer_to_string(*value),
-        LlvmToken::Eof => string("<eof>"),
+        LToken::Identifier(name) => string_clone(name),
+        LToken::Integer(value) => integer_to_string(*value),
+        LToken::Eof => string("<eof>"),
     }
 }
 
 /// Convert a comparison token into a string.
-fn comparison_to_string(comparison: &Comparison) -> String {
+fn comparison_to_string(comparison: &RComparisonOp) -> String {
     match comparison {
-        Comparison::Eq => string("=="),
-        Comparison::Ne => string("!="),
-        Comparison::Gt => string(">"),
-        Comparison::Lt => string("<"),
-        Comparison::Geq => string(">="),
-        Comparison::Leq => string("<="),
+        RComparisonOp::Eq => string("=="),
+        RComparisonOp::Ne => string("!="),
+        RComparisonOp::Gt => string(">"),
+        RComparisonOp::Lt => string("<"),
+        RComparisonOp::Geq => string(">="),
+        RComparisonOp::Leq => string("<="),
     }
 }
 
 /// Convert a literal token into a string.
-fn literal_to_string(literal: &Literal) -> String {
+fn rLiteral_to_string(literal: &RLiteral) -> String {
     match literal {
-        Literal::Int(value) => integer_to_string(*value),
-        Literal::Bool(value) => {
+        RLiteral::Int(value) => integer_to_string(*value),
+        RLiteral::Bool(value) => {
             if *value {
                 string("true")
             } else {
                 string("false")
             }
         },
-        Literal::Char(value) => {
+        RLiteral::Char(value) => {
             let mut string: String = string_new();
             string_push(&mut string, '\'');
             string_push(&mut string, *value);
             string_push(&mut string, '\'');
             string
         },
-        Literal::String(value) => {
+        RLiteral::String(value) => {
             let mut string: String = string_new();
             string_push(&mut string, '"');
             string_push_string(&mut string, value);

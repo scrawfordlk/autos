@@ -1,11 +1,7 @@
-// ----------------------- Option<char> --------------------------
-
 #[test]
 fn test_unwrap_char_some() {
     assert_eq!(unwrap::<char>(Option::Some('a')), 'a');
 }
-
-// ------------------------- String ----------------------------
 
 #[test]
 fn test_string_new() {
@@ -78,8 +74,6 @@ fn test_string_grows_for_many_pushes() {
     assert_eq!(to_std_string(&s), "x".repeat(128));
 }
 
-// ------------------------- Memory ----------------------------
-
 #[test]
 fn test_ptr_add() {
     let data: [u8; 4] = [10, 20, 30, 40];
@@ -142,20 +136,18 @@ fn test_string_direct() {
     assert!(string_eq(&s, &string("hello")));
 }
 
-fn rAstType_match(a: &RAstType, b: &RAstType) -> bool {
+fn rType_match(a: &RType, b: &RType) -> bool {
     match (a, b) {
-        (RAstType::U8, RAstType::U8) => true,
-        (RAstType::Usize, RAstType::Usize) => true,
-        (RAstType::Bool, RAstType::Bool) => true,
-        (RAstType::Char, RAstType::Char) => true,
-        (RAstType::Unit, RAstType::Unit) => true,
-        (RAstType::Never, RAstType::Never) => true,
-        (RAstType::Custom(a_name), RAstType::Custom(b_name)) => string_eq(a_name, b_name),
+        (RType::U8, RType::U8) => true,
+        (RType::Usize, RType::Usize) => true,
+        (RType::Bool, RType::Bool) => true,
+        (RType::Char, RType::Char) => true,
+        (RType::Unit, RType::Unit) => true,
+        (RType::Never, RType::Never) => true,
+        (RType::Custom(a_name), RType::Custom(b_name)) => string_eq(a_name, b_name),
         _ => false,
     }
 }
-
-// ------------------------- Bool ----------------------------
 
 #[test]
 fn test_and() {
@@ -195,7 +187,7 @@ fn test_string_clone() {
 
 #[test]
 fn test_type_clone() {
-    let custom = RAstType::Custom(string("MyType"));
-    let cloned = rAstType_clone(&custom);
-    assert!(rAstType_match(&custom, &cloned));
+    let custom = RType::Custom(string("MyType"));
+    let cloned = rType_clone(&custom);
+    assert!(rType_match(&custom, &cloned));
 }

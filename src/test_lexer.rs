@@ -1,17 +1,15 @@
-// ------------------------- Lexer Helpers ----------------------------
-
-fn make_lexer(input: &str) -> Lexer {
+fn make_lexer(input: &str) -> RLexer {
     let mut content = string_new();
     string_push_str(&mut content, input);
     let source = SourceFile::SourceFile(content, 0, 1, 0);
-    Lexer::Lexer(source, Token::Eof)
+    RLexer::Lexer(source, RToken::Eof)
 }
 
-fn collect_tokens(lexer: &mut Lexer) -> std::vec::Vec<Token> {
-    let mut tokens: std::vec::Vec<Token> = std::vec::Vec::<Token>::new();
+fn collect_tokens(lexer: &mut RLexer) -> std::vec::Vec<RToken> {
+    let mut tokens: std::vec::Vec<RToken> = std::vec::Vec::<RToken>::new();
     loop {
-        let tok = lexer_next_token(lexer);
-        let is_eof = matches!(tok, Token::Eof);
+        let tok = rLexer_next_token(lexer);
+        let is_eof = matches!(tok, RToken::Eof);
         tokens.push(tok);
         if is_eof {
             break;
@@ -20,39 +18,39 @@ fn collect_tokens(lexer: &mut Lexer) -> std::vec::Vec<Token> {
     tokens
 }
 
-fn ident(s: &str) -> Token {
+fn ident(s: &str) -> RToken {
     let mut string = string_new();
     string_push_str(&mut string, s);
-    Token::Identifier(string)
+    RToken::Identifier(string)
 }
 
-fn str_lit(s: &str) -> Token {
+fn str_lit(s: &str) -> RToken {
     let mut string = string_new();
     string_push_str(&mut string, s);
-    Token::Literal(Literal::String(string))
+    RToken::Literal(RLiteral::String(string))
 }
 
-fn int_lit(value: usize) -> Token {
-    Token::Literal(Literal::Int(value))
+fn int_lit(value: usize) -> RToken {
+    RToken::Literal(RLiteral::Int(value))
 }
 
-fn bool_lit(value: bool) -> Token {
-    Token::Literal(Literal::Bool(value))
+fn bool_lit(value: bool) -> RToken {
+    RToken::Literal(RLiteral::Bool(value))
 }
 
-fn char_lit(value: char) -> Token {
-    Token::Literal(Literal::Char(value))
+fn char_lit(value: char) -> RToken {
+    RToken::Literal(RLiteral::Char(value))
 }
 
-fn cmp_token(comparison: Comparison) -> Token {
-    Token::Cmp(comparison)
+fn cmp_token(comparison: RComparisonOp) -> RToken {
+    RToken::Cmp(comparison)
 }
 
-fn tokens_match(a: &Token, b: &Token) -> bool {
+fn tokens_match(a: &RToken, b: &RToken) -> bool {
     token_eq(a, b)
 }
 
-fn assert_tokens(actual: std::vec::Vec<Token>, expected: std::vec::Vec<Token>) {
+fn assert_tokens(actual: std::vec::Vec<RToken>, expected: std::vec::Vec<RToken>) {
     assert_eq!(
         actual.len(),
         expected.len(),
@@ -64,8 +62,6 @@ fn assert_tokens(actual: std::vec::Vec<Token>, expected: std::vec::Vec<Token>) {
         assert!(tokens_match(a, e), "token {} mismatch", i);
     }
 }
-
-// ------------------------- Char Classification ----------------------------
 
 #[test]
 fn test_is_whitespace() {
@@ -110,69 +106,67 @@ fn test_is_alphanumeric() {
     assert!(!is_alphanumeric('+'));
 }
 
-// ------------------------- Lexer Internals ----------------------------
-
 #[test]
-fn test_lexer_peek() {
+fn test_rLexer_peek() {
     let lexer = make_lexer("a");
-    assert!(matches!(lexer_peek_char(&lexer), Option::Some('a')));
+    assert!(matches!(rLexer_peek_char(&lexer), Option::Some('a')));
 }
 
 #[test]
-fn test_lexer_peek_empty() {
+fn test_rLexer_peek_empty() {
     let lexer = make_lexer("");
-    assert!(matches!(lexer_peek_char(&lexer), Option::None));
+    assert!(matches!(rLexer_peek_char(&lexer), Option::None));
 }
 
 #[test]
-fn test_lexer_consume() {
+fn test_rLexer_consume() {
     let mut lexer = make_lexer("ab");
-    assert!(matches!(lexer_consume_char(&mut lexer), Option::Some('a')));
-    assert!(matches!(lexer_consume_char(&mut lexer), Option::Some('b')));
-    assert!(matches!(lexer_consume_char(&mut lexer), Option::None));
+    assert!(matches!(rLexer_consume_char(&mut lexer), Option::Some('a')));
+    assert!(matches!(rLexer_consume_char(&mut lexer), Option::Some('b')));
+    assert!(matches!(rLexer_consume_char(&mut lexer), Option::None));
 }
 
 #[test]
-fn test_lexer_eof_detection() {
+fn test_rLexer_eof_detection() {
     let mut lexer = make_lexer("a");
-    assert!(matches!(lexer_peek_char(&lexer), Option::Some('a')));
-    lexer_consume_char(&mut lexer);
-    assert!(matches!(lexer_peek_char(&lexer), Option::None));
+    assert!(matches!(rLexer_peek_char(&lexer), Option::Some('a')));
+    rLexer_consume_char(&mut lexer);
+    assert!(matches!(rLexer_peek_char(&lexer), Option::None));
 }
 
 #[test]
-fn test_lexer_sourcefile() {
+fn test_rLexer_sourcefile() {
     let lexer = make_lexer("abc");
-    let SourceFile::SourceFile(_, index, _, _) = lexer_sourcefile(&lexer);
+    let SourceFile::SourceFile(_, index, _, _) = rLexer_sourcefile(&lexer);
     assert_eq!(*index, 0);
 }
 
 #[test]
-fn test_lexer_expect_char_success() {
+fn test_rLexer_expect_char_success() {
     let mut lexer = make_lexer("xyz");
-    lexer_expect_char(&mut lexer, 'x');
-    assert!(matches!(lexer_peek_char(&lexer), Option::Some('y')));
+    rLexer_expect_char(&mut lexer, 'x');
+    assert!(matches!(rLexer_peek_char(&lexer), Option::Some('y')));
 }
 
 #[test]
 fn test_scan_identifier_direct() {
     let mut lexer = make_lexer("hello_42!");
-    let ident = lexer_scan_identifier(&mut lexer);
+    let ident = rLexer_scan_identifier(&mut lexer);
     assert!(string_eq(&ident, &string("hello_42")));
-    assert!(matches!(lexer_peek_char(&lexer), Option::Some('!')));
+    assert!(matches!(rLexer_peek_char(&lexer), Option::Some('!')));
 }
 
 #[test]
 fn test_identifier_to_token_direct_keyword() {
-    let tok = identifier_to_token(string("usize"));
-    assert!(matches!(tok, Token::Usize));
+    let tok = rust_identifier_to_token(string("usize"));
+    assert!(matches!(tok, RToken::Usize));
 }
 
 #[test]
 fn test_identifier_to_token_direct_identifier() {
-    let tok = identifier_to_token(string("my_var"));
+    let tok = rust_identifier_to_token(string("my_var"));
     match tok {
-        Token::Identifier(s) => assert!(string_eq(&s, &string("my_var"))),
+        RToken::Identifier(s) => assert!(string_eq(&s, &string("my_var"))),
         _ => assert!(false, "expected identifier token"),
     }
 }
@@ -180,71 +174,71 @@ fn test_identifier_to_token_direct_identifier() {
 #[test]
 fn test_scan_integer_direct() {
     let mut lexer = make_lexer("123abc");
-    let value = lexer_scan_integer(&mut lexer);
+    let value = rLexer_scan_integer(&mut lexer);
     assert_eq!(value, 123);
-    assert!(matches!(lexer_peek_char(&lexer), Option::Some('a')));
+    assert!(matches!(rLexer_peek_char(&lexer), Option::Some('a')));
 }
 
 #[test]
 fn test_scan_char_literal_direct() {
     let mut lexer = make_lexer("'x'");
-    assert_eq!(lexer_scan_char_literal(&mut lexer), 'x');
-    assert!(matches!(lexer_peek_char(&lexer), Option::None));
+    assert_eq!(rLexer_scan_char_literal(&mut lexer), 'x');
+    assert!(matches!(rLexer_peek_char(&lexer), Option::None));
 }
 
 #[test]
 fn test_scan_string_literal_direct() {
     let mut lexer = make_lexer("\"ab\\n\"");
-    let s = lexer_scan_string_literal(&mut lexer);
+    let s = rLexer_scan_string_literal(&mut lexer);
     assert!(string_eq(&s, &string("ab\n")));
-    assert!(matches!(lexer_peek_char(&lexer), Option::None));
+    assert!(matches!(rLexer_peek_char(&lexer), Option::None));
 }
 
 #[test]
 fn test_scan_escape_char_direct() {
     let mut lexer = make_lexer("n");
-    assert_eq!(lexer_scan_escape_char(&mut lexer), '\n');
+    assert_eq!(rLexer_scan_escape_char(&mut lexer), '\n');
 }
 
 #[test]
 fn test_scan_symbol_direct() {
     let mut lexer = make_lexer("+");
-    let tok = lexer_scan_symbol(&mut lexer);
-    assert!(matches!(tok, Token::Plus));
+    let tok = rLexer_scan_symbol(&mut lexer);
+    assert!(matches!(tok, RToken::Plus));
 }
 
 #[test]
 fn test_scan_slash_direct() {
     let mut lexer = make_lexer("x");
-    assert!(matches!(lexer_scan_slash(&mut lexer), Token::Slash));
-    assert!(matches!(lexer_peek_char(&lexer), Option::Some('x')));
+    assert!(matches!(rLexer_scan_slash(&mut lexer), RToken::Slash));
+    assert!(matches!(rLexer_peek_char(&lexer), Option::Some('x')));
 }
 
 #[test]
 fn test_scan_colon_direct() {
     let mut lexer = make_lexer("x");
-    assert!(matches!(lexer_scan_colon(&mut lexer), Token::Colon));
-    assert!(matches!(lexer_peek_char(&lexer), Option::Some('x')));
+    assert!(matches!(rLexer_scan_colon(&mut lexer), RToken::Colon));
+    assert!(matches!(rLexer_peek_char(&lexer), Option::Some('x')));
 }
 
 #[test]
 fn test_scan_equals_direct() {
     let mut lexer = make_lexer(">");
-    assert!(matches!(lexer_scan_equals(&mut lexer), Token::FatArrow));
+    assert!(matches!(rLexer_scan_equals(&mut lexer), RToken::FatArrow));
 }
 
 #[test]
 fn test_scan_minus_direct() {
     let mut lexer = make_lexer(">");
-    assert!(matches!(lexer_scan_minus(&mut lexer), Token::Arrow));
+    assert!(matches!(rLexer_scan_minus(&mut lexer), RToken::Arrow));
 }
 
 #[test]
 fn test_scan_bang_direct() {
     let mut lexer = make_lexer("=");
     assert!(matches!(
-        lexer_scan_bang(&mut lexer),
-        Token::Cmp(Comparison::Ne)
+        rLexer_scan_bang(&mut lexer),
+        RToken::Cmp(RComparisonOp::Ne)
     ));
 }
 
@@ -252,8 +246,8 @@ fn test_scan_bang_direct() {
 fn test_scan_less_direct() {
     let mut lexer = make_lexer("=");
     assert!(matches!(
-        lexer_scan_less(&mut lexer),
-        Token::Cmp(Comparison::Leq)
+        rLexer_scan_less(&mut lexer),
+        RToken::Cmp(RComparisonOp::Leq)
     ));
 }
 
@@ -261,131 +255,131 @@ fn test_scan_less_direct() {
 fn test_scan_greater_direct() {
     let mut lexer = make_lexer("=");
     assert!(matches!(
-        lexer_scan_greater(&mut lexer),
-        Token::Cmp(Comparison::Geq)
+        rLexer_scan_greater(&mut lexer),
+        RToken::Cmp(RComparisonOp::Geq)
     ));
 }
 
 #[test]
 fn test_skip_whitespace_direct() {
     let mut lexer = make_lexer("  \n\tabc");
-    lexer_skip_whitespace(&mut lexer);
-    assert!(matches!(lexer_peek_char(&lexer), Option::Some('a')));
+    rLexer_skip_whitespace(&mut lexer);
+    assert!(matches!(rLexer_peek_char(&lexer), Option::Some('a')));
 }
 
 #[test]
 fn test_skip_line_comment_direct() {
     let mut lexer = make_lexer("comment text\nz");
-    lexer_skip_line_comment(&mut lexer);
-    assert!(matches!(lexer_peek_char(&lexer), Option::Some('z')));
+    rLexer_skip_line_comment(&mut lexer);
+    assert!(matches!(rLexer_peek_char(&lexer), Option::Some('z')));
 }
-
-// ------------------------- Keywords ----------------------------
 
 #[test]
 fn test_keyword_fn() {
     let mut lexer = make_lexer("fn");
-    assert_tokens(collect_tokens(&mut lexer), vec![Token::Fn, Token::Eof]);
+    assert_tokens(collect_tokens(&mut lexer), vec![RToken::Fn, RToken::Eof]);
 }
 
 #[test]
 fn test_keyword_enum() {
     let mut lexer = make_lexer("enum");
-    assert_tokens(collect_tokens(&mut lexer), vec![Token::Enum, Token::Eof]);
+    assert_tokens(collect_tokens(&mut lexer), vec![RToken::Enum, RToken::Eof]);
 }
 
 #[test]
 fn test_keyword_let() {
     let mut lexer = make_lexer("let");
-    assert_tokens(collect_tokens(&mut lexer), vec![Token::Let, Token::Eof]);
+    assert_tokens(collect_tokens(&mut lexer), vec![RToken::Let, RToken::Eof]);
 }
 
 #[test]
 fn test_keyword_if() {
     let mut lexer = make_lexer("if");
-    assert_tokens(collect_tokens(&mut lexer), vec![Token::If, Token::Eof]);
+    assert_tokens(collect_tokens(&mut lexer), vec![RToken::If, RToken::Eof]);
 }
 
 #[test]
 fn test_keyword_else() {
     let mut lexer = make_lexer("else");
-    assert_tokens(collect_tokens(&mut lexer), vec![Token::Else, Token::Eof]);
+    assert_tokens(collect_tokens(&mut lexer), vec![RToken::Else, RToken::Eof]);
 }
 
 #[test]
 fn test_keyword_while() {
     let mut lexer = make_lexer("while");
-    assert_tokens(collect_tokens(&mut lexer), vec![Token::While, Token::Eof]);
+    assert_tokens(collect_tokens(&mut lexer), vec![RToken::While, RToken::Eof]);
 }
 
 #[test]
 fn test_keyword_return() {
     let mut lexer = make_lexer("return");
-    assert_tokens(collect_tokens(&mut lexer), vec![Token::Return, Token::Eof]);
+    assert_tokens(
+        collect_tokens(&mut lexer),
+        vec![RToken::Return, RToken::Eof],
+    );
 }
 
 #[test]
 fn test_keyword_match() {
     let mut lexer = make_lexer("match");
-    assert_tokens(collect_tokens(&mut lexer), vec![Token::Match, Token::Eof]);
+    assert_tokens(collect_tokens(&mut lexer), vec![RToken::Match, RToken::Eof]);
 }
 
 #[test]
 fn test_keyword_as() {
     let mut lexer = make_lexer("as");
-    assert_tokens(collect_tokens(&mut lexer), vec![Token::As, Token::Eof]);
+    assert_tokens(collect_tokens(&mut lexer), vec![RToken::As, RToken::Eof]);
 }
 
 #[test]
 fn test_keyword_mut() {
     let mut lexer = make_lexer("mut");
-    assert_tokens(collect_tokens(&mut lexer), vec![Token::Mut, Token::Eof]);
+    assert_tokens(collect_tokens(&mut lexer), vec![RToken::Mut, RToken::Eof]);
 }
 
 #[test]
 fn test_keyword_unsafe() {
     let mut lexer = make_lexer("unsafe");
-    assert_tokens(collect_tokens(&mut lexer), vec![Token::Unsafe, Token::Eof]);
+    assert_tokens(
+        collect_tokens(&mut lexer),
+        vec![RToken::Unsafe, RToken::Eof],
+    );
 }
-
-// ------------------------- Types ----------------------------
 
 #[test]
 fn test_type_usize() {
     let mut lexer = make_lexer("usize");
-    assert_tokens(collect_tokens(&mut lexer), vec![Token::Usize, Token::Eof]);
+    assert_tokens(collect_tokens(&mut lexer), vec![RToken::Usize, RToken::Eof]);
 }
 
 #[test]
 fn test_type_u8() {
     let mut lexer = make_lexer("u8");
-    assert_tokens(collect_tokens(&mut lexer), vec![Token::U8, Token::Eof]);
+    assert_tokens(collect_tokens(&mut lexer), vec![RToken::U8, RToken::Eof]);
 }
 
 #[test]
 fn test_type_char() {
     let mut lexer = make_lexer("char");
-    assert_tokens(collect_tokens(&mut lexer), vec![Token::Char, Token::Eof]);
+    assert_tokens(collect_tokens(&mut lexer), vec![RToken::Char, RToken::Eof]);
 }
 
 #[test]
 fn test_type_str() {
     let mut lexer = make_lexer("str");
-    assert_tokens(collect_tokens(&mut lexer), vec![Token::Str, Token::Eof]);
+    assert_tokens(collect_tokens(&mut lexer), vec![RToken::Str, RToken::Eof]);
 }
 
 #[test]
 fn test_type_bool() {
     let mut lexer = make_lexer("bool");
-    assert_tokens(collect_tokens(&mut lexer), vec![Token::Bool, Token::Eof]);
+    assert_tokens(collect_tokens(&mut lexer), vec![RToken::Bool, RToken::Eof]);
 }
-
-// ------------------------- Identifiers ----------------------------
 
 #[test]
 fn test_identifier_simple() {
     let mut lexer = make_lexer("foo");
-    assert_tokens(collect_tokens(&mut lexer), vec![ident("foo"), Token::Eof]);
+    assert_tokens(collect_tokens(&mut lexer), vec![ident("foo"), RToken::Eof]);
 }
 
 #[test]
@@ -393,7 +387,7 @@ fn test_identifier_with_underscore() {
     let mut lexer = make_lexer("foo_bar");
     assert_tokens(
         collect_tokens(&mut lexer),
-        vec![ident("foo_bar"), Token::Eof],
+        vec![ident("foo_bar"), RToken::Eof],
     );
 }
 
@@ -402,7 +396,7 @@ fn test_identifier_with_numbers() {
     let mut lexer = make_lexer("foo123");
     assert_tokens(
         collect_tokens(&mut lexer),
-        vec![ident("foo123"), Token::Eof],
+        vec![ident("foo123"), RToken::Eof],
     );
 }
 
@@ -411,36 +405,38 @@ fn test_identifier_starting_with_underscore() {
     let mut lexer = make_lexer("_private");
     assert_tokens(
         collect_tokens(&mut lexer),
-        vec![ident("_private"), Token::Eof],
+        vec![ident("_private"), RToken::Eof],
     );
 }
-
-// ------------------------- Integer Literals ----------------------------
 
 #[test]
 fn test_integer_zero() {
     let mut lexer = make_lexer("0");
-    assert_tokens(collect_tokens(&mut lexer), vec![int_lit(0), Token::Eof]);
+    assert_tokens(collect_tokens(&mut lexer), vec![int_lit(0), RToken::Eof]);
 }
 
 #[test]
 fn test_integer_single_digit() {
     let mut lexer = make_lexer("7");
-    assert_tokens(collect_tokens(&mut lexer), vec![int_lit(7), Token::Eof]);
+    assert_tokens(collect_tokens(&mut lexer), vec![int_lit(7), RToken::Eof]);
 }
 
 #[test]
 fn test_integer_multi_digit() {
     let mut lexer = make_lexer("12345");
-    assert_tokens(collect_tokens(&mut lexer), vec![int_lit(12345), Token::Eof]);
+    assert_tokens(
+        collect_tokens(&mut lexer),
+        vec![int_lit(12345), RToken::Eof],
+    );
 }
-
-// ------------------------- Boolean Literals ----------------------------
 
 #[test]
 fn test_boolean_true() {
     let mut lexer = make_lexer("true");
-    assert_tokens(collect_tokens(&mut lexer), vec![bool_lit(true), Token::Eof]);
+    assert_tokens(
+        collect_tokens(&mut lexer),
+        vec![bool_lit(true), RToken::Eof],
+    );
 }
 
 #[test]
@@ -448,60 +444,74 @@ fn test_boolean_false() {
     let mut lexer = make_lexer("false");
     assert_tokens(
         collect_tokens(&mut lexer),
-        vec![bool_lit(false), Token::Eof],
+        vec![bool_lit(false), RToken::Eof],
     );
 }
-
-// ------------------------- Character Literals ----------------------------
 
 #[test]
 fn test_char_literal_simple() {
     let mut lexer = make_lexer("'a'");
-    assert_tokens(collect_tokens(&mut lexer), vec![char_lit('a'), Token::Eof]);
+    assert_tokens(collect_tokens(&mut lexer), vec![char_lit('a'), RToken::Eof]);
 }
 
 #[test]
 fn test_char_literal_escape_n() {
     let mut lexer = make_lexer("'\\n'");
-    assert_tokens(collect_tokens(&mut lexer), vec![char_lit('\n'), Token::Eof]);
+    assert_tokens(
+        collect_tokens(&mut lexer),
+        vec![char_lit('\n'), RToken::Eof],
+    );
 }
 
 #[test]
 fn test_char_literal_escape_t() {
     let mut lexer = make_lexer("'\\t'");
-    assert_tokens(collect_tokens(&mut lexer), vec![char_lit('\t'), Token::Eof]);
+    assert_tokens(
+        collect_tokens(&mut lexer),
+        vec![char_lit('\t'), RToken::Eof],
+    );
 }
 
 #[test]
 fn test_char_literal_escape_r() {
     let mut lexer = make_lexer("'\\r'");
-    assert_tokens(collect_tokens(&mut lexer), vec![char_lit('\r'), Token::Eof]);
+    assert_tokens(
+        collect_tokens(&mut lexer),
+        vec![char_lit('\r'), RToken::Eof],
+    );
 }
 
 #[test]
 fn test_char_literal_escape_backslash() {
     let mut lexer = make_lexer("'\\\\'");
-    assert_tokens(collect_tokens(&mut lexer), vec![char_lit('\\'), Token::Eof]);
+    assert_tokens(
+        collect_tokens(&mut lexer),
+        vec![char_lit('\\'), RToken::Eof],
+    );
 }
 
 #[test]
 fn test_char_literal_escape_quote() {
     let mut lexer = make_lexer("'\\''");
-    assert_tokens(collect_tokens(&mut lexer), vec![char_lit('\''), Token::Eof]);
+    assert_tokens(
+        collect_tokens(&mut lexer),
+        vec![char_lit('\''), RToken::Eof],
+    );
 }
 
 #[test]
 fn test_char_literal_escape_null() {
     let mut lexer = make_lexer("'\\0'");
-    assert_tokens(collect_tokens(&mut lexer), vec![char_lit('\0'), Token::Eof]);
+    assert_tokens(
+        collect_tokens(&mut lexer),
+        vec![char_lit('\0'), RToken::Eof],
+    );
 }
-
-// ------------------------- String Literals ----------------------------
 
 #[test]
 fn test_string_literal_empty() {
     let mut lexer = make_lexer("\"\"");
-    assert_tokens(collect_tokens(&mut lexer), vec![str_lit(""), Token::Eof]);
+    assert_tokens(collect_tokens(&mut lexer), vec![str_lit(""), RToken::Eof]);
 }
 
 #[test]
@@ -509,7 +519,7 @@ fn test_string_literal_simple() {
     let mut lexer = make_lexer("\"hello\"");
     assert_tokens(
         collect_tokens(&mut lexer),
-        vec![str_lit("hello"), Token::Eof],
+        vec![str_lit("hello"), RToken::Eof],
     );
 }
 
@@ -518,7 +528,7 @@ fn test_string_literal_with_escapes() {
     let mut lexer = make_lexer("\"a\\nb\\tc\"");
     assert_tokens(
         collect_tokens(&mut lexer),
-        vec![str_lit("a\nb\tc"), Token::Eof],
+        vec![str_lit("a\nb\tc"), RToken::Eof],
     );
 }
 
@@ -527,18 +537,16 @@ fn test_string_literal_escaped_quote() {
     let mut lexer = make_lexer("\"say \\\"hi\\\"\"");
     assert_tokens(
         collect_tokens(&mut lexer),
-        vec![str_lit("say \"hi\""), Token::Eof],
+        vec![str_lit("say \"hi\""), RToken::Eof],
     );
 }
-
-// ------------------------- Symbol ----------------------------
 
 #[test]
 fn test_symbol_braces() {
     let mut lexer = make_lexer("{}");
     assert_tokens(
         collect_tokens(&mut lexer),
-        vec![Token::LBrace, Token::RBrace, Token::Eof],
+        vec![RToken::LBrace, RToken::RBrace, RToken::Eof],
     );
 }
 
@@ -547,14 +555,14 @@ fn test_symbol_parens() {
     let mut lexer = make_lexer("()");
     assert_tokens(
         collect_tokens(&mut lexer),
-        vec![Token::LParen, Token::RParen, Token::Eof],
+        vec![RToken::LParen, RToken::RParen, RToken::Eof],
     );
 }
 
 #[test]
 fn test_symbol_colon() {
     let mut lexer = make_lexer(":");
-    assert_tokens(collect_tokens(&mut lexer), vec![Token::Colon, Token::Eof]);
+    assert_tokens(collect_tokens(&mut lexer), vec![RToken::Colon, RToken::Eof]);
 }
 
 #[test]
@@ -562,7 +570,7 @@ fn test_symbol_double_colon() {
     let mut lexer = make_lexer("::");
     assert_tokens(
         collect_tokens(&mut lexer),
-        vec![Token::DoubleColon, Token::Eof],
+        vec![RToken::DoubleColon, RToken::Eof],
     );
 }
 
@@ -571,20 +579,23 @@ fn test_symbol_semicolon() {
     let mut lexer = make_lexer(";");
     assert_tokens(
         collect_tokens(&mut lexer),
-        vec![Token::SemiColon, Token::Eof],
+        vec![RToken::SemiColon, RToken::Eof],
     );
 }
 
 #[test]
 fn test_symbol_comma() {
     let mut lexer = make_lexer(",");
-    assert_tokens(collect_tokens(&mut lexer), vec![Token::Comma, Token::Eof]);
+    assert_tokens(collect_tokens(&mut lexer), vec![RToken::Comma, RToken::Eof]);
 }
 
 #[test]
 fn test_symbol_assign() {
     let mut lexer = make_lexer("=");
-    assert_tokens(collect_tokens(&mut lexer), vec![Token::Assign, Token::Eof]);
+    assert_tokens(
+        collect_tokens(&mut lexer),
+        vec![RToken::Assign, RToken::Eof],
+    );
 }
 
 #[test]
@@ -592,14 +603,14 @@ fn test_symbol_arm_arrow() {
     let mut lexer = make_lexer("=>");
     assert_tokens(
         collect_tokens(&mut lexer),
-        vec![Token::FatArrow, Token::Eof],
+        vec![RToken::FatArrow, RToken::Eof],
     );
 }
 
 #[test]
 fn test_symbol_type_arrow() {
     let mut lexer = make_lexer("->");
-    assert_tokens(collect_tokens(&mut lexer), vec![Token::Arrow, Token::Eof]);
+    assert_tokens(collect_tokens(&mut lexer), vec![RToken::Arrow, RToken::Eof]);
 }
 
 #[test]
@@ -607,34 +618,32 @@ fn test_symbol_ampersand() {
     let mut lexer = make_lexer("&");
     assert_tokens(
         collect_tokens(&mut lexer),
-        vec![Token::Ampersand, Token::Eof],
+        vec![RToken::Ampersand, RToken::Eof],
     );
 }
-
-// ------------------------- Operators ----------------------------
 
 #[test]
 fn test_operator_plus() {
     let mut lexer = make_lexer("+");
-    assert_tokens(collect_tokens(&mut lexer), vec![Token::Plus, Token::Eof]);
+    assert_tokens(collect_tokens(&mut lexer), vec![RToken::Plus, RToken::Eof]);
 }
 
 #[test]
 fn test_operator_minus() {
     let mut lexer = make_lexer("-");
-    assert_tokens(collect_tokens(&mut lexer), vec![Token::Minus, Token::Eof]);
+    assert_tokens(collect_tokens(&mut lexer), vec![RToken::Minus, RToken::Eof]);
 }
 
 #[test]
 fn test_operator_star() {
     let mut lexer = make_lexer("*");
-    assert_tokens(collect_tokens(&mut lexer), vec![Token::Star, Token::Eof]);
+    assert_tokens(collect_tokens(&mut lexer), vec![RToken::Star, RToken::Eof]);
 }
 
 #[test]
 fn test_operator_slash() {
     let mut lexer = make_lexer("/");
-    assert_tokens(collect_tokens(&mut lexer), vec![Token::Slash, Token::Eof]);
+    assert_tokens(collect_tokens(&mut lexer), vec![RToken::Slash, RToken::Eof]);
 }
 
 #[test]
@@ -642,18 +651,16 @@ fn test_operator_remainder() {
     let mut lexer = make_lexer("%");
     assert_tokens(
         collect_tokens(&mut lexer),
-        vec![Token::Remainder, Token::Eof],
+        vec![RToken::Remainder, RToken::Eof],
     );
 }
-
-// ------------------------- Comparisons ----------------------------
 
 #[test]
 fn test_comparison_eq() {
     let mut lexer = make_lexer("==");
     assert_tokens(
         collect_tokens(&mut lexer),
-        vec![cmp_token(Comparison::Eq), Token::Eof],
+        vec![cmp_token(RComparisonOp::Eq), RToken::Eof],
     );
 }
 
@@ -662,7 +669,7 @@ fn test_comparison_neq() {
     let mut lexer = make_lexer("!=");
     assert_tokens(
         collect_tokens(&mut lexer),
-        vec![cmp_token(Comparison::Ne), Token::Eof],
+        vec![cmp_token(RComparisonOp::Ne), RToken::Eof],
     );
 }
 
@@ -671,7 +678,7 @@ fn test_comparison_gt() {
     let mut lexer = make_lexer(">");
     assert_tokens(
         collect_tokens(&mut lexer),
-        vec![cmp_token(Comparison::Gt), Token::Eof],
+        vec![cmp_token(RComparisonOp::Gt), RToken::Eof],
     );
 }
 
@@ -680,7 +687,7 @@ fn test_comparison_lt() {
     let mut lexer = make_lexer("<");
     assert_tokens(
         collect_tokens(&mut lexer),
-        vec![cmp_token(Comparison::Lt), Token::Eof],
+        vec![cmp_token(RComparisonOp::Lt), RToken::Eof],
     );
 }
 
@@ -689,7 +696,7 @@ fn test_comparison_geq() {
     let mut lexer = make_lexer(">=");
     assert_tokens(
         collect_tokens(&mut lexer),
-        vec![cmp_token(Comparison::Geq), Token::Eof],
+        vec![cmp_token(RComparisonOp::Geq), RToken::Eof],
     );
 }
 
@@ -698,43 +705,39 @@ fn test_comparison_leq() {
     let mut lexer = make_lexer("<=");
     assert_tokens(
         collect_tokens(&mut lexer),
-        vec![cmp_token(Comparison::Leq), Token::Eof],
+        vec![cmp_token(RComparisonOp::Leq), RToken::Eof],
     );
 }
-
-// ------------------------- Whitespace and Comments ----------------------------
 
 #[test]
 fn test_skip_whitespace() {
     let mut lexer = make_lexer("   fn");
-    assert_tokens(collect_tokens(&mut lexer), vec![Token::Fn, Token::Eof]);
+    assert_tokens(collect_tokens(&mut lexer), vec![RToken::Fn, RToken::Eof]);
 }
 
 #[test]
 fn test_skip_tabs_and_newlines() {
     let mut lexer = make_lexer("\t\n\r  fn");
-    assert_tokens(collect_tokens(&mut lexer), vec![Token::Fn, Token::Eof]);
+    assert_tokens(collect_tokens(&mut lexer), vec![RToken::Fn, RToken::Eof]);
 }
 
 #[test]
 fn test_skip_line_comment() {
     let mut lexer = make_lexer("// comment\nfn");
-    assert_tokens(collect_tokens(&mut lexer), vec![Token::Fn, Token::Eof]);
+    assert_tokens(collect_tokens(&mut lexer), vec![RToken::Fn, RToken::Eof]);
 }
 
 #[test]
 fn test_skip_multiple_comments() {
     let mut lexer = make_lexer("// first\n// second\nfn");
-    assert_tokens(collect_tokens(&mut lexer), vec![Token::Fn, Token::Eof]);
+    assert_tokens(collect_tokens(&mut lexer), vec![RToken::Fn, RToken::Eof]);
 }
 
 #[test]
 fn test_comment_at_eof() {
     let mut lexer = make_lexer("// comment");
-    assert_tokens(collect_tokens(&mut lexer), vec![Token::Eof]);
+    assert_tokens(collect_tokens(&mut lexer), vec![RToken::Eof]);
 }
-
-// ------------------------- Complex Sequences ----------------------------
 
 #[test]
 fn test_function_signature() {
@@ -742,16 +745,16 @@ fn test_function_signature() {
     assert_tokens(
         collect_tokens(&mut lexer),
         vec![
-            Token::Fn,
+            RToken::Fn,
             ident("foo"),
-            Token::LParen,
+            RToken::LParen,
             ident("x"),
-            Token::Colon,
-            Token::Usize,
-            Token::RParen,
-            Token::Arrow,
-            Token::U8,
-            Token::Eof,
+            RToken::Colon,
+            RToken::Usize,
+            RToken::RParen,
+            RToken::Arrow,
+            RToken::U8,
+            RToken::Eof,
         ],
     );
 }
@@ -762,14 +765,14 @@ fn test_let_statement() {
     assert_tokens(
         collect_tokens(&mut lexer),
         vec![
-            Token::Let,
+            RToken::Let,
             ident("x"),
-            Token::Colon,
-            Token::Usize,
-            Token::Assign,
+            RToken::Colon,
+            RToken::Usize,
+            RToken::Assign,
             int_lit(42),
-            Token::SemiColon,
-            Token::Eof,
+            RToken::SemiColon,
+            RToken::Eof,
         ],
     );
 }
@@ -780,15 +783,15 @@ fn test_match_arm() {
     assert_tokens(
         collect_tokens(&mut lexer),
         vec![
-            Token::Match,
+            RToken::Match,
             ident("x"),
-            Token::LBrace,
+            RToken::LBrace,
             int_lit(1),
-            Token::FatArrow,
+            RToken::FatArrow,
             int_lit(2),
-            Token::Comma,
-            Token::RBrace,
-            Token::Eof,
+            RToken::Comma,
+            RToken::RBrace,
+            RToken::Eof,
         ],
     );
 }
@@ -800,19 +803,19 @@ fn test_comparison_expression() {
         collect_tokens(&mut lexer),
         vec![
             ident("a"),
-            cmp_token(Comparison::Eq),
+            cmp_token(RComparisonOp::Eq),
             ident("b"),
-            cmp_token(Comparison::Ne),
+            cmp_token(RComparisonOp::Ne),
             ident("c"),
-            cmp_token(Comparison::Lt),
+            cmp_token(RComparisonOp::Lt),
             ident("d"),
-            cmp_token(Comparison::Gt),
+            cmp_token(RComparisonOp::Gt),
             ident("e"),
-            cmp_token(Comparison::Leq),
+            cmp_token(RComparisonOp::Leq),
             ident("f"),
-            cmp_token(Comparison::Geq),
+            cmp_token(RComparisonOp::Geq),
             ident("g"),
-            Token::Eof,
+            RToken::Eof,
         ],
     );
 }
@@ -823,17 +826,17 @@ fn test_enum_definition() {
     assert_tokens(
         collect_tokens(&mut lexer),
         vec![
-            Token::Enum,
+            RToken::Enum,
             ident("Foo"),
-            Token::LBrace,
+            RToken::LBrace,
             ident("A"),
-            Token::Comma,
+            RToken::Comma,
             ident("B"),
-            Token::LParen,
-            Token::Usize,
-            Token::RParen,
-            Token::RBrace,
-            Token::Eof,
+            RToken::LParen,
+            RToken::Usize,
+            RToken::RParen,
+            RToken::RBrace,
+            RToken::Eof,
         ],
     );
 }
@@ -843,7 +846,7 @@ fn test_path_with_double_colon() {
     let mut lexer = make_lexer("Foo::Bar");
     assert_tokens(
         collect_tokens(&mut lexer),
-        vec![ident("Foo"), Token::DoubleColon, ident("Bar"), Token::Eof],
+        vec![ident("Foo"), RToken::DoubleColon, ident("Bar"), RToken::Eof],
     );
 }
 
@@ -852,11 +855,9 @@ fn test_reference_and_mut() {
     let mut lexer = make_lexer("&mut x");
     assert_tokens(
         collect_tokens(&mut lexer),
-        vec![Token::Ampersand, Token::Mut, ident("x"), Token::Eof],
+        vec![RToken::Ampersand, RToken::Mut, ident("x"), RToken::Eof],
     );
 }
-
-// ------------------------- Full Programs ----------------------------
 
 #[test]
 fn test_full_program_hello_world() {
@@ -869,21 +870,21 @@ fn main() {
     assert_tokens(
         collect_tokens(&mut lexer),
         vec![
-            Token::Fn,
+            RToken::Fn,
             ident("main"),
-            Token::LParen,
-            Token::RParen,
-            Token::LBrace,
-            Token::Let,
+            RToken::LParen,
+            RToken::RParen,
+            RToken::LBrace,
+            RToken::Let,
             ident("msg"),
-            Token::Colon,
-            Token::Ampersand,
-            Token::Str,
-            Token::Assign,
+            RToken::Colon,
+            RToken::Ampersand,
+            RToken::Str,
+            RToken::Assign,
             str_lit("Hello, World!"),
-            Token::SemiColon,
-            Token::RBrace,
-            Token::Eof,
+            RToken::SemiColon,
+            RToken::RBrace,
+            RToken::Eof,
         ],
     );
 }
@@ -908,53 +909,53 @@ fn unwrap(opt: Option) -> usize {
         collect_tokens(&mut lexer),
         vec![
             // enum Option { Some(usize), None, }
-            Token::Enum,
+            RToken::Enum,
             ident("Option"),
-            Token::LBrace,
+            RToken::LBrace,
             ident("Some"),
-            Token::LParen,
-            Token::Usize,
-            Token::RParen,
-            Token::Comma,
+            RToken::LParen,
+            RToken::Usize,
+            RToken::RParen,
+            RToken::Comma,
             ident("None"),
-            Token::Comma,
-            Token::RBrace,
+            RToken::Comma,
+            RToken::RBrace,
             // fn unwrap(opt: Option) -> usize {
-            Token::Fn,
+            RToken::Fn,
             ident("unwrap"),
-            Token::LParen,
+            RToken::LParen,
             ident("opt"),
-            Token::Colon,
+            RToken::Colon,
             ident("Option"),
-            Token::RParen,
-            Token::Arrow,
-            Token::Usize,
-            Token::LBrace,
+            RToken::RParen,
+            RToken::Arrow,
+            RToken::Usize,
+            RToken::LBrace,
             // match opt {
-            Token::Match,
+            RToken::Match,
             ident("opt"),
-            Token::LBrace,
+            RToken::LBrace,
             // Option::Some(x) => x,
             ident("Option"),
-            Token::DoubleColon,
+            RToken::DoubleColon,
             ident("Some"),
-            Token::LParen,
+            RToken::LParen,
             ident("x"),
-            Token::RParen,
-            Token::FatArrow,
+            RToken::RParen,
+            RToken::FatArrow,
             ident("x"),
-            Token::Comma,
+            RToken::Comma,
             // Option::None => 0,
             ident("Option"),
-            Token::DoubleColon,
+            RToken::DoubleColon,
             ident("None"),
-            Token::FatArrow,
+            RToken::FatArrow,
             int_lit(0),
-            Token::Comma,
+            RToken::Comma,
             // closing braces
-            Token::RBrace,
-            Token::RBrace,
-            Token::Eof,
+            RToken::RBrace,
+            RToken::RBrace,
+            RToken::Eof,
         ],
     );
 }
@@ -977,62 +978,62 @@ fn factorial(n: usize) -> usize {
         collect_tokens(&mut lexer),
         vec![
             // fn factorial(n: usize) -> usize {
-            Token::Fn,
+            RToken::Fn,
             ident("factorial"),
-            Token::LParen,
+            RToken::LParen,
             ident("n"),
-            Token::Colon,
-            Token::Usize,
-            Token::RParen,
-            Token::Arrow,
-            Token::Usize,
-            Token::LBrace,
+            RToken::Colon,
+            RToken::Usize,
+            RToken::RParen,
+            RToken::Arrow,
+            RToken::Usize,
+            RToken::LBrace,
             // let mut result: usize = 1;
-            Token::Let,
-            Token::Mut,
+            RToken::Let,
+            RToken::Mut,
             ident("result"),
-            Token::Colon,
-            Token::Usize,
-            Token::Assign,
+            RToken::Colon,
+            RToken::Usize,
+            RToken::Assign,
             int_lit(1),
-            Token::SemiColon,
+            RToken::SemiColon,
             // let mut i: usize = 1;
-            Token::Let,
-            Token::Mut,
+            RToken::Let,
+            RToken::Mut,
             ident("i"),
-            Token::Colon,
-            Token::Usize,
-            Token::Assign,
+            RToken::Colon,
+            RToken::Usize,
+            RToken::Assign,
             int_lit(1),
-            Token::SemiColon,
+            RToken::SemiColon,
             // while i <= n {
-            Token::While,
+            RToken::While,
             ident("i"),
-            cmp_token(Comparison::Leq),
+            cmp_token(RComparisonOp::Leq),
             ident("n"),
-            Token::LBrace,
+            RToken::LBrace,
             // result = result * i;
             ident("result"),
-            Token::Assign,
+            RToken::Assign,
             ident("result"),
-            Token::Star,
+            RToken::Star,
             ident("i"),
-            Token::SemiColon,
+            RToken::SemiColon,
             // i = i + 1;
             ident("i"),
-            Token::Assign,
+            RToken::Assign,
             ident("i"),
-            Token::Plus,
+            RToken::Plus,
             int_lit(1),
-            Token::SemiColon,
+            RToken::SemiColon,
             // }
-            Token::RBrace,
+            RToken::RBrace,
             // return result;
-            Token::Return,
+            RToken::Return,
             ident("result"),
-            Token::SemiColon,
-            Token::RBrace,
-            Token::Eof,
+            RToken::SemiColon,
+            RToken::RBrace,
+            RToken::Eof,
         ],
     );
 }
@@ -1053,41 +1054,41 @@ fn max(a: usize, b: usize) -> usize {
         collect_tokens(&mut lexer),
         vec![
             // fn max(a: usize, b: usize) -> usize {
-            Token::Fn,
+            RToken::Fn,
             ident("max"),
-            Token::LParen,
+            RToken::LParen,
             ident("a"),
-            Token::Colon,
-            Token::Usize,
-            Token::Comma,
+            RToken::Colon,
+            RToken::Usize,
+            RToken::Comma,
             ident("b"),
-            Token::Colon,
-            Token::Usize,
-            Token::RParen,
-            Token::Arrow,
-            Token::Usize,
-            Token::LBrace,
+            RToken::Colon,
+            RToken::Usize,
+            RToken::RParen,
+            RToken::Arrow,
+            RToken::Usize,
+            RToken::LBrace,
             // if a > b {
-            Token::If,
+            RToken::If,
             ident("a"),
-            cmp_token(Comparison::Gt),
+            cmp_token(RComparisonOp::Gt),
             ident("b"),
-            Token::LBrace,
+            RToken::LBrace,
             // return a;
-            Token::Return,
+            RToken::Return,
             ident("a"),
-            Token::SemiColon,
-            Token::RBrace,
+            RToken::SemiColon,
+            RToken::RBrace,
             // else {
-            Token::Else,
-            Token::LBrace,
+            RToken::Else,
+            RToken::LBrace,
             // return b;
-            Token::Return,
+            RToken::Return,
             ident("b"),
-            Token::SemiColon,
-            Token::RBrace,
-            Token::RBrace,
-            Token::Eof,
+            RToken::SemiColon,
+            RToken::RBrace,
+            RToken::RBrace,
+            RToken::Eof,
         ],
     );
 }
@@ -1105,50 +1106,50 @@ fn write_byte(ptr: *mut u8, offset: usize, value: u8) {
         collect_tokens(&mut lexer),
         vec![
             // fn write_byte(ptr: *mut u8, offset: usize, value: u8) {
-            Token::Fn,
+            RToken::Fn,
             ident("write_byte"),
-            Token::LParen,
+            RToken::LParen,
             ident("ptr"),
-            Token::Colon,
-            Token::Star,
-            Token::Mut,
-            Token::U8,
-            Token::Comma,
+            RToken::Colon,
+            RToken::Star,
+            RToken::Mut,
+            RToken::U8,
+            RToken::Comma,
             ident("offset"),
-            Token::Colon,
-            Token::Usize,
-            Token::Comma,
+            RToken::Colon,
+            RToken::Usize,
+            RToken::Comma,
             ident("value"),
-            Token::Colon,
-            Token::U8,
-            Token::RParen,
-            Token::LBrace,
+            RToken::Colon,
+            RToken::U8,
+            RToken::RParen,
+            RToken::LBrace,
             // let target: *mut u8 = ptr as usize + offset as *mut u8;
-            Token::Let,
+            RToken::Let,
             ident("target"),
-            Token::Colon,
-            Token::Star,
-            Token::Mut,
-            Token::U8,
-            Token::Assign,
+            RToken::Colon,
+            RToken::Star,
+            RToken::Mut,
+            RToken::U8,
+            RToken::Assign,
             ident("ptr"),
-            Token::As,
-            Token::Usize,
-            Token::Plus,
+            RToken::As,
+            RToken::Usize,
+            RToken::Plus,
             ident("offset"),
-            Token::As,
-            Token::Star,
-            Token::Mut,
-            Token::U8,
-            Token::SemiColon,
+            RToken::As,
+            RToken::Star,
+            RToken::Mut,
+            RToken::U8,
+            RToken::SemiColon,
             // *target = value;
-            Token::Star,
+            RToken::Star,
             ident("target"),
-            Token::Assign,
+            RToken::Assign,
             ident("value"),
-            Token::SemiColon,
-            Token::RBrace,
-            Token::Eof,
+            RToken::SemiColon,
+            RToken::RBrace,
+            RToken::Eof,
         ],
     );
 }
@@ -1166,27 +1167,27 @@ fn add(a: usize, b: usize) -> usize {
     assert_tokens(
         collect_tokens(&mut lexer),
         vec![
-            Token::Fn,
+            RToken::Fn,
             ident("add"),
-            Token::LParen,
+            RToken::LParen,
             ident("a"),
-            Token::Colon,
-            Token::Usize,
-            Token::Comma,
+            RToken::Colon,
+            RToken::Usize,
+            RToken::Comma,
             ident("b"),
-            Token::Colon,
-            Token::Usize,
-            Token::RParen,
-            Token::Arrow,
-            Token::Usize,
-            Token::LBrace,
-            Token::Return,
+            RToken::Colon,
+            RToken::Usize,
+            RToken::RParen,
+            RToken::Arrow,
+            RToken::Usize,
+            RToken::LBrace,
+            RToken::Return,
             ident("a"),
-            Token::Plus,
+            RToken::Plus,
             ident("b"),
-            Token::SemiColon,
-            Token::RBrace,
-            Token::Eof,
+            RToken::SemiColon,
+            RToken::RBrace,
+            RToken::Eof,
         ],
     );
 }
@@ -1202,22 +1203,22 @@ unsafe fn flag(x: bool) -> bool {
     assert_tokens(
         collect_tokens(&mut lexer),
         vec![
-            Token::Unsafe,
-            Token::Fn,
+            RToken::Unsafe,
+            RToken::Fn,
             ident("flag"),
-            Token::LParen,
+            RToken::LParen,
             ident("x"),
-            Token::Colon,
-            Token::Bool,
-            Token::RParen,
-            Token::Arrow,
-            Token::Bool,
-            Token::LBrace,
-            Token::Return,
+            RToken::Colon,
+            RToken::Bool,
+            RToken::RParen,
+            RToken::Arrow,
+            RToken::Bool,
+            RToken::LBrace,
+            RToken::Return,
             bool_lit(true),
-            Token::SemiColon,
-            Token::RBrace,
-            Token::Eof,
+            RToken::SemiColon,
+            RToken::RBrace,
+            RToken::Eof,
         ],
     );
 }
