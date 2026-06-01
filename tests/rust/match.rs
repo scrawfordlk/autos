@@ -1,4 +1,4 @@
-fn main() -> usize {
+fn test() -> usize {
     let n: u8 = 4 as u8;
 
     match n {
@@ -13,4 +13,12 @@ fn main() -> usize {
         },
         100 => return 6,
     }
+}
+
+fn main() {
+    unsafe { exit(test()) }
+}
+
+unsafe extern "C" {
+    fn exit(code: usize) -> !;
 }

@@ -1,4 +1,4 @@
-fn main() -> usize {
+fn test() -> usize {
     let a: usize = 2;
     let b: usize = {
         let a: u8 = 5 as u8;
@@ -13,4 +13,12 @@ fn main() -> usize {
     let a: usize = c + a;
     let result: usize = a;
     result
+}
+
+fn main() {
+    unsafe { exit(test()) }
+}
+
+unsafe extern "C" {
+    fn exit(code: usize) -> !;
 }

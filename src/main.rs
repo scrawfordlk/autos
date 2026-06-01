@@ -5686,7 +5686,7 @@ fn vec_accomodate_extra_space<T>(vec: &mut Vec<T>, space: usize) {
         let Vec::Vec(ptr, len_ref, capacity_ref): &mut Vec<T> = vec;
         *capacity_ref = *capacity_ref * 2;
 
-        let new_ptr: *mut T = alloc::<T>(*capacity_ref) as *mut T;
+        let new_ptr: *mut T = alloc::<T>(*capacity_ref);
         unsafe { memcopy::<T>(new_ptr, *ptr, *len_ref) };
         *ptr = new_ptr;
         // TODO: change this

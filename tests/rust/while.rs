@@ -1,4 +1,4 @@
-fn main() -> usize {
+fn test() -> usize {
     let exp: usize = 4;
     let mut i: usize = 0;
     let mut product: usize = 1;
@@ -18,4 +18,12 @@ fn main() -> usize {
     }
 
     product + i
+}
+
+fn main() {
+    unsafe { exit(test()) }
+}
+
+unsafe extern "C" {
+    fn exit(code: usize) -> !;
 }

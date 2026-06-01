@@ -1,4 +1,4 @@
-fn main() -> usize {
+fn test() -> usize {
     let x: usize = 41;
     let p: *mut usize = &x as *mut usize;
     let addr: usize = p as usize;
@@ -7,4 +7,12 @@ fn main() -> usize {
         *p2 = *p2 + 1;
     }
     x
+}
+
+fn main() {
+    unsafe { exit(test()) }
+}
+
+unsafe extern "C" {
+    fn exit(code: usize) -> !;
 }

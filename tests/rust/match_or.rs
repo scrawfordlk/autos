@@ -1,4 +1,4 @@
-fn main() -> usize {
+fn test() -> usize {
     match 8 {
         100 | 200 | 300 => 1,
         5 => 2,
@@ -38,4 +38,12 @@ fn main() -> usize {
         },
         _ => 3,
     }
+}
+
+fn main() {
+    unsafe { exit(test()) }
+}
+
+unsafe extern "C" {
+    fn exit(code: usize) -> !;
 }

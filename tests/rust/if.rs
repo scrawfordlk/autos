@@ -1,4 +1,4 @@
-fn main() -> usize {
+fn test() -> usize {
     if 4 < 6 {
         if 4 == 5 {
             1
@@ -12,4 +12,12 @@ fn main() -> usize {
     } else {
         5
     }
+}
+
+fn main() {
+    unsafe { exit(test()) }
+}
+
+unsafe extern "C" {
+    fn exit(code: usize) -> !;
 }
