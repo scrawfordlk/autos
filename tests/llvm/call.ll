@@ -1,6 +1,6 @@
 define i64 @main() {
 entry:
-  %var = alloca i64, i64 1
+  %var = alloca i64
   store i64 0, ptr %var
   %res = call i64 @sum2(i64 38, i64 2)
   %t1 = load i64, ptr %var

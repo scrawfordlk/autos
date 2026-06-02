@@ -2421,7 +2421,7 @@ fn codegen_function(codegen: &mut Codegen, function: &RAstFunction) {
         match pattern {
             RAstPattern::Identifier(_, name) => {
                 // SSA: all variables (including parameters) are stored on the stack
-                let param_ptr: String = codegen_emit_alloca(codegen, param_type, 1);
+                let param_ptr: String = codegen_emit_alloca(codegen, param_type);
                 let mut param_register: String = string("%");
                 string_push_string(&mut param_register, name);
                 codegen_emit_store(codegen, param_type, &param_register, &param_ptr);
@@ -2511,7 +2511,7 @@ fn codegen_binding(codegen: &mut Codegen, variable: &RAstVariable, value: &RAstE
     match pattern {
         RAstPattern::Identifier(_, lvalue_name) => {
             if type_has_value(binding_type) {
-                let lvalue_pointer: String = codegen_emit_alloca(codegen, binding_type, 1);
+                let lvalue_pointer: String = codegen_emit_alloca(codegen, binding_type);
                 codegen_emit_store(codegen, binding_type, &rvalue_name, &lvalue_pointer);
 
                 let name: String = string_clone(lvalue_name);
@@ -2674,7 +2674,7 @@ fn codegen_unary_op(codegen: &mut Codegen, operator: &RAstUnaryOp, value: &RAstE
             },
             _ => {
                 let STPair::ST(name, ty): STPair = codegen_expression(codegen, value);
-                let reference: String = codegen_emit_alloca(codegen, &ty, 1);
+                let reference: String = codegen_emit_alloca(codegen, &ty);
                 codegen_emit_store(codegen, &ty, &name, &reference);
                 STPair::ST(
                     reference,
@@ -2770,7 +2770,7 @@ fn codegen_if(codegen: &mut Codegen, if_expression: &RAstIf) -> STPair {
 
     // Allocate memory for potential result value, though size is still unknown.
     // In the event that the result type is unit, this instruction will be removed later.
-    let result_pointer: String = codegen_emit_alloca(codegen, &RType::Unit, 1);
+    let result_pointer: String = codegen_emit_alloca(codegen, &RType::Unit);
     let alloca_idx: usize = codegen_code_last_index(codegen);
 
     codegen_emit_br_conditional(codegen, &cond, &then_label, &else_label);
@@ -2815,7 +2815,7 @@ fn codegen_if(codegen: &mut Codegen, if_expression: &RAstIf) -> STPair {
     // load and return the value if there is one
     let result: String = if type_has_value(&if_type) {
         // now we know the type and thus the size to allocate on the stack
-        codegen_fixup_alloca(codegen, alloca_idx, &if_type, 1);
+        codegen_fixup_alloca(codegen, alloca_idx, &if_type);
 
         codegen_emit_load(codegen, &if_type, &result_pointer)
     } else {
@@ -2864,7 +2864,7 @@ fn codegen_match(codegen: &mut Codegen, value: &RAstExpr, arms: &Vec<RAstArm>) -
 
     // Allocate memory for potential result value, though size is still unknown.
     // In the event that the result type is unit, this instruction will be removed later.
-    let result_pointer: String = codegen_emit_alloca(codegen, &RType::Unit, 1);
+    let result_pointer: String = codegen_emit_alloca(codegen, &RType::Unit);
     let alloca_idx: usize = codegen_code_last_index(codegen);
 
     let mut return_type: RType = RType::Never; // still unknown, coercing arm types yields correct type
@@ -2896,7 +2896,7 @@ fn codegen_match(codegen: &mut Codegen, value: &RAstExpr, arms: &Vec<RAstArm>) -
 
     let result: String = if type_has_value(&return_type) {
         // now we know the type and thus the size to allocate on the stack
-        codegen_fixup_alloca(codegen, alloca_idx, &return_type, 1);
+        codegen_fixup_alloca(codegen, alloca_idx, &return_type);
 
         codegen_emit_load(codegen, &return_type, &result_pointer)
     } else {
@@ -2960,7 +2960,7 @@ fn codegen_arm(
                 } // otherwise no branch, arm is executed unconditionally
             },
             RAstPattern::Identifier(_, identifier) => {
-                let pointer_name: String = codegen_emit_alloca(codegen, &expr_type, 1);
+                let pointer_name: String = codegen_emit_alloca(codegen, &expr_type);
                 codegen_emit_store(codegen, &expr_type, &expr_name, &pointer_name);
 
                 let variable_name: String = string_clone(identifier);
@@ -3271,10 +3271,10 @@ fn codegen_emit_ptrtoint(
 
 /// Emit an allocate instruction.
 /// ```llvm
-/// %<name> = alloca <ty>, i64 <num_elements>
+/// %<name> = alloca <ty>
 /// ```
 /// Returns `%<name>`.
-fn codegen_emit_alloca(codegen: &mut Codegen, ty: &RType, num_elements: usize) -> String {
+fn codegen_emit_alloca(codegen: &mut Codegen, ty: &RType) -> String {
     let name: String = codegen_next_register(codegen);
 
     let mut line: String = string_new();
@@ -3282,8 +3282,6 @@ fn codegen_emit_alloca(codegen: &mut Codegen, ty: &RType, num_elements: usize) -
     string_push_string(&mut line, &name);
     string_push_str(&mut line, " = alloca ");
     string_push_string(&mut line, &rType_to_llvm_name(ty));
-    string_push_str(&mut line, ", i64 ");
-    string_push_string(&mut line, &integer_to_string(num_elements));
 
     codegen_emit_line(codegen, line);
     name
@@ -3506,7 +3504,7 @@ fn codegen_emit_declare(
 
 /// Fixup a previously emitted alloca instruction without changing the destination register.
 // TODO: assumes a lot about the emitted LLVM-IR, make this more robust.
-fn codegen_fixup_alloca(codegen: &mut Codegen, index: usize, new_type: &RType, new_count: usize) {
+fn codegen_fixup_alloca(codegen: &mut Codegen, index: usize, new_type: &RType) {
     let Code::Code(lines): &mut Code = codegen_code_mut(codegen);
 
     let old_alloca: &String = vec_at::<String>(lines, index);
@@ -3528,8 +3526,6 @@ fn codegen_fixup_alloca(codegen: &mut Codegen, index: usize, new_type: &RType, n
     }
 
     string_push_string(&mut new_alloca, &rType_to_llvm_name(new_type));
-    string_push_str(&mut new_alloca, ", i64 ");
-    string_push_string(&mut new_alloca, &integer_to_string(new_count));
 
     codegen_fixup(codegen, index, new_alloca);
 }
@@ -4266,8 +4262,8 @@ enum AssignOp {
     Icmp(IcmpOp, LType, LValue, LValue),
     /// operation, target type, value
     Cast(CastOp, LType, LValue),
-    /// allocated type, number of elements
-    Alloca(LType, usize),
+    /// allocated type
+    Alloca(LType),
     /// loaded type, address
     Load(LType, LValue),
     Call(Call),
@@ -4306,7 +4302,7 @@ fn assignOp_get_type(operation: &AssignOp) -> LType {
         AssignOp::Icmp(_, _, _, _) => LType::I1,
         AssignOp::Call(Call::Call(ty, _, _)) => llvmType_clone(ty),
         AssignOp::Cast(_, ty, _) => llvmType_clone(ty),
-        AssignOp::Alloca(_, _) => LType::Ptr,
+        AssignOp::Alloca(_) => LType::Ptr,
         AssignOp::Load(ty, _) => llvmType_clone(ty),
     }
 }
@@ -4688,12 +4684,7 @@ fn parser_parse_cast_assign(parser: &mut Parser, operator: CastOp) -> AssignOp {
 
 fn parser_parse_alloca_assign(parser: &mut Parser) -> AssignOp {
     let allocated_type: LType = parser_parse_type(parser);
-    parser_expect_token(parser, &LToken::Comma);
-
-    parser_expect_token(parser, &LToken::I64);
-    let num_elements: usize = parser_parse_integer(parser);
-
-    AssignOp::Alloca(allocated_type, num_elements)
+    AssignOp::Alloca(allocated_type)
 }
 
 fn parser_parse_load_assign(parser: &mut Parser) -> AssignOp {
@@ -5249,8 +5240,8 @@ fn emu_evaluate_assign_op(
                 CastOp::Zext | CastOp::IntToPtr | CastOp::PtrToInt => evaluated_value,
             }
         },
-        AssignOp::Alloca(allocated_type, num_elements) => {
-            let space: usize = *num_elements * llvmType_size(allocated_type);
+        AssignOp::Alloca(allocated_type) => {
+            let space: usize = llvmType_size(allocated_type);
             match emu_allocate_stack(emulator, space) {
                 Option::Some(address) => address,
                 Option::None => panic("Stack overflow of emu"),
