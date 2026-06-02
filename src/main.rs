@@ -5268,10 +5268,8 @@ fn emu_evaluate_assign_op(
         AssignOp::Cast(cast_op, to_type, value) => {
             let evaluated_value: usize = llvm_eval_value(emulator, registers, value);
             match cast_op {
-                CastOp::Zext => llvm_overflow_value(evaluated_value, to_type),
                 CastOp::Trunc => llvm_overflow_value(evaluated_value, to_type),
-                CastOp::IntToPtr => evaluated_value, // only interpretation changes
-                CastOp::PtrToInt => evaluated_value, // only interpretation changes
+                CastOp::Zext | CastOp::IntToPtr | CastOp::PtrToInt => evaluated_value,
             }
         },
 
