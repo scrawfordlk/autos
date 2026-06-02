@@ -1162,8 +1162,7 @@ fn parse_type(lexer: &mut RLexer) -> RType {
             rLexer_next_token(lexer);
 
             if rLexer_try_consume(lexer, &RToken::Str) {
-                // TODO: remove this and handle like a user-defined type
-                return RType::Reference(box_new::<RType>(RType::Custom(string("str"))), false);
+                return RType::Custom(string("&str"));
             }
 
             let mutable: bool = rLexer_try_consume(lexer, &RToken::Mut);
