@@ -3999,7 +3999,7 @@ fn parser_expect_identifier(parser: &mut Parser) -> String {
 
 fn parser_expect_value_type(parser: &Parser, value: &LValue, expected: &LType) {
     if not(parser_value_has_type(parser, value, expected)) {
-        parser_error(parser, &string("LLVM value does not match expected type"));
+        parser_warning(parser, &string("LLVM value does not match expected type"));
     }
 }
 
@@ -4124,13 +4124,9 @@ fn lLocalSymbolTable_insert_register(
     name: String,
     ty: LType,
 ) -> bool {
-    // Check SSA
-    if stringMap_contains::<LType>(registers, &name) {
-        false
-    } else {
-        stringMap_insert::<LType>(registers, name, ty);
-        true
-    }
+    let is_defined: bool = stringMap_contains::<LType>(registers, &name);
+    stringMap_insert::<LType>(registers, name, ty);
+    !is_defined
 }
 
 /// Lookup a register type in the local symbol table.
@@ -4591,10 +4587,7 @@ fn parser_parse_assignment(parser: &mut Parser) -> AssignInstruction {
         string_clone(&target_register),
         assignOp_get_type(&operation),
     )) {
-        parser_error(
-            parser,
-            &string("SSA violation: duplicate virtual register assignment"),
-        );
+        parser_warning(parser, &string("SSA: duplicate register assignment"));
     }
 
     AssignInstruction::Assign(target_register, operation)
@@ -4658,48 +4651,30 @@ fn parser_parse_cast_assign(parser: &mut Parser, operator: CastOp) -> AssignOp {
             let from_bits: usize = llvmType_bitwidth(&from_type);
             let to_bits: usize = llvmType_bitwidth(&to_type);
             if not(from_bits < to_bits) {
-                parser_error(
-                    parser,
-                    &string("invalid LLVM zext: source type must be smaller than target type"),
-                );
+                parser_warning(parser, &string("zext: source is not smaller than target"));
             }
         },
         CastOp::Trunc => {
             let from_bits: usize = llvmType_bitwidth(&from_type);
             let to_bits: usize = llvmType_bitwidth(&to_type);
             if not(from_bits > to_bits) {
-                parser_error(
-                    parser,
-                    &string("invalid LLVM trunc: source type must be larger than target type"),
-                );
+                parser_warning(parser, &string("zext: source is not larger than target"));
             }
         },
         CastOp::IntToPtr => {
             if not(llvmType_eq(&from_type, &LType::I64)) {
-                parser_error(
-                    parser,
-                    &string("invalid LLVM inttoptr: source type must be i64"),
-                );
+                parser_warning(parser, &string("inttoptr: source type must be i64"));
             }
             if not(llvmType_eq(&to_type, &LType::Ptr)) {
-                parser_error(
-                    parser,
-                    &string("invalid LLVM inttoptr: target type must be ptr"),
-                );
+                parser_warning(parser, &string("inttoptr: target type must be ptr"));
             }
         },
         CastOp::PtrToInt => {
             if not(llvmType_eq(&from_type, &LType::Ptr)) {
-                parser_error(
-                    parser,
-                    &string("invalid LLVM ptrtoint: source type must be ptr"),
-                );
+                parser_warning(parser, &string("ptrtoint: source type must be ptr"));
             }
             if not(llvmType_eq(&to_type, &LType::I64)) {
-                parser_error(
-                    parser,
-                    &string("invalid LLVM ptrtoint: target type must be i64"),
-                );
+                parser_warning(parser, &string("ptrtoint: target type must be i64"));
             }
         },
     }
@@ -5421,6 +5396,44 @@ fn report_error(file: &SourceFile, message: &String) -> ! {
     exit_process(1);
 }
 
+/// Report a warning message with source location and continue.
+fn report_warning(file: &SourceFile, message: &String) {
+    let line: usize = sourceFile_current_line(file);
+    let col: usize = sourceFile_current_column(file);
+
+    let mut header: String = string("WARNING at ");
+    let line_text: String = integer_to_string(line);
+    let col_text: String = integer_to_string(col);
+    string_push_string(&mut header, &line_text);
+    string_push(&mut header, ':');
+    string_push_string(&mut header, &col_text);
+    string_push_str(&mut header, ":\n");
+    eprint_string(&header);
+
+    let mut start: usize = sourceFile_current_line_start(file);
+    let mut reached_end: bool = false;
+    let mut line_content: String = string_new();
+    while not(reached_end) {
+        match sourceFile_get_char(file, start) {
+            Option::Some('\n') => reached_end = true,
+            Option::Some(c) => string_push(&mut line_content, c),
+            Option::None => reached_end = true,
+        }
+        start = start + 1;
+    }
+    eprint_string(&line_content);
+    eprint_str("\n");
+
+    let mut i: usize = 1;
+    while i < col {
+        eprint_str(" ");
+        i = i + 1;
+    }
+    eprint_str("^ ");
+    eprint_string(message);
+    eprint_str("\n");
+}
+
 fn lexer_error(lexer: &RLexer, message: &String) -> ! {
     report_error(rLexer_sourcefile(lexer), message)
 }
@@ -5442,6 +5455,12 @@ fn semantic_check_error(message: &str) -> ! {
 fn parser_error(parser: &Parser, message: &String) -> ! {
     let file: &SourceFile = lLexer_sourcefile(parser_lexer(parser));
     report_error(file, message)
+}
+
+/// Emit an LLVM parser warning and continue.
+fn parser_warning(parser: &Parser, message: &String) {
+    let file: &SourceFile = lLexer_sourcefile(parser_lexer(parser));
+    report_warning(file, message)
 }
 
 fn parser_expected_message(parser: &Parser, expected: &String) -> String {
