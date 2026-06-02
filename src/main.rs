@@ -4596,8 +4596,12 @@ fn parser_parse_assignment(parser: &mut Parser) -> AssignInstruction {
 fn parser_parse_binary_assign(parser: &mut Parser, operator: BinaryOp) -> AssignOp {
     let ty: LType = parser_parse_type(parser);
     let left: LValue = parser_parse_value(parser);
+    parser_expect_value_type(parser, &left, &ty);
+
     parser_expect_token(parser, &LToken::Comma);
     let right: LValue = parser_parse_value(parser);
+    parser_expect_value_type(parser, &right, &ty);
+
     AssignOp::Binary(operator, ty, left, right)
 }
 
