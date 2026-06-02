@@ -3327,6 +3327,7 @@ fn codegen_emit_load(codegen: &mut Codegen, ty: &RType, pointer: &String) -> Str
 }
 
 /// Emit pointer arithmetic using integer casts and addition.
+/// This is a substitute for `getelementptr`, which is the instruction usually used for this.
 /// ```llvm
 /// %t0 = ptrtoint ptr <pointer> to i64
 /// %t1 = add i64 %t0, <size_of(ty) * index>
@@ -3565,7 +3566,6 @@ enum LToken {
     Load,            // "load"
     To,              // "to"
     Call,            // "call"
-    Gep,             // "getelementptr"
     Constant,        // "constant"
     Eq,              // "eq"
     Ne,              // "ne"
@@ -3803,8 +3803,6 @@ fn llvm_identifier_to_token(identifier: String) -> LToken {
         LToken::To
     } else if string_eq(&identifier, &string("call")) {
         LToken::Call
-    } else if string_eq(&identifier, &string("getelementptr")) {
-        LToken::Gep
     } else if string_eq(&identifier, &string("constant")) {
         LToken::Constant
     } else if string_eq(&identifier, &string("eq")) {
@@ -4277,8 +4275,6 @@ enum AssignOp {
     /// loaded type, address
     Load(LType, LValue),
     Call(Call),
-    /// type, pointer, indexes
-    Gep(LType, LValue, Vec<LTypedValue>),
 }
 
 /// Binary operations that can only appear in assignments.
@@ -4316,7 +4312,6 @@ fn assignOp_get_type(operation: &AssignOp) -> LType {
         AssignOp::Cast(_, ty, _) => llvmType_clone(ty),
         AssignOp::Alloca(_, _) => LType::Ptr,
         AssignOp::Load(ty, _) => llvmType_clone(ty),
-        AssignOp::Gep(_, _, _) => LType::Ptr,
     }
 }
 
@@ -4584,7 +4579,6 @@ fn parser_parse_assignment(parser: &mut Parser) -> AssignInstruction {
         LToken::Alloca => parser_parse_alloca_assign(parser),
         LToken::Load => parser_parse_load_assign(parser),
         LToken::Call => parser_parse_call_assign(parser),
-        LToken::Gep => parser_parse_gep_assign(parser),
         _ => {
             let message: String =
                 parser_expected_message(parser, &string("LLVM assignment operation"));
@@ -4732,30 +4726,6 @@ fn parser_parse_load_assign(parser: &mut Parser) -> AssignOp {
     parser_expect_value_type(parser, &address, &LType::Ptr);
 
     AssignOp::Load(loaded_type, address)
-}
-
-fn parser_parse_gep_assign(parser: &mut Parser) -> AssignOp {
-    let base_type: LType = parser_parse_type(parser);
-    parser_expect_token(parser, &LToken::Comma);
-    parser_expect_token(parser, &LToken::Ptr);
-    let pointer_value: LValue = parser_parse_value(parser);
-    parser_expect_token(parser, &LToken::Comma);
-
-    let mut indexes: Vec<LTypedValue> = vec_new::<LTypedValue>();
-    let first_index_type: LType = parser_parse_type(parser);
-    let first_index_value: LValue = parser_parse_value(parser);
-    parser_expect_value_type(parser, &first_index_value, &first_index_type);
-    let first_index: LTypedValue = LTypedValue::Pair(first_index_type, first_index_value);
-    vec_push::<LTypedValue>(&mut indexes, first_index);
-    while parser_try_consume(parser, &LToken::Comma) {
-        let index_type: LType = parser_parse_type(parser);
-        let index_value: LValue = parser_parse_value(parser);
-        parser_expect_value_type(parser, &index_value, &index_type);
-        let index: LTypedValue = LTypedValue::Pair(index_type, index_value);
-        vec_push::<LTypedValue>(&mut indexes, index);
-    }
-
-    AssignOp::Gep(base_type, pointer_value, indexes)
 }
 
 fn parser_parse_store(parser: &mut Parser) -> Instruction {
@@ -5323,26 +5293,6 @@ fn emu_evaluate_assign_op(
 
         AssignOp::Call(Call::Call(call_type, callee, arguments)) => {
             emu_execute_call(emulator, ast, registers, call_type, callee, arguments)
-        },
-
-        AssignOp::Gep(base_type, pointer, indexes) => {
-            let mut address: usize = llvm_eval_value(emulator, registers, pointer);
-            let mut current_type: LType = llvmType_clone(base_type);
-
-            let mut i: usize = 0;
-            while i < vec_len::<LTypedValue>(indexes) {
-                let LTypedValue::Pair(_, index_value): &LTypedValue =
-                    vec_at::<LTypedValue>(indexes, i);
-                let index: usize = llvm_eval_value(emulator, registers, index_value);
-
-                address = address + index * llvmType_size(&current_type);
-                current_type = match current_type {
-                    LType::Array(_, inner) => llvmType_clone(box_deref::<LType>(&inner)),
-                    other => other,
-                };
-                i = i + 1;
-            }
-            address
         },
     }
 }
@@ -6352,10 +6302,6 @@ fn llvmToken_eq(left: &LToken, right: &LToken) -> bool {
             LToken::Call => true,
             _ => false,
         },
-        LToken::Gep => match right {
-            LToken::Gep => true,
-            _ => false,
-        },
         LToken::Constant => match right {
             LToken::Constant => true,
             _ => false,
@@ -6624,7 +6570,6 @@ fn llvmToken_clone(token: &LToken) -> LToken {
         LToken::Load => LToken::Load,
         LToken::To => LToken::To,
         LToken::Call => LToken::Call,
-        LToken::Gep => LToken::Gep,
         LToken::Constant => LToken::Constant,
         LToken::Eq => LToken::Eq,
         LToken::Ne => LToken::Ne,
@@ -6903,7 +6848,6 @@ fn llvmToken_to_string(token: &LToken) -> String {
         LToken::Load => string("load"),
         LToken::To => string("to"),
         LToken::Call => string("call"),
-        LToken::Gep => string("getelementptr"),
         LToken::Constant => string("constant"),
         LToken::Eq => string("eq"),
         LToken::Ne => string("ne"),
