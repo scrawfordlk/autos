@@ -5245,7 +5245,6 @@ fn emu_evaluate_assign_op(
                 BinaryOp::Urem => lhs % rhs,
             }
         },
-
         AssignOp::Icmp(predicate, operand_type, left, right) => {
             let mut lhs: usize = llvm_eval_value(emulator, registers, left);
             let mut rhs: usize = llvm_eval_value(emulator, registers, right);
@@ -5264,7 +5263,6 @@ fn emu_evaluate_assign_op(
             };
             result as usize
         },
-
         AssignOp::Cast(cast_op, to_type, value) => {
             let evaluated_value: usize = llvm_eval_value(emulator, registers, value);
             match cast_op {
@@ -5272,7 +5270,6 @@ fn emu_evaluate_assign_op(
                 CastOp::Zext | CastOp::IntToPtr | CastOp::PtrToInt => evaluated_value,
             }
         },
-
         AssignOp::Alloca(allocated_type, num_elements) => {
             let space: usize = *num_elements * llvmType_size(allocated_type);
             match emu_allocate_stack(emulator, space) {
@@ -5280,7 +5277,6 @@ fn emu_evaluate_assign_op(
                 Option::None => panic("Stack overflow of emu"),
             }
         },
-
         AssignOp::Load(loaded_type, address_value) => {
             let address: usize = llvm_eval_value(emulator, registers, address_value);
             match emu_load_bytes(emulator, address, llvmType_size(loaded_type)) {
@@ -5288,7 +5284,6 @@ fn emu_evaluate_assign_op(
                 Option::None => panic("invalid LLVM load address"),
             }
         },
-
         AssignOp::Call(Call::Call(call_type, callee, arguments)) => {
             emu_execute_call(emulator, ast, registers, call_type, callee, arguments)
         },
