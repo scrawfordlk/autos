@@ -1365,6 +1365,10 @@ fn parse_identifier_expression(lexer: &mut RLexer) -> RAstExpr {
         vec_push::<String>(&mut segments, second_identifier);
 
         parse_path_values(lexer, segments)
+    } else if rLexer_current_token_eq(lexer, &RToken::LParen) {
+        let mut segments: Vec<String> = vec_new::<String>();
+        vec_push::<String>(&mut segments, first_identifier);
+        parse_path_values(lexer, segments)
     } else {
         RAstExpr::VariableUse(first_identifier)
     }
