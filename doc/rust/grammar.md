@@ -38,7 +38,7 @@ unary      -> [ "*" | ( "&" [ "mut" ] ) ] unary | factor
 
 factor     -> ( literal
             | identifier
-            | call
+            | path
             | "(" expression ")"
             | [ "unsafe" ] block
             | if
@@ -57,9 +57,7 @@ match -> "match" expression "{" { arm } "}"
 
 arm   -> pattern { "|" pattern } "=>" expression ","
 
-call  -> path "(" [ expression { "," expression } [ "," ] ] ")"
-
-path  -> identifier { "::" identifier }
+path  -> identifier [ "::" identifier ] [ "(" [ expression { "," expression } [ "," ] ] ")" ]
 ```
 
 ## Pattern
