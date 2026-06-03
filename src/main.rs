@@ -2369,8 +2369,8 @@ fn codegen_language(codegen: &mut Codegen, ast: &RAst) {
         let item: &RAstItem = vec_at::<RAstItem>(items, i);
         match item {
             RAstItem::ExternBlock(block) => codegen_extern_block(codegen, block),
-            RAstItem::Enum(enum_item) => codegen_enum(codegen, enum_item),
             RAstItem::Function(function) => codegen_function(codegen, function),
+            _ => {}, // enum definitions do not generate code
         }
         i = i + 1;
     }
@@ -2386,11 +2386,6 @@ fn codegen_extern_block(codegen: &mut Codegen, functions: &Vec<RAstExternFunctio
         codegen_emit_declare(codegen, name, parameters, return_type);
         i = i + 1;
     }
-}
-
-/// Emit LLVM-IR for one enum definition.
-fn codegen_enum(_codegen: &mut Codegen, _enum_item: &RAstEnum) {
-    // TODO:
 }
 
 /// Emit LLVM-IR for one function definition.
