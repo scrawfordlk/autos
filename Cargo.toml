@@ -4,7 +4,6 @@ edition = "2024"
 
 # Optimise, even for non-release builds
 [profile.dev]
-opt-level = 3
 overflow-checks = false
 
 [rust-analyzer.diagnostics.disabled]
