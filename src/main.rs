@@ -715,11 +715,6 @@ enum RType {
     RawPointerMut(Box<RType>),
 }
 
-/// Path segments joined by `::`.
-enum RAstPath {
-    Path(Vec<String>),
-}
-
 /// A Rust expression.
 enum RAstExpr {
     Return(Option<Box<RAstExpr>>),
@@ -729,7 +724,7 @@ enum RAstExpr {
     Unary(RAstUnaryOp, Box<RAstExpr>),
     Literal(RLiteral),
     VariableUse(String),
-    Call(RAstPath, Vec<RAstExpr>),
+    Path(Vec<String>, Vec<RAstExpr>), // either function call or enum instantiaton
     /// unsafe, block
     Block(bool, RAstBlock),
     If(RAstIf),
@@ -790,7 +785,7 @@ enum RAstArm {
 }
 
 /// Convert a parsed AST path to a single string.
-fn rAstPath_to_string(RAstPath::Path(segments): &RAstPath) -> String {
+fn rAstPath_to_string(segments: &Vec<String>) -> String {
     let mut result: String = string_new();
     let mut i: usize = 0;
 
@@ -806,7 +801,7 @@ fn rAstPath_to_string(RAstPath::Path(segments): &RAstPath) -> String {
 }
 
 /// Get the type represented by a literal.
-fn rLiteral_type(literal: &RLiteral) -> RType {
+fn rAstLiteral_type(literal: &RLiteral) -> RType {
     match literal {
         RLiteral::Int(_) => RType::Usize,
         RLiteral::Char(_) => RType::Char,
@@ -1336,22 +1331,7 @@ fn parse_factor(lexer: &mut RLexer) -> RAstExpr {
             rLexer_next_token(lexer);
             RAstExpr::Literal(literal)
         },
-        RToken::Identifier(_) => {
-            let first_identifier: String = expect_identifier(lexer);
-
-            if rLexer_current_token_eq(lexer, &RToken::DoubleColon) {
-                let path: RAstPath = parse_path(lexer, first_identifier);
-
-                expect_token(lexer, &RToken::LParen);
-                parse_call(lexer, path)
-            } else if rLexer_current_token_eq(lexer, &RToken::LParen) {
-                let mut path_segments: Vec<String> = vec_new::<String>();
-                vec_push::<String>(&mut path_segments, first_identifier);
-                parse_call(lexer, RAstPath::Path(path_segments))
-            } else {
-                RAstExpr::VariableUse(first_identifier)
-            }
-        },
+        RToken::Identifier(_) => parse_identifier_expression(lexer),
         RToken::LParen => {
             rLexer_next_token(lexer);
             let expression: RAstExpr = parse_expression(lexer);
@@ -1371,6 +1351,23 @@ fn parse_factor(lexer: &mut RLexer) -> RAstExpr {
             string_push_string(&mut message, &token_to_string(token));
             parse_error(lexer, &message);
         },
+    }
+}
+
+/// Parses either a variable, a function call or an instantiation of an enum.
+fn parse_identifier_expression(lexer: &mut RLexer) -> RAstExpr {
+    let first_identifier: String = expect_identifier(lexer);
+
+    if rLexer_try_consume(lexer, &RToken::DoubleColon) {
+        let second_identifier: String = expect_identifier(lexer);
+
+        let mut segments: Vec<String> = vec_new::<String>();
+        vec_push::<String>(&mut segments, first_identifier);
+        vec_push::<String>(&mut segments, second_identifier);
+
+        parse_path_values(lexer, segments)
+    } else {
+        RAstExpr::VariableUse(first_identifier)
     }
 }
 
@@ -1490,35 +1487,25 @@ fn parse_pattern(lexer: &mut RLexer) -> RAstPattern {
     }
 }
 
-fn parse_call(lexer: &mut RLexer, callee: RAstPath) -> RAstExpr {
+fn parse_path_values(lexer: &mut RLexer, path: Vec<String>) -> RAstExpr {
     expect_token(lexer, &RToken::LParen);
 
-    let mut arguments: Vec<RAstExpr> = vec_new::<RAstExpr>();
+    let mut values: Vec<RAstExpr> = vec_new::<RAstExpr>();
     if not(rLexer_current_token_eq(lexer, &RToken::RParen)) {
-        let first_argument: RAstExpr = parse_expression(lexer);
-        vec_push::<RAstExpr>(&mut arguments, first_argument);
+        let first_value: RAstExpr = parse_expression(lexer);
+        vec_push::<RAstExpr>(&mut values, first_value);
 
         while and(
             rLexer_try_consume(lexer, &RToken::Comma),
             not(rLexer_current_token_eq(lexer, &RToken::RParen)),
         ) {
-            let argument: RAstExpr = parse_expression(lexer);
-            vec_push::<RAstExpr>(&mut arguments, argument);
+            let value: RAstExpr = parse_expression(lexer);
+            vec_push::<RAstExpr>(&mut values, value);
         }
     }
     expect_token(lexer, &RToken::RParen);
 
-    RAstExpr::Call(callee, arguments)
-}
-
-fn parse_path(lexer: &mut RLexer, first_segment: String) -> RAstPath {
-    let mut segments: Vec<String> = vec_new::<String>();
-    vec_push::<String>(&mut segments, first_segment);
-    while rLexer_try_consume(lexer, &RToken::DoubleColon) {
-        let segment: String = expect_identifier(lexer);
-        vec_push::<String>(&mut segments, segment);
-    }
-    RAstPath::Path(segments)
+    RAstExpr::Path(path, values)
 }
 
 // TODO: This should be shorter. E.g. add a name to FnSignature, which can be used in the AST.
@@ -1989,9 +1976,9 @@ fn semantic_check_expression(semantic: &mut Semantic, expression: &RAstExpr) -> 
         RAstExpr::Unary(operator, value) => {
             semantic_check_unary_op(semantic, operator, box_deref::<RAstExpr>(value))
         },
-        RAstExpr::Literal(literal) => rLiteral_type(literal),
+        RAstExpr::Literal(literal) => rAstLiteral_type(literal),
         RAstExpr::VariableUse(name) => semantic_check_variable_use(semantic, name),
-        RAstExpr::Call(callee, arguments) => semantic_check_call(semantic, callee, arguments),
+        RAstExpr::Path(path, values) => semantic_check_path(semantic, path, values),
         RAstExpr::Block(is_unsafe, block) => semantic_check_block(semantic, block, *is_unsafe),
         RAstExpr::If(if_expression) => semantic_check_if(semantic, if_expression),
         RAstExpr::While(condition, body) => {
@@ -2128,12 +2115,13 @@ fn semantic_check_variable_use(semantic: &mut Semantic, name: &String) -> RType 
     }
 }
 
-fn semantic_check_call(
+fn semantic_check_path(
     semantic: &mut Semantic,
-    callee: &RAstPath,
-    arguments: &Vec<RAstExpr>,
+    path: &Vec<String>,
+    values: &Vec<RAstExpr>,
 ) -> RType {
-    let function_name: String = rAstPath_to_string(callee);
+    // TODO: handle enum case
+    let function_name: String = rAstPath_to_string(path);
 
     let FnSignature::Fn(parameter_types, return_type, is_unsafe): FnSignature =
         match semantic_lookup_function_signature(semantic, &function_name) {
@@ -2146,8 +2134,8 @@ fn semantic_check_call(
     }
 
     let mut i: usize = 0;
-    while i < vec_len::<RAstExpr>(arguments) {
-        let argument: &RAstExpr = vec_at::<RAstExpr>(arguments, i);
+    while i < vec_len::<RAstExpr>(values) {
+        let argument: &RAstExpr = vec_at::<RAstExpr>(values, i);
         let arg_type: RType = semantic_check_expression(semantic, argument);
 
         match vec_get::<RType>(&parameter_types, i) {
@@ -2540,7 +2528,7 @@ fn codegen_expression(codegen: &mut Codegen, expression: &RAstExpr) -> STPair {
         },
         RAstExpr::Literal(literal) => codegen_literal(literal),
         RAstExpr::VariableUse(name) => codegen_variable_use(codegen, name),
-        RAstExpr::Call(callee, arguments) => codegen_call(codegen, callee, arguments),
+        RAstExpr::Path(path, arguments) => codegen_path(codegen, path, arguments),
         RAstExpr::Block(_, block) => codegen_block(codegen, block),
         RAstExpr::If(if_expression) => codegen_if(codegen, if_expression),
         RAstExpr::While(condition, body) => {
@@ -2717,19 +2705,19 @@ fn codegen_variable_use(codegen: &mut Codegen, variable_name: &String) -> STPair
 }
 
 /// Emit LLVM-IR for a function call expression.
-fn codegen_call(codegen: &mut Codegen, callee: &RAstPath, arguments: &Vec<RAstExpr>) -> STPair {
-    let function_name: String = rAstPath_to_string(callee);
+fn codegen_path(codegen: &mut Codegen, path: &Vec<String>, values: &Vec<RAstExpr>) -> STPair {
+    let function_name: String = rAstPath_to_string(path);
 
-    let mut arg_types: Vec<RType> = vec_new::<RType>();
-    let mut arg_values: Vec<String> = vec_new::<String>();
+    let mut value_types: Vec<RType> = vec_new::<RType>();
+    let mut value_names: Vec<String> = vec_new::<String>();
     let mut i: usize = 0;
-    while i < vec_len::<RAstExpr>(arguments) {
-        let argument: &RAstExpr = vec_at::<RAstExpr>(arguments, i);
+    while i < vec_len::<RAstExpr>(values) {
+        let value: &RAstExpr = vec_at::<RAstExpr>(values, i);
 
-        let STPair::ST(arg_value, arg_type): STPair = codegen_expression(codegen, argument);
+        let STPair::ST(value_name, value_type): STPair = codegen_expression(codegen, value);
 
-        vec_push::<RType>(&mut arg_types, arg_type);
-        vec_push::<String>(&mut arg_values, arg_value);
+        vec_push::<RType>(&mut value_types, value_type);
+        vec_push::<String>(&mut value_names, value_name);
         i = i + 1;
     }
 
@@ -2740,11 +2728,11 @@ fn codegen_call(codegen: &mut Codegen, callee: &RAstPath, arguments: &Vec<RAstEx
                     codegen,
                     &function_name,
                     &return_type,
-                    &arg_types,
-                    &arg_values,
+                    &value_types,
+                    &value_names,
                 )
             } else {
-                codegen_emit_call_void(codegen, &function_name, &arg_types, &arg_values);
+                codegen_emit_call_void(codegen, &function_name, &value_types, &value_names);
                 string_new()
             };
             STPair::ST(result_name, return_type)
