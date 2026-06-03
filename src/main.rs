@@ -5727,27 +5727,6 @@ fn vec_extend<T>(vec: &mut Vec<T>, other: &Vec<T>) {
     vec_set_len::<T>(vec, len + other_len);
 }
 
-/// Compare two vectors for equality using an element equality function.
-fn vec_eq<T>(left: &Vec<T>, right: &Vec<T>, item_eq: fn(&T, &T) -> bool) -> bool {
-    let left_len: usize = vec_len::<T>(left);
-    let right_len: usize = vec_len::<T>(right);
-    if left_len != right_len {
-        return false;
-    }
-
-    let mut i: usize = 0;
-    while i < left_len {
-        let l: &T = vec_at::<T>(left, i);
-        let r: &T = vec_at::<T>(right, i);
-        if not(item_eq(l, r)) {
-            return false;
-        }
-
-        i = i + 1;
-    }
-    true
-}
-
 // ----------------------------------------------------------------
 // ------------------------ StringMap -----------------------------
 // ----------------------------------------------------------------
