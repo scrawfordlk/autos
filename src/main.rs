@@ -5690,6 +5690,9 @@ fn vec_get_mut<'a, T>(vec: &'a mut Vec<T>, index: usize) -> Option<&'a mut T> {
 /// Get an immutable reference to an element by index.
 /// Panics, if the index is out of bounds.
 fn vec_at<T>(vec: &Vec<T>, index: usize) -> &T {
+    if index >= vec_len::<T>(vec) {
+        panic("Out-of-bounds vector access!");
+    }
     unwrap::<&T>(vec_get::<T>(vec, index))
 }
 
