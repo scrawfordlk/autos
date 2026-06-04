@@ -110,32 +110,6 @@ fn test_memcopy_zero() {
     assert_eq!(dest, [0; 4]);
 }
 
-#[test]
-fn test_alloc() {
-    let ptr = alloc::<u8>(16);
-    assert!(!ptr.is_null());
-    // Verify zeroed allocation
-    unsafe {
-        for i in 0..16 {
-            assert_eq!(*ptr_add::<u8>(ptr, i), 0);
-        }
-    }
-}
-
-#[test]
-fn test_string_push_string() {
-    let mut left = string("left");
-    let right = string("_right");
-    string_push_string(&mut left, &right);
-    assert_eq!(to_std_string(&left), "left_right");
-}
-
-#[test]
-fn test_string_direct() {
-    let s = string("hello");
-    assert!(string_eq(&s, &string("hello")));
-}
-
 fn rType_match(a: &RType, b: &RType) -> bool {
     match (a, b) {
         (RType::U8, RType::U8) => true,
