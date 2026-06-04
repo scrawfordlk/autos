@@ -6936,6 +6936,14 @@ fn eprint_str(text: &str) {
     unsafe { io_write_report_error("/dev/stderr\0", ptr, len) }
 }
 
+fn println() {
+    print_str("\n");
+}
+
+fn eprintln() {
+    eprint_str("\n");
+}
+
 /// Write the given `buffer` to `path` and report an error if there was one.
 /// `path` must be a NULL-terminated string.
 unsafe fn io_write_report_error(path: &str, buffer_ptr: *mut u8, len: usize) {
