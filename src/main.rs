@@ -5342,6 +5342,7 @@ fn is_negative(number: usize) -> bool {
 /// Panic by printing a message and exiting the program.
 fn panic(message: &str) -> ! {
     eprint_str(message);
+    eprint_str("\n");
     exit_process(1);
 }
 
