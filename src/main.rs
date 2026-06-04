@@ -112,11 +112,9 @@ fn compile(source: &str, do_semantic_analysis: bool) -> String {
     let ast: RAst = parse_language(&mut lexer);
 
     let items: StringMap<Item> = collect_items(&ast);
-    let items: StringMap<Item> = if do_semantic_analysis {
-        semantic_check_run(&ast, items)
-    } else {
-        items
-    };
+    if do_semantic_analysis {
+        semantic_check_run(&ast, &items);
+    }
 
     let mut codegen: Codegen = codegen_new(items);
     codegen_language(&mut codegen, &ast);
@@ -639,13 +637,13 @@ enum RAst {
 enum RAstItem {
     Function(RAstFunction),
     Enum(RAstEnum),
-    ExternBlock(Vec<RAstExternFunction>),
+    ExternBlock(Vec<RAstExternFn>),
 }
 
 /// Function definition.
 enum RAstFunction {
     /// unsafe, name, parameters, return type, body
-    Function(bool, String, Vec<RAstVariable>, RType, RAstBlock),
+    Fn(bool, String, Vec<RAstVariable>, RType, RAstBlock),
 }
 
 /// Enum definition.
@@ -655,9 +653,9 @@ enum RAstEnum {
 }
 
 /// Extern function declaration.
-enum RAstExternFunction {
+enum RAstExternFn {
     /// name, parameters, return type
-    ExternFunction(String, Vec<RAstVariable>, RType),
+    Fn(String, Vec<RAstVariable>, RType),
 }
 
 /// Enum variant.
@@ -827,7 +825,7 @@ fn rType_size(ty: &RType) -> usize {
         RType::U8 | RType::Char | RType::Bool => 1,
         RType::Usize | RType::Reference(_, _) | RType::RawPointerMut(_) => size_of::<usize>(),
         RType::Unit | RType::Never => 0,
-        RType::Custom(_) => 0, // TODO:
+        RType::Custom(name) => 0, // TODO:
     }
 }
 
@@ -957,7 +955,7 @@ fn parse_language(lexer: &mut RLexer) -> RAst {
     RAst::Language(items)
 }
 
-fn parse_extern_block(lexer: &mut RLexer) -> Vec<RAstExternFunction> {
+fn parse_extern_block(lexer: &mut RLexer) -> Vec<RAstExternFn> {
     expect_token(lexer, &RToken::Extern);
 
     match rLexer_current_token(lexer) {
@@ -978,17 +976,17 @@ fn parse_extern_block(lexer: &mut RLexer) -> Vec<RAstExternFunction> {
 
     expect_token(lexer, &RToken::LBrace);
 
-    let mut functions: Vec<RAstExternFunction> = vec_new::<RAstExternFunction>();
+    let mut functions: Vec<RAstExternFn> = vec_new::<RAstExternFn>();
     while not(rLexer_current_token_eq(lexer, &RToken::RBrace)) {
-        let function: RAstExternFunction = parse_function_declaration(lexer);
-        vec_push::<RAstExternFunction>(&mut functions, function);
+        let function: RAstExternFn = parse_function_declaration(lexer);
+        vec_push::<RAstExternFn>(&mut functions, function);
     }
     expect_token(lexer, &RToken::RBrace);
 
     functions
 }
 
-fn parse_function_declaration(lexer: &mut RLexer) -> RAstExternFunction {
+fn parse_function_declaration(lexer: &mut RLexer) -> RAstExternFn {
     expect_token(lexer, &RToken::Fn);
     let name: String = expect_identifier(lexer);
     expect_token(lexer, &RToken::LParen);
@@ -1015,7 +1013,7 @@ fn parse_function_declaration(lexer: &mut RLexer) -> RAstExternFunction {
     };
 
     expect_token(lexer, &RToken::SemiColon);
-    RAstExternFunction::ExternFunction(name, parameters, return_type)
+    RAstExternFn::Fn(name, parameters, return_type)
 }
 
 fn parse_function(lexer: &mut RLexer, is_unsafe: bool) -> RAstFunction {
@@ -1047,7 +1045,7 @@ fn parse_function(lexer: &mut RLexer, is_unsafe: bool) -> RAstFunction {
 
     let body: RAstBlock = parse_block(lexer);
 
-    RAstFunction::Function(is_unsafe, name, parameters, return_type, body)
+    RAstFunction::Fn(is_unsafe, name, parameters, return_type, body)
 }
 
 fn parse_enum(lexer: &mut RLexer) -> RAstEnum {
@@ -1511,133 +1509,120 @@ fn parse_path_values(lexer: &mut RLexer, path: Vec<String>) -> RAstExpr {
     RAstExpr::Path(path, values)
 }
 
-// TODO: This should be shorter. E.g. add a name to FnSignature, which can be used in the AST.
+/// Collect all global items (functions and enums) into a map and return it.
 fn collect_items(ast: &RAst) -> StringMap<Item> {
     let RAst::Language(ast_items): &RAst = ast;
     let mut items: StringMap<Item> = stringMap_new::<Item>();
 
     let mut i: usize = 0;
     while i < vec_len::<RAstItem>(ast_items) {
-        match vec_at::<RAstItem>(ast_items, i) {
-            RAstItem::Function(RAstFunction::Function(is_unsafe, name, params, return_type, _)) => {
-                let mut param_types: Vec<RType> = vec_new::<RType>();
-                let mut param_index: usize = 0;
-                while param_index < vec_len::<RAstVariable>(params) {
-                    let RAstVariable::Variable(_, parameter_type): &RAstVariable =
-                        vec_at::<RAstVariable>(params, param_index);
-                    vec_push::<RType>(&mut param_types, rType_clone(parameter_type));
-                    param_index = param_index + 1;
-                }
-
-                let signature: FnSignature =
-                    FnSignature::Fn(param_types, rType_clone(return_type), *is_unsafe);
-                stringMap_insert::<Item>(&mut items, string_clone(name), Item::Function(signature));
-            },
-            RAstItem::Enum(enum_item) => {
-                let RAstEnum::Enum(name, variants): &RAstEnum = enum_item;
-
-                let mut cloned_variants: Vec<RAstVariant> = vec_new::<RAstVariant>();
-                let mut i: usize = 0;
-                while i < vec_len::<RAstVariant>(variants) {
-                    let variant: &RAstVariant = vec_at::<RAstVariant>(variants, i);
-                    let RAstVariant::Variant(variant_name, fields): &RAstVariant = variant;
-
-                    let mut cloned_fields: Vec<RType> = vec_new::<RType>();
-                    let mut field_index: usize = 0;
-                    while field_index < vec_len::<RType>(fields) {
-                        let field_type: &RType = vec_at::<RType>(fields, field_index);
-                        vec_push::<RType>(&mut cloned_fields, rType_clone(field_type));
-                        field_index = field_index + 1;
-                    }
-                    vec_push::<RAstVariant>(
-                        &mut cloned_variants,
-                        RAstVariant::Variant(string_clone(variant_name), cloned_fields),
-                    );
-                    i = i + 1;
-                }
-
-                let cloned_enum: RAstEnum = RAstEnum::Enum(string_clone(name), cloned_variants);
-                stringMap_insert::<Item>(&mut items, string_clone(name), Item::Enum(cloned_enum));
-            },
-            RAstItem::ExternBlock(functions) => {
-                let mut i: usize = 0;
-                while i < vec_len::<RAstExternFunction>(functions) {
-                    let function: &RAstExternFunction = vec_at::<RAstExternFunction>(functions, i);
-                    let RAstExternFunction::ExternFunction(name, params, return_type): &RAstExternFunction =
-                        function;
-
-                    let mut param_types: Vec<RType> = vec_new::<RType>();
-                    let mut param_index: usize = 0;
-                    while param_index < vec_len::<RAstVariable>(params) {
-                        let RAstVariable::Variable(_, parameter_type): &RAstVariable =
-                            vec_at::<RAstVariable>(params, param_index);
-                        vec_push::<RType>(&mut param_types, rType_clone(parameter_type));
-                        param_index = param_index + 1;
-                    }
-
-                    let signature: FnSignature =
-                        FnSignature::Fn(param_types, rType_clone(return_type), true);
-                    stringMap_insert::<Item>(
-                        &mut items,
-                        string_clone(name),
-                        Item::Function(signature),
-                    );
-                    i = i + 1;
-                }
-            },
-        }
+        let item: &RAstItem = vec_at::<RAstItem>(ast_items, i);
+        insert_item_into_global_table(&mut items, item);
         i = i + 1;
     }
     items
 }
 
+/// Clones function signatures and enum definitions from the AST into global symbol table entries
+/// and inserts them into the table.
+fn insert_item_into_global_table(table: &mut StringMap<Item>, item: &RAstItem) {
+    match item {
+        RAstItem::Function(RAstFunction::Fn(is_unsafe, name, params, return_type, _)) => {
+            let mut param_types: Vec<RType> = vec_new::<RType>();
+            let mut i: usize = 0;
+            while i < vec_len::<RAstVariable>(params) {
+                let RAstVariable::Variable(_, t): &RAstVariable = vec_at::<RAstVariable>(params, i);
+                vec_push::<RType>(&mut param_types, rType_clone(t));
+                i = i + 1;
+            }
+
+            let item: Item = Item::Function(rType_clone(return_type), param_types, *is_unsafe);
+            stringMap_insert::<Item>(table, string_clone(name), item);
+        },
+        RAstItem::Enum(RAstEnum::Enum(name, variants)) => {
+            let mut cloned_variants: Vec<RAstVariant> = vec_new::<RAstVariant>();
+            let mut i: usize = 0;
+            while i < vec_len::<RAstVariant>(variants) {
+                let RAstVariant::Variant(name, field_types): &RAstVariant =
+                    vec_at::<RAstVariant>(variants, i);
+
+                let mut types: Vec<RType> = vec_new::<RType>();
+                let mut j: usize = 0;
+                while j < vec_len::<RType>(field_types) {
+                    let ty: &RType = vec_at::<RType>(field_types, j);
+                    vec_push::<RType>(&mut types, rType_clone(ty));
+                    j = j + 1;
+                }
+
+                let variant: RAstVariant = RAstVariant::Variant(string_clone(name), types);
+                vec_push::<RAstVariant>(&mut cloned_variants, variant);
+                i = i + 1;
+            }
+            let item: Item = Item::Enum(RAstEnum::Enum(string_clone(name), cloned_variants));
+            stringMap_insert::<Item>(table, string_clone(name), item);
+        },
+        RAstItem::ExternBlock(functions) => {
+            let mut i: usize = 0;
+            while i < vec_len::<RAstExternFn>(functions) {
+                let RAstExternFn::Fn(name, params, return_type): &RAstExternFn =
+                    vec_at::<RAstExternFn>(functions, i);
+
+                let mut types: Vec<RType> = vec_new::<RType>();
+                let mut j: usize = 0;
+                while j < vec_len::<RAstVariable>(params) {
+                    let RAstVariable::Variable(_, param_type): &RAstVariable =
+                        vec_at::<RAstVariable>(params, j);
+                    vec_push::<RType>(&mut types, rType_clone(param_type));
+                    j = j + 1;
+                }
+
+                let item: Item = Item::Function(rType_clone(return_type), types, true);
+                stringMap_insert(table, string_clone(name), item);
+                i = i + 1;
+            }
+        },
+    }
+}
+
 /// Semantic analysis state.
 enum Semantic {
-    /// global items, local symbol table, current function return type, unsafe context depth
-    Semantic(StringMap<Item>, StringMapStack<Variable>, RType, usize),
+    /// local symbol table, current function return type, unsafe context depth
+    Semantic(StringMapStack<Variable>, RType, usize),
 }
 
-fn semantic_new(items: StringMap<Item>) -> Semantic {
-    Semantic::Semantic(items, stringMapStack_new::<Variable>(), RType::Unit, 0)
-}
-
-fn semantic_globals(Semantic::Semantic(globals, _, _, _): &Semantic) -> &StringMap<Item> {
-    globals
-}
-
-fn semantic_into_items(Semantic::Semantic(globals, _, _, _): Semantic) -> StringMap<Item> {
-    globals
+fn semantic_new() -> Semantic {
+    Semantic::Semantic(stringMapStack_new::<Variable>(), RType::Unit, 0)
 }
 
 fn semantic_locals(semantic: &Semantic) -> &StringMapStack<Variable> {
-    let Semantic::Semantic(_, locals, _, _): &Semantic = semantic;
+    let Semantic::Semantic(locals, _, _): &Semantic = semantic;
     locals
 }
 
 fn semantic_locals_mut(semantic: &mut Semantic) -> &mut StringMapStack<Variable> {
-    let Semantic::Semantic(_, locals, _, _): &mut Semantic = semantic;
+    let Semantic::Semantic(locals, _, _): &mut Semantic = semantic;
     locals
 }
 
 fn semantic_current_fn_return_type(semantic: &Semantic) -> &RType {
-    let Semantic::Semantic(_, _, return_type, _): &Semantic = semantic;
+    let Semantic::Semantic(_, return_type, _): &Semantic = semantic;
     return_type
 }
 
 fn semantic_set_current_fn_return_type(semantic: &mut Semantic, ty: RType) {
-    let Semantic::Semantic(_, _, return_type, _): &mut Semantic = semantic;
+    let Semantic::Semantic(_, return_type, _): &mut Semantic = semantic;
     *return_type = ty;
 }
 
 /// Get the raw unsafe depth value.
 fn semantic_unsafe_depth(semantic: &Semantic) -> usize {
-    let Semantic::Semantic(_, _, _, unsafe_depth): &Semantic = semantic;
+    let Semantic::Semantic(_, _, unsafe_depth): &Semantic = semantic;
     *unsafe_depth
 }
 
 /// Set the raw unsafe depth value.
 fn semantic_set_unsafe_depth(semantic: &mut Semantic, unsafe_depth: usize) {
-    let Semantic::Semantic(_, _, _, current_unsafe_depth): &mut Semantic = semantic;
+    let Semantic::Semantic(_, _, current_unsafe_depth): &mut Semantic = semantic;
     *current_unsafe_depth = unsafe_depth;
 }
 
@@ -1661,10 +1646,9 @@ fn semantic_is_unsafe_context(semantic: &Semantic) -> bool {
 }
 
 /// Run semantic analysis and return collected items.
-fn semantic_check_run(ast: &RAst, items: StringMap<Item>) -> StringMap<Item> {
-    let mut semantic: Semantic = semantic_new(items);
-    semantic_check_language(&mut semantic, ast);
-    semantic_into_items(semantic)
+fn semantic_check_run(ast: &RAst, items: &StringMap<Item>) {
+    let mut semantic: Semantic = semantic_new();
+    semantic_check_language(&mut semantic, ast, &items);
 }
 
 /// Check if the given types are equal, otherwise throw an error.
@@ -1709,14 +1693,6 @@ fn semantic_lookup_variable(semantic: &Semantic, name: &String) -> Option<Variab
     }
 }
 
-/// Lookup a function signature in the global item map.
-fn semantic_lookup_function_signature(semantic: &Semantic, name: &String) -> Option<FnSignature> {
-    match stringMap_get::<Item>(semantic_globals(semantic), name) {
-        Option::Some(Item::Function(signature)) => Option::Some(fnSignature_clone(signature)),
-        _ => Option::None,
-    }
-}
-
 /// Enter a new local scope.
 fn semantic_enter_scope(semantic: &mut Semantic) {
     stringMapStack_push_empty::<Variable>(semantic_locals_mut(semantic));
@@ -1751,14 +1727,9 @@ enum Variable {
 
 /// A global item, i.e. either a function or an enum.
 enum Item {
-    Function(FnSignature),
+    /// return type, parameter types, is unsafe
+    Function(RType, Vec<RType>, bool),
     Enum(RAstEnum),
-}
-
-/// A type that represents the (type) signature of a function.
-enum FnSignature {
-    /// parameter types, return type, is unsafe
-    Fn(Vec<RType>, RType, bool),
 }
 
 /// Different operations that can be done when casting a value.
@@ -1840,24 +1811,27 @@ fn castOperation_get_cast_operation(left_type: &RType, right_type: &RType) -> Ca
 
 /// Run semantic analysis on the full AST.
 // TODO: check duplicate functions/enums
-fn semantic_check_language(semantic: &mut Semantic, ast: &RAst) {
+fn semantic_check_language(semantic: &mut Semantic, ast: &RAst, globals: &StringMap<Item>) {
     let RAst::Language(items): &RAst = ast;
     let mut i: usize = 0;
     let len: usize = vec_len::<RAstItem>(items);
     while i < len {
         let item: &RAstItem = vec_at::<RAstItem>(items, i);
         match item {
-            RAstItem::Function(function) => semantic_check_function(semantic, function),
-            _ => {}, // TODO: enum/extern checking
+            RAstItem::Function(function) => semantic_check_function(semantic, function, globals),
+            _ => {}, // enums definitions and extern function declarations do not generate code
         }
         i = i + 1;
     }
 }
 
 /// Analyze one function and validate body against its signature.
-fn semantic_check_function(semantic: &mut Semantic, function: &RAstFunction) {
-    let RAstFunction::Function(is_unsafe, _, parameters, return_type, body): &RAstFunction =
-        function;
+fn semantic_check_function(
+    semantic: &mut Semantic,
+    function: &RAstFunction,
+    globals: &StringMap<Item>,
+) {
+    let RAstFunction::Fn(is_unsafe, _, parameters, return_type, body): &RAstFunction = function;
 
     semantic_set_current_fn_return_type(semantic, rType_clone(return_type));
     semantic_enter_scope(semantic);
@@ -1885,7 +1859,7 @@ fn semantic_check_function(semantic: &mut Semantic, function: &RAstFunction) {
         i = i + 1;
     }
 
-    let block_type: RType = semantic_check_block(semantic, body, *is_unsafe);
+    let block_type: RType = semantic_check_block(semantic, body, *is_unsafe, globals);
     semantic_expect_coerced_type_match(&block_type, return_type);
 
     semantic_leave_scope(semantic);
@@ -1893,7 +1867,12 @@ fn semantic_check_function(semantic: &mut Semantic, function: &RAstFunction) {
 }
 
 /// Analyze one block and return its resulting type.
-fn semantic_check_block(semantic: &mut Semantic, block: &RAstBlock, is_unsafe: bool) -> RType {
+fn semantic_check_block(
+    semantic: &mut Semantic,
+    block: &RAstBlock,
+    is_unsafe: bool,
+    globals: &StringMap<Item>,
+) -> RType {
     let RAstBlock::Block(statements, tail): &RAstBlock = block;
     if is_unsafe {
         semantic_push_unsafe_context(semantic);
@@ -1907,11 +1886,11 @@ fn semantic_check_block(semantic: &mut Semantic, block: &RAstBlock, is_unsafe: b
         let statement: &RAstStatement = vec_at::<RAstStatement>(statements, i);
         match statement {
             RAstStatement::Let(variable, value) => {
-                semantic_check_binding(semantic, variable, box_deref::<RAstExpr>(value));
+                semantic_check_binding(semantic, variable, box_deref::<RAstExpr>(value), globals);
             },
             RAstStatement::Expression(expression) => {
                 let ty: RType =
-                    semantic_check_expression(semantic, box_deref::<RAstExpr>(expression));
+                    semantic_check_expression(semantic, box_deref::<RAstExpr>(expression), globals);
                 if rType_eq(&ty, &RType::Never) {
                     statement_flow_type = RType::Never;
                 }
@@ -1922,7 +1901,7 @@ fn semantic_check_block(semantic: &mut Semantic, block: &RAstBlock, is_unsafe: b
 
     let mut block_type: RType = match tail {
         Option::Some(expression) => {
-            semantic_check_expression(semantic, box_deref::<RAstExpr>(expression))
+            semantic_check_expression(semantic, box_deref::<RAstExpr>(expression), globals)
         },
         Option::None => RType::Unit,
     };
@@ -1939,9 +1918,14 @@ fn semantic_check_block(semantic: &mut Semantic, block: &RAstBlock, is_unsafe: b
 }
 
 /// Analyze one let-binding statement.
-fn semantic_check_binding(semantic: &mut Semantic, variable: &RAstVariable, value: &RAstExpr) {
+fn semantic_check_binding(
+    semantic: &mut Semantic,
+    variable: &RAstVariable,
+    value: &RAstExpr,
+    globals: &StringMap<Item>,
+) {
     let RAstVariable::Variable(pattern, binding_type): &RAstVariable = variable;
-    let actual_type: RType = semantic_check_expression(semantic, value);
+    let actual_type: RType = semantic_check_expression(semantic, value, globals);
     semantic_expect_type_match(binding_type, &actual_type);
 
     match pattern {
@@ -1958,45 +1942,57 @@ fn semantic_check_binding(semantic: &mut Semantic, variable: &RAstVariable, valu
     }
 }
 
-/// Analyze one expression and return its type.
-fn semantic_check_expression(semantic: &mut Semantic, expression: &RAstExpr) -> RType {
+fn semantic_check_expression(
+    semantic: &mut Semantic,
+    expression: &RAstExpr,
+    globals: &StringMap<Item>,
+) -> RType {
     match expression {
-        RAstExpr::Return(returned) => semantic_check_return(semantic, returned),
+        RAstExpr::Return(returned) => semantic_check_return(semantic, returned, globals),
         RAstExpr::Assign(left, right) => semantic_check_assignment(
             semantic,
             box_deref::<RAstExpr>(left),
             box_deref::<RAstExpr>(right),
+            globals,
         ),
         RAstExpr::Binary(operator, left, right) => semantic_check_binary_op(
             semantic,
             operator,
             box_deref::<RAstExpr>(left),
             box_deref::<RAstExpr>(right),
+            globals,
         ),
         RAstExpr::Cast(value, to_type) => {
-            semantic_check_cast(semantic, box_deref::<RAstExpr>(value), to_type)
+            semantic_check_cast(semantic, box_deref::<RAstExpr>(value), to_type, globals)
         },
         RAstExpr::Unary(operator, value) => {
-            semantic_check_unary_op(semantic, operator, box_deref::<RAstExpr>(value))
+            semantic_check_unary_op(semantic, operator, box_deref::<RAstExpr>(value), globals)
         },
         RAstExpr::Literal(literal) => rAstLiteral_type(literal),
         RAstExpr::VariableUse(name) => semantic_check_variable_use(semantic, name),
-        RAstExpr::Path(path, values) => semantic_check_path(semantic, path, values),
-        RAstExpr::Block(is_unsafe, block) => semantic_check_block(semantic, block, *is_unsafe),
-        RAstExpr::If(if_expression) => semantic_check_if(semantic, if_expression),
+        RAstExpr::Path(path, values) => semantic_check_path(semantic, path, values, globals),
+        RAstExpr::Block(is_unsafe, block) => {
+            semantic_check_block(semantic, block, *is_unsafe, globals)
+        },
+        RAstExpr::If(if_expression) => semantic_check_if(semantic, if_expression, globals),
         RAstExpr::While(condition, body) => {
-            semantic_check_while(semantic, box_deref::<RAstExpr>(condition), body)
+            semantic_check_while(semantic, box_deref::<RAstExpr>(condition), body, globals)
         },
         RAstExpr::Match(value, arms) => {
-            semantic_check_match(semantic, box_deref::<RAstExpr>(value), arms)
+            semantic_check_match(semantic, box_deref::<RAstExpr>(value), arms, globals)
         },
     }
 }
 
-fn semantic_check_return(semantic: &mut Semantic, returned: &Option<Box<RAstExpr>>) -> RType {
+fn semantic_check_return(
+    semantic: &mut Semantic,
+    returned: &Option<Box<RAstExpr>>,
+    globals: &StringMap<Item>,
+) -> RType {
     match returned {
         Option::Some(expression) => {
-            let ty: RType = semantic_check_expression(semantic, box_deref::<RAstExpr>(expression));
+            let ty: RType =
+                semantic_check_expression(semantic, box_deref::<RAstExpr>(expression), globals);
             semantic_expect_type_match(&ty, semantic_current_fn_return_type(semantic));
         },
         Option::None => {
@@ -2006,14 +2002,23 @@ fn semantic_check_return(semantic: &mut Semantic, returned: &Option<Box<RAstExpr
     RType::Never
 }
 
-fn semantic_check_assignment(semantic: &mut Semantic, left: &RAstExpr, right: &RAstExpr) -> RType {
-    let right_type: RType = semantic_check_expression(semantic, right);
-    let left_type: RType = semantic_check_assignment_lvalue_type(semantic, left);
+fn semantic_check_assignment(
+    semantic: &mut Semantic,
+    left: &RAstExpr,
+    right: &RAstExpr,
+    globals: &StringMap<Item>,
+) -> RType {
+    let right_type: RType = semantic_check_expression(semantic, right, globals);
+    let left_type: RType = semantic_check_assignment_lvalue_type(semantic, left, globals);
     semantic_expect_type_match(&left_type, &right_type);
     RType::Unit
 }
 
-fn semantic_check_assignment_lvalue_type(semantic: &mut Semantic, expression: &RAstExpr) -> RType {
+fn semantic_check_assignment_lvalue_type(
+    semantic: &mut Semantic,
+    expression: &RAstExpr,
+    globals: &StringMap<Item>,
+) -> RType {
     match expression {
         RAstExpr::VariableUse(name) => match semantic_lookup_variable(semantic, name) {
             Option::Some(Variable::Variable(variable_type, mutable)) => {
@@ -2026,7 +2031,7 @@ fn semantic_check_assignment_lvalue_type(semantic: &mut Semantic, expression: &R
         },
         RAstExpr::Unary(RAstUnaryOp::Dereference, value) => {
             let pointer_type: RType =
-                semantic_check_expression(semantic, box_deref::<RAstExpr>(value));
+                semantic_check_expression(semantic, box_deref::<RAstExpr>(value), globals);
             match pointer_type {
                 RType::Reference(inner, mutable) => {
                     if not(mutable) {
@@ -2052,9 +2057,10 @@ fn semantic_check_binary_op(
     operator: &RAstBinaryOp,
     left: &RAstExpr,
     right: &RAstExpr,
+    globals: &StringMap<Item>,
 ) -> RType {
-    let left_type: RType = semantic_check_expression(semantic, left);
-    let right_type: RType = semantic_check_expression(semantic, right);
+    let left_type: RType = semantic_check_expression(semantic, left, globals);
+    let right_type: RType = semantic_check_expression(semantic, right, globals);
     semantic_expect_type_match(&left_type, &right_type);
 
     match operator {
@@ -2066,8 +2072,13 @@ fn semantic_check_binary_op(
     }
 }
 
-fn semantic_check_cast(semantic: &mut Semantic, value: &RAstExpr, to_type: &RType) -> RType {
-    let from_type: RType = semantic_check_expression(semantic, value);
+fn semantic_check_cast(
+    semantic: &mut Semantic,
+    value: &RAstExpr,
+    to_type: &RType,
+    globals: &StringMap<Item>,
+) -> RType {
+    let from_type: RType = semantic_check_expression(semantic, value, globals);
     match castOperation_get_cast_operation(&from_type, to_type) {
         CastOperation::Invalid => semantic_check_error("invalid cast"),
         _ => rType_clone(to_type),
@@ -2078,6 +2089,7 @@ fn semantic_check_unary_op(
     semantic: &mut Semantic,
     operator: &RAstUnaryOp,
     value: &RAstExpr,
+    globals: &StringMap<Item>,
 ) -> RType {
     match operator {
         RAstUnaryOp::Reference(mutable_ref) => match value {
@@ -2091,12 +2103,12 @@ fn semantic_check_unary_op(
                 _ => semantic_check_error("undefined variable"),
             },
             _ => {
-                let ty: RType = semantic_check_expression(semantic, value);
+                let ty: RType = semantic_check_expression(semantic, value, globals);
                 RType::Reference(box_new::<RType>(ty), *mutable_ref)
             },
         },
         RAstUnaryOp::Dereference => {
-            let ty: RType = semantic_check_expression(semantic, value);
+            let ty: RType = semantic_check_expression(semantic, value, globals);
             match ty {
                 RType::Reference(pointed, _) => rType_clone(box_deref::<RType>(&pointed)),
                 RType::RawPointerMut(pointed) => {
@@ -2122,54 +2134,81 @@ fn semantic_check_path(
     semantic: &mut Semantic,
     path: &Vec<String>,
     values: &Vec<RAstExpr>,
+    globals: &StringMap<Item>,
 ) -> RType {
-    // TODO: handle enum case
-    let function_name: String = rAstPath_to_string(path);
-
-    let FnSignature::Fn(parameter_types, return_type, is_unsafe): FnSignature =
-        match semantic_lookup_function_signature(semantic, &function_name) {
-            Option::Some(signature) => signature,
-            _ => semantic_check_error("call to undefined function"),
-        };
-
-    if and(is_unsafe, not(semantic_is_unsafe_context(semantic))) {
-        semantic_check_error("calling an unsafe function requires unsafe");
+    let first_ident: &String = vec_at::<String>(path, 0);
+    match stringMap_get::<Item>(globals, first_ident) {
+        Option::Some(Item::Enum(_)) => semantic_check_enum(semantic, path, values),
+        _ => {
+            let callee: String = rAstPath_to_string(path);
+            semantic_check_call(semantic, &callee, values, globals)
+        },
     }
-
-    let mut i: usize = 0;
-    while i < vec_len::<RAstExpr>(values) {
-        let argument: &RAstExpr = vec_at::<RAstExpr>(values, i);
-        let arg_type: RType = semantic_check_expression(semantic, argument);
-
-        match vec_get::<RType>(&parameter_types, i) {
-            Option::Some(ty) => {
-                semantic_expect_type_match(ty, &arg_type);
-            },
-            _ => {
-                semantic_check_error("function call has more arguments than there are parameters");
-            },
-        }
-
-        i = i + 1;
-    }
-
-    return_type
 }
 
-fn semantic_check_if(semantic: &mut Semantic, if_expression: &RAstIf) -> RType {
+fn semantic_check_call(
+    semantic: &mut Semantic,
+    callee: &String,
+    values: &Vec<RAstExpr>,
+    globals: &StringMap<Item>,
+) -> RType {
+    match stringMap_get::<Item>(globals, callee) {
+        Option::Some(Item::Function(return_type, parameter_types, is_unsafe)) => {
+            let return_type: RType = rType_clone(return_type);
+
+            if and(*is_unsafe, not(semantic_is_unsafe_context(semantic))) {
+                semantic_check_error("calling an unsafe function requires unsafe");
+            }
+
+            let mut i: usize = 0;
+            while i < vec_len::<RAstExpr>(values) {
+                let argument: &RAstExpr = vec_at::<RAstExpr>(values, i);
+                let arg_type: RType = semantic_check_expression(semantic, argument, globals);
+
+                match vec_get::<RType>(&parameter_types, i) {
+                    Option::Some(ty) => {
+                        semantic_expect_type_match(ty, &arg_type);
+                    },
+                    _ => {
+                        semantic_check_error(
+                            "function call has more arguments than there are parameters",
+                        );
+                    },
+                }
+                i = i + 1;
+            }
+            return_type
+        },
+        _ => semantic_check_error("call to undefined function"),
+    }
+}
+
+fn semantic_check_enum(
+    semantic: &mut Semantic,
+    instance: &Vec<String>,
+    values: &Vec<RAstExpr>,
+) -> RType {
+    RType::Custom(string_clone(vec_at::<String>(instance, 0)))
+}
+
+fn semantic_check_if(
+    semantic: &mut Semantic,
+    if_expression: &RAstIf,
+    globals: &StringMap<Item>,
+) -> RType {
     let RAstIf::If(condition, then_block, else_branch): &RAstIf = if_expression;
     let condition_type: RType =
-        semantic_check_expression(semantic, box_deref::<RAstExpr>(condition));
+        semantic_check_expression(semantic, box_deref::<RAstExpr>(condition), globals);
     semantic_expect_bool_type(&condition_type);
 
-    let then_type: RType = semantic_check_block(semantic, then_block, false);
+    let then_type: RType = semantic_check_block(semantic, then_block, false, globals);
     match else_branch {
         Option::Some(else_branch) => {
             let else_type: RType = match else_branch {
                 RAstElse::If(nested_if) => {
-                    semantic_check_if(semantic, box_deref::<RAstIf>(nested_if))
+                    semantic_check_if(semantic, box_deref::<RAstIf>(nested_if), globals)
                 },
-                RAstElse::Block(block) => semantic_check_block(semantic, block, false),
+                RAstElse::Block(block) => semantic_check_block(semantic, block, false, globals),
             };
             semantic_expect_coerced_type_match(&then_type, &else_type);
 
@@ -2179,20 +2218,30 @@ fn semantic_check_if(semantic: &mut Semantic, if_expression: &RAstIf) -> RType {
     }
 }
 
-fn semantic_check_while(semantic: &mut Semantic, condition: &RAstExpr, body: &RAstBlock) -> RType {
-    let condition_type: RType = semantic_check_expression(semantic, condition);
+fn semantic_check_while(
+    semantic: &mut Semantic,
+    condition: &RAstExpr,
+    body: &RAstBlock,
+    globals: &StringMap<Item>,
+) -> RType {
+    let condition_type: RType = semantic_check_expression(semantic, condition, globals);
     semantic_expect_bool_type(&condition_type);
-    let body_type: RType = semantic_check_block(semantic, body, false);
+    let body_type: RType = semantic_check_block(semantic, body, false, globals);
     semantic_expect_coerced_type_match(&RType::Unit, &body_type);
     RType::Unit
 }
 
-fn semantic_check_match(semantic: &mut Semantic, value: &RAstExpr, arms: &Vec<RAstArm>) -> RType {
+fn semantic_check_match(
+    semantic: &mut Semantic,
+    value: &RAstExpr,
+    arms: &Vec<RAstArm>,
+    globals: &StringMap<Item>,
+) -> RType {
     if vec_len::<RAstArm>(arms) == 0 {
         semantic_check_error("match requires at least one arm");
     }
 
-    let expr_type: RType = semantic_check_expression(semantic, value);
+    let expr_type: RType = semantic_check_expression(semantic, value, globals);
     let mut return_type: RType = RType::Never;
 
     let mut i: usize = 0;
@@ -2219,7 +2268,7 @@ fn semantic_check_match(semantic: &mut Semantic, value: &RAstExpr, arms: &Vec<RA
             j = j + 1;
         }
 
-        let arm_type: RType = semantic_check_expression(semantic, expression);
+        let arm_type: RType = semantic_check_expression(semantic, expression, globals);
         semantic_expect_coerced_type_match(&return_type, &arm_type);
 
         return_type = rType_coerce(return_type, arm_type);
@@ -2307,13 +2356,10 @@ fn codegen_scope_lookup(Codegen::Codegen(_, _, _, stack, _): &Codegen, name: &St
     }
 }
 
-/// Lookup one function signature.
-fn codegen_function_signature(codegen: &Codegen, name: &String) -> Option<FnSignature> {
+/// Lookup a global item (function or enum).
+fn codegen_search_global<'a>(codegen: &'a Codegen, name: &'a String) -> Option<&'a Item> {
     let Codegen::Codegen(_, _, _, _, items): &Codegen = codegen;
-    match stringMap_get::<Item>(items, name) {
-        Option::Some(Item::Function(signature)) => Option::Some(fnSignature_clone(signature)),
-        _ => Option::None,
-    }
+    stringMap_get::<Item>(items, name)
 }
 
 /// Get the current value of the SSA numbering scheme.
@@ -2368,12 +2414,11 @@ fn codegen_language(codegen: &mut Codegen, ast: &RAst) {
 }
 
 /// Emit LLVM-IR for one extern block.
-fn codegen_extern_block(codegen: &mut Codegen, functions: &Vec<RAstExternFunction>) {
+fn codegen_extern_block(codegen: &mut Codegen, functions: &Vec<RAstExternFn>) {
     let mut i: usize = 0;
-    while i < vec_len::<RAstExternFunction>(functions) {
-        let function: &RAstExternFunction = vec_at::<RAstExternFunction>(functions, i);
-        let RAstExternFunction::ExternFunction(name, parameters, return_type): &RAstExternFunction =
-            function;
+    while i < vec_len::<RAstExternFn>(functions) {
+        let function: &RAstExternFn = vec_at::<RAstExternFn>(functions, i);
+        let RAstExternFn::Fn(name, parameters, return_type): &RAstExternFn = function;
         codegen_emit_declare(codegen, name, parameters, return_type);
         i = i + 1;
     }
@@ -2381,8 +2426,7 @@ fn codegen_extern_block(codegen: &mut Codegen, functions: &Vec<RAstExternFunctio
 
 /// Emit LLVM-IR for one function definition.
 fn codegen_function(codegen: &mut Codegen, function: &RAstFunction) {
-    let RAstFunction::Function(_, function_name, parameters, return_type, body): &RAstFunction =
-        function;
+    let RAstFunction::Fn(_, function_name, parameters, return_type, body): &RAstFunction = function;
 
     let llvm_return_type: String = if string_eq(function_name, &string("main")) {
         codegen_mark_as_main(codegen, true);
@@ -2710,7 +2754,10 @@ fn codegen_variable_use(codegen: &mut Codegen, variable_name: &String) -> STPair
 /// Emit LLVM-IR for a function call expression.
 fn codegen_path(codegen: &mut Codegen, path: &Vec<String>, values: &Vec<RAstExpr>) -> STPair {
     let function_name: String = rAstPath_to_string(path);
+    codegen_call(codegen, &function_name, values)
+}
 
+fn codegen_call(codegen: &mut Codegen, function: &String, values: &Vec<RAstExpr>) -> STPair {
     let mut value_types: Vec<RType> = vec_new::<RType>();
     let mut value_names: Vec<String> = vec_new::<String>();
     let mut i: usize = 0;
@@ -2724,24 +2771,22 @@ fn codegen_path(codegen: &mut Codegen, path: &Vec<String>, values: &Vec<RAstExpr
         i = i + 1;
     }
 
-    match codegen_function_signature(codegen, &function_name) {
-        Option::Some(FnSignature::Fn(_, return_type, _)) => {
-            let result_name: String = if type_has_value(&return_type) {
-                codegen_emit_call_value(
-                    codegen,
-                    &function_name,
-                    &return_type,
-                    &value_types,
-                    &value_names,
-                )
-            } else {
-                codegen_emit_call_void(codegen, &function_name, &value_types, &value_names);
-                string_new()
-            };
-            STPair::ST(result_name, return_type)
-        },
-        Option::None => codegen_error("unknown codegen function"),
-    }
+    let return_type: RType = match codegen_search_global(codegen, &function) {
+        Option::Some(Item::Function(return_type, _, _)) => rType_clone(return_type),
+        _ => codegen_error("unknown codegen function"),
+    };
+
+    let result_name: String = if type_has_value(&return_type) {
+        codegen_emit_call_value(codegen, &function, &return_type, &value_types, &value_names)
+    } else {
+        codegen_emit_call_void(codegen, &function, &value_types, &value_names);
+        string_new()
+    };
+    STPair::ST(result_name, return_type)
+}
+
+fn codegen_enum(codegen: &mut Codegen, name: &String) -> STPair {
+    STPair::ST(string_new(), RType::Unit)
 }
 
 /// Emit LLVM-IR for an if expression.
@@ -5341,6 +5386,7 @@ fn is_negative(number: usize) -> bool {
 
 /// Panic by printing a message and exiting the program.
 fn panic(message: &str) -> ! {
+    eprint_str("panic: ");
     eprint_str(message);
     eprint_str("\n");
     exit_process(1);
@@ -6479,22 +6525,6 @@ fn rLiteral_clone(literal: &RLiteral) -> RLiteral {
         RLiteral::String(value) => RLiteral::String(string_clone(value)),
         RLiteral::Char(value) => RLiteral::Char(*value),
         RLiteral::Bool(value) => RLiteral::Bool(*value),
-    }
-}
-
-/// Clone a function signature.
-fn fnSignature_clone(signature: &FnSignature) -> FnSignature {
-    match signature {
-        FnSignature::Fn(parameter_types, return_type, is_unsafe) => {
-            let mut cloned_params: Vec<RType> = vec_new::<RType>();
-            let mut i: usize = 0;
-            while i < vec_len::<RType>(parameter_types) {
-                let param: &RType = vec_at::<RType>(parameter_types, i);
-                vec_push::<RType>(&mut cloned_params, rType_clone(param));
-                i = i + 1;
-            }
-            FnSignature::Fn(cloned_params, rType_clone(return_type), *is_unsafe)
-        },
     }
 }
 
