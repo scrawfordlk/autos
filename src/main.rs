@@ -5630,7 +5630,7 @@ enum Box<T> {
 
 /// Allocate and box a value on the heap.
 fn box_new<T>(value: T) -> Box<T> {
-    let ptr: *mut T = alloc::<T>(1);
+    let ptr: *mut T = unsafe { alloc::<T>(1) };
     unsafe { *ptr = value };
     Box::Ptr(ptr)
 }
@@ -5659,7 +5659,7 @@ fn vec_new<T>() -> Vec<T> {
 /// Create a vector with fixed starting capacity.
 fn vec_with_capacity<T>(initial_capacity: usize) -> Vec<T> {
     let capacity: usize = max(initial_capacity, 1);
-    let ptr: *mut T = alloc::<T>(capacity);
+    let ptr: *mut T = unsafe { alloc::<T>(capacity) };
     Vec::Vec(ptr, 0, capacity)
 }
 
@@ -5692,7 +5692,7 @@ fn vec_accomodate_extra_space<T>(vec: &mut Vec<T>, space: usize) {
         let Vec::Vec(ptr, len_ref, capacity_ref): &mut Vec<T> = vec;
         *capacity_ref = *capacity_ref * 2;
 
-        let new_ptr: *mut T = alloc::<T>(*capacity_ref);
+        let new_ptr: *mut T = unsafe { alloc::<T>(*capacity_ref) };
         unsafe { memcopy::<T>(new_ptr, *ptr, *len_ref) };
         *ptr = new_ptr;
         // TODO: change this
@@ -5749,9 +5749,7 @@ fn vec_set<T>(vec: &mut Vec<T>, index: usize, value: T) -> bool {
     } else {
         let ptr: *mut T = vec_ptr::<T>(vec);
         let ptr: *mut T = ptr_add::<T>(ptr, index);
-        unsafe {
-            *ptr = value;
-        }
+        unsafe { *ptr = value };
         true
     }
 }
@@ -7021,9 +7019,7 @@ unsafe fn memcopy<T>(dest: *mut T, src: *mut T, n: usize) {
     let src_u8: *mut u8 = src as *mut u8;
     let mut i: usize = 0;
     while i < byte_count {
-        unsafe {
-            *ptr_add::<u8>(dest_u8, i) = *ptr_add::<u8>(src_u8, i);
-        }
+        unsafe { *ptr_add::<u8>(dest_u8, i) = *ptr_add::<u8>(src_u8, i) };
         i = i + 1;
     }
 }
@@ -7034,23 +7030,16 @@ fn ptr_add<T>(ptr: *mut T, n: usize) -> *mut T {
 }
 
 /// Heap-allocate memory for `count` T and return a pointer to the beginning of the memory block.
-/// The returned pointer is never null and the memory is always zeroed.
+/// The returned pointer is never null, but the memory is not zeroed, i.e. the caller must ensure
+/// that uninitialised memory is never read.
 /// The caller should cast the returned pointer to the desired type.
-fn alloc<T>(count: usize) -> *mut T {
+unsafe fn alloc<T>(count: usize) -> *mut T {
     unsafe {
         let p: *mut u8 = malloc(size_of::<T>() * count);
-
         if p as usize == 0 {
-            eprint_str("Heap Memory Allocation Error!\n");
+            eprint_str("Memory Allocation Error!\n");
             exit(1);
         }
-
-        let mut i = 0;
-        while i < size_of::<T>() * count {
-            *ptr_add(p, i) = 0;
-            i = i + 1;
-        }
-
         p as *mut T
     }
 }
