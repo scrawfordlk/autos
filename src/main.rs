@@ -825,7 +825,7 @@ fn rType_size(ty: &RType) -> usize {
         RType::U8 | RType::Char | RType::Bool => 1,
         RType::Usize | RType::Reference(_, _) | RType::RawPointerMut(_) => size_of::<usize>(),
         RType::Unit | RType::Never => 0,
-        RType::Custom(name) => 0, // TODO:
+        RType::Custom(_) => size_of::<usize>(), // enums are mostly treated as pointers
     }
 }
 
@@ -838,9 +838,9 @@ fn rType_to_llvm_name(ty: &RType) -> String {
         RType::Char => string("i8"),
         RType::Unit => string("void"),
         RType::Never => string("void"),
-        RType::Custom(_) => string("i64"),
         RType::Reference(_, _) => string("ptr"),
         RType::RawPointerMut(_) => string("ptr"),
+        RType::Custom(_) => string("ptr"), // enums are mostly treated as pointers
     }
 }
 
