@@ -1,15 +1,33 @@
-enum Animal {
-    Dog,
-    Cat(usize),
-    Seal(u8),
+// definition generates no code, only symbol table entry
+enum Colour {
+    Red(usize),  // discriminator 0; offset 0 (usize)
+    Blue,        // discriminator 1; offset 8 (nothing)
+    Green(char), // discriminator 2; offset 8
 }
+// total size := sizeof(usize) + max{sizeof(usize), sizeof(()), sizeof(char)}
+//             = 8 + 8 = 16
+// => [2 x i64]
 
 fn main() {
-    let animal: Animal = Animal::Cat(10);
+    let colour = my_function(Colour::Green('a'));
 
-    std::process::exit(match animal {
-        Animal::Dog => 1,
-        Animal::Cat(value) => value + 32,
-        Animal::Seal(value) => value as usize,
-    })
+    match colour {
+        Colour::Red(val) => println!("It's red"),
+        // copy nothing
+        Colour::Blue => println!("It's blue"),
+        x => println!("It's green"),
+    }
+
+    // match and let code should be very similar, so that I can share code
+    // something like expr always is ptr, but only if copy is needed (variable), then load & store
+    // to copy
+}
+
+fn my_function(colour: Colour) -> Colour {
+    match colour {
+        Colour::Red(val) => return Colour::Red(42),
+        x => x,
+    };
+
+    Colour::Green('c')
 }
