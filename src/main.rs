@@ -721,7 +721,7 @@ enum RAstExpr {
     Cast(Box<RAstExpr>, RType),
     Unary(RAstUnaryOp, Box<RAstExpr>),
     Literal(RLiteral),
-    VariableUse(String),
+    Variable(String),
     Path(Vec<String>, Vec<RAstExpr>), // either function call or enum instantiaton
     /// unsafe, block
     Block(bool, RAstBlock),
@@ -1368,7 +1368,7 @@ fn parse_identifier_expression(lexer: &mut RLexer) -> RAstExpr {
         vec_push::<String>(&mut segments, first_identifier);
         parse_path_values(lexer, segments)
     } else {
-        RAstExpr::VariableUse(first_identifier)
+        RAstExpr::Variable(first_identifier)
     }
 }
 
@@ -1969,7 +1969,7 @@ fn semantic_check_expression(
             semantic_check_unary_op(semantic, operator, box_deref::<RAstExpr>(value), globals)
         },
         RAstExpr::Literal(literal) => rAstLiteral_type(literal),
-        RAstExpr::VariableUse(name) => semantic_check_variable_use(semantic, name),
+        RAstExpr::Variable(name) => semantic_check_variable_use(semantic, name),
         RAstExpr::Path(path, values) => semantic_check_path(semantic, path, values, globals),
         RAstExpr::Block(is_unsafe, block) => {
             semantic_check_block(semantic, block, *is_unsafe, globals)
@@ -2020,7 +2020,7 @@ fn semantic_check_assignment_lvalue_type(
     globals: &StringMap<Item>,
 ) -> RType {
     match expression {
-        RAstExpr::VariableUse(name) => match semantic_lookup_variable(semantic, name) {
+        RAstExpr::Variable(name) => match semantic_lookup_variable(semantic, name) {
             Option::Some(Variable::Variable(variable_type, mutable)) => {
                 if not(mutable) {
                     semantic_check_error("invalid assignment to immutable variable");
@@ -2093,7 +2093,7 @@ fn semantic_check_unary_op(
 ) -> RType {
     match operator {
         RAstUnaryOp::Reference(mutable_ref) => match value {
-            RAstExpr::VariableUse(name) => match semantic_lookup_variable(semantic, name) {
+            RAstExpr::Variable(name) => match semantic_lookup_variable(semantic, name) {
                 Option::Some(Variable::Variable(ty, mutable_var)) => {
                     if and(*mutable_ref, not(mutable_var)) {
                         semantic_check_error("cannot take mutable reference to immutable variable");
@@ -2246,14 +2246,16 @@ fn semantic_check_match(
 
     let mut i: usize = 0;
     while i < vec_len::<RAstArm>(arms) {
+        semantic_enter_scope(semantic);
         let arm: &RAstArm = vec_at::<RAstArm>(arms, i);
         let RAstArm::Arm(patterns, expression): &RAstArm = arm;
+        let is_multi_pattern: bool = vec_len::<RAstPattern>(patterns) > 1;
 
         let mut j: usize = 0;
         while j < vec_len::<RAstPattern>(patterns) {
             let pattern: &RAstPattern = vec_at::<RAstPattern>(patterns, j);
 
-            if vec_len::<RAstPattern>(patterns) > 1 {
+            if is_multi_pattern {
                 match pattern {
                     RAstPattern::Literal(_) => {},
                     _ => {
@@ -2264,7 +2266,7 @@ fn semantic_check_match(
                 }
             }
 
-            semantic_check_pattern(pattern, &expr_type);
+            semantic_check_pattern(semantic, pattern, &expr_type);
             j = j + 1;
         }
 
@@ -2272,12 +2274,13 @@ fn semantic_check_match(
         semantic_expect_coerced_type_match(&return_type, &arm_type);
 
         return_type = rType_coerce(return_type, arm_type);
+        semantic_leave_scope(semantic);
         i = i + 1;
     }
     return_type
 }
 
-fn semantic_check_pattern(pattern: &RAstPattern, expression_type: &RType) {
+fn semantic_check_pattern(semantic: &mut Semantic, pattern: &RAstPattern, expression_type: &RType) {
     let pattern_type: RType = match pattern {
         RAstPattern::Literal(literal) => match literal {
             RAstPatternLiteral::Int(_) => {
@@ -2290,7 +2293,12 @@ fn semantic_check_pattern(pattern: &RAstPattern, expression_type: &RType) {
             RAstPatternLiteral::Char(_) => RType::Char,
             RAstPatternLiteral::Bool(_) => RType::Bool,
         },
-        RAstPattern::Identifier(_, _) | RAstPattern::Wildcard => return, // type agnostic
+        RAstPattern::Identifier(mutable, name) => {
+            let variable_type: RType = rType_clone(expression_type);
+            semantic_insert_variable(semantic, string_clone(name), variable_type, *mutable);
+            return; // type agnostic
+        },
+        RAstPattern::Wildcard => return, // type agnostic
         RAstPattern::EnumVariant(enum_name, _, _) => RType::Custom(string_clone(enum_name)),
     };
 
@@ -2574,7 +2582,7 @@ fn codegen_expression(codegen: &mut Codegen, expression: &RAstExpr) -> STPair {
             codegen_unary_op(codegen, operator, box_deref::<RAstExpr>(value))
         },
         RAstExpr::Literal(literal) => codegen_literal(literal),
-        RAstExpr::VariableUse(name) => codegen_variable_use(codegen, name),
+        RAstExpr::Variable(name) => codegen_variable_use(codegen, name),
         RAstExpr::Path(path, arguments) => codegen_path(codegen, path, arguments),
         RAstExpr::Block(_, block) => codegen_block(codegen, block),
         RAstExpr::If(if_expression) => codegen_if(codegen, if_expression),
@@ -2620,7 +2628,7 @@ fn codegen_assignment(codegen: &mut Codegen, left: &RAstExpr, right: &RAstExpr) 
 
 fn codegen_assignment_lvalue(codegen: &mut Codegen, expression: &RAstExpr) -> STPair {
     match expression {
-        RAstExpr::VariableUse(name) => codegen_scope_lookup(codegen, name),
+        RAstExpr::Variable(name) => codegen_scope_lookup(codegen, name),
 
         RAstExpr::Unary(RAstUnaryOp::Dereference, value) => {
             let STPair::ST(pointer_name, pointer_type): STPair =
@@ -2695,7 +2703,7 @@ fn codegen_cast(codegen: &mut Codegen, value: &RAstExpr, to_type: &RType) -> STP
 fn codegen_unary_op(codegen: &mut Codegen, operator: &RAstUnaryOp, value: &RAstExpr) -> STPair {
     match operator {
         RAstUnaryOp::Reference(mutable_ref) => match value {
-            RAstExpr::VariableUse(name) => {
+            RAstExpr::Variable(name) => {
                 let STPair::ST(pointer_name, ty): STPair = codegen_scope_lookup(codegen, name);
                 STPair::ST(
                     pointer_name,
