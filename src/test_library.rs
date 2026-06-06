@@ -118,7 +118,7 @@ fn rType_match(a: &RType, b: &RType) -> bool {
         (RType::Char, RType::Char) => true,
         (RType::Unit, RType::Unit) => true,
         (RType::Never, RType::Never) => true,
-        (RType::Custom(a_name), RType::Custom(b_name)) => string_eq(a_name, b_name),
+        (RType::Enum(a_name), RType::Enum(b_name)) => string_eq(a_name, b_name),
         _ => false,
     }
 }
@@ -161,7 +161,7 @@ fn test_string_clone() {
 
 #[test]
 fn test_type_clone() {
-    let custom = RType::Custom(string("MyType"));
+    let custom = RType::Enum(string("MyType"));
     let cloned = rType_clone(&custom);
     assert!(rType_match(&custom, &cloned));
 }
