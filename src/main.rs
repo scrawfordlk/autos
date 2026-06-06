@@ -2507,7 +2507,7 @@ fn codegen_function(codegen: &mut Codegen, function: &RAstFunction) {
         rType_to_llvm_name(codegen, &return_type)
     };
 
-    codegen_emit_function_header(codegen, function_name, &llvm_return_type, parameters);
+    codegen_emit_fn_signature(codegen, function_name, &llvm_return_type, parameters);
 
     codegen_push_scope(codegen);
     let mut i: usize = 0;
@@ -2880,12 +2880,19 @@ fn codegen_call(codegen: &mut Codegen, function: &String, values: &Vec<RAstExpr>
         _ => RType::Unit, // we assume this case never occurs
     };
 
-    let result_name: String = if type_has_value(&return_type) {
+    let mut result_name: String = if type_has_value(&return_type) {
         codegen_emit_call_value(codegen, &function, &return_type, &value_types, &value_names)
     } else {
         codegen_emit_call_void(codegen, &function, &value_types, &value_names);
         string_new()
     };
+
+    if rType_is_enum(&return_type) {
+        let pointer: String = codegen_emit_alloca_value(codegen, &return_type);
+        codegen_emit_store_value(codegen, &return_type, &result_name, &pointer);
+        result_name = pointer;
+    }
+
     STPair::ST(result_name, return_type)
 }
 
@@ -3625,8 +3632,7 @@ fn codegen_emit_call_void(
 /// define <return_type> @<fn_name>(<param_type> %<param_name>, ...) {
 /// entry:
 /// ```
-/// Does not return a value.
-fn codegen_emit_function_header(
+fn codegen_emit_fn_signature(
     codegen: &mut Codegen,
     fn_name: &String,
     return_type_name: &String,
