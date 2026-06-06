@@ -901,6 +901,13 @@ fn rType_is_numeric(ty: &RType) -> bool {
     }
 }
 
+fn rType_is_enum(ty: &RType) -> bool {
+    match ty {
+        RType::Enum(_) => true,
+        _ => false,
+    }
+}
+
 /// Coerce two types into one type.
 /// Assumes that only the following cases can occur:
 /// 1. left == right
@@ -2593,7 +2600,10 @@ fn codegen_block(codegen: &mut Codegen, block: &RAstBlock) -> STPair {
 fn codegen_binding(codegen: &mut Codegen, variable: &RAstVariable, value: &RAstExpr) {
     let RAstVariable::Variable(pattern, binding_type): &RAstVariable = variable;
 
-    let STPair::ST(rvalue_name, _): STPair = codegen_expression(codegen, value);
+    let STPair::ST(mut rvalue_name, _): STPair = codegen_expression(codegen, value);
+    if rType_is_enum(&binding_type) {
+        rvalue_name = codegen_emit_load_value(codegen, &binding_type, &rvalue_name);
+    }
 
     match pattern {
         RAstPattern::Identifier(_, lvalue_name) => {
@@ -2668,8 +2678,12 @@ fn codegen_return(codegen: &mut Codegen, returned: &Option<Box<RAstExpr>>) -> ST
 
 /// Emit LLVM-IR for an assignment expression.
 fn codegen_assignment(codegen: &mut Codegen, left: &RAstExpr, right: &RAstExpr) -> STPair {
-    let STPair::ST(right_name, _): STPair = codegen_expression(codegen, right);
+    let STPair::ST(mut right_name, _): STPair = codegen_expression(codegen, right);
     let STPair::ST(pointer_name, left_type): STPair = codegen_assignment_lvalue(codegen, left);
+
+    if rType_is_enum(&left_type) {
+        right_name = codegen_emit_load_value(codegen, &left_type, &right_name);
+    }
 
     codegen_emit_store_value(codegen, &left_type, &right_name, &pointer_name);
     STPair::ST(right_name, RType::Unit)
