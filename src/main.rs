@@ -2541,8 +2541,7 @@ fn codegen_function(codegen: &mut Codegen, function: &RAstFunction) {
         },
         _ => {
             if rType_eq(&block_type, &RType::Never) {
-                // return dummy value, it is never reached anyway
-                codegen_emit_ret_value(codegen, &return_type, &integer_to_string(0));
+                codegen_emit_line(codegen, string("unreachable"));
             } else {
                 if rType_is_enum(&return_type) {
                     value_name = codegen_emit_load_value(codegen, &return_type, &value_name);
@@ -2661,8 +2660,11 @@ fn codegen_return(codegen: &mut Codegen, returned: &Option<Box<RAstExpr>>) -> ST
     match returned {
         // return <expression>
         Option::Some(expression) => {
-            let STPair::ST(name, ty): STPair =
+            let STPair::ST(mut name, ty): STPair =
                 codegen_expression(codegen, box_deref::<RAstExpr>(expression));
+            if rType_is_enum(&ty) {
+                name = codegen_emit_load_value(codegen, &ty, &name);
+            }
             codegen_emit_ret_value(codegen, &ty, &name);
         },
 
