@@ -854,6 +854,7 @@ fn rAstEnum_size(codegen: &Codegen, RAstEnum::Enum(_, variants): &RAstEnum) -> u
 }
 
 /// Get an identifying discriminator for a given variant of variants.
+/// If the variant is not present, 0 is returned.
 fn variants_get_discriminator(variants: &Vec<RAstVariant>, variant: &String) -> usize {
     let mut tag: usize = 0;
     while tag < vec_len::<RAstVariant>(variants) {
@@ -863,7 +864,7 @@ fn variants_get_discriminator(variants: &Vec<RAstVariant>, variant: &String) -> 
         }
         tag = tag + 1;
     }
-    unreachable()
+    0
 }
 
 /// Convert a Rust type into a LLVM-IR type name.
@@ -1545,7 +1546,9 @@ fn parse_pattern(lexer: &mut RLexer) -> RAstPattern {
 }
 
 fn parse_path_values(lexer: &mut RLexer, path: Vec<String>) -> RAstExpr {
-    expect_token(lexer, &RToken::LParen);
+    if not(rLexer_try_consume(lexer, &RToken::LParen)) {
+        return RAstExpr::Path(path, vec_new::<RAstExpr>()); // enum without fields
+    }
 
     let mut values: Vec<RAstExpr> = vec_new::<RAstExpr>();
     if not(rLexer_current_token_eq(lexer, &RToken::RParen)) {
