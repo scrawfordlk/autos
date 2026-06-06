@@ -885,10 +885,10 @@ fn rType_to_llvm_name(codegen: &Codegen, ty: &RType) -> String {
     }
 }
 
-/// Given a size, return an LLVM array type (`[<size> x i64]`.
+/// Given a size, return an LLVM array type (`[<size / 8> x i64]`.
 fn size_to_llvm_array(size: usize) -> String {
     let mut array: String = string("[");
-    string_push_string(&mut array, &integer_to_string(size));
+    string_push_string(&mut array, &integer_to_string(size / 8));
     string_push_str(&mut array, " x i64]");
     array
 }
