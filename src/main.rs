@@ -1258,7 +1258,7 @@ fn parse_arithmetic(lexer: &mut RLexer) -> RAstExpr {
         let operator: RAstArithmeticOp = match rLexer_current_token(lexer) {
             RToken::Plus => RAstArithmeticOp::Add,
             RToken::Minus => RAstArithmeticOp::Sub,
-            _ => panic("unreachable"),
+            _ => unreachable(),
         };
         rLexer_next_token(lexer);
 
@@ -1287,7 +1287,7 @@ fn parse_term(lexer: &mut RLexer) -> RAstExpr {
             RToken::Star => RAstArithmeticOp::Mul,
             RToken::Slash => RAstArithmeticOp::Div,
             RToken::Remainder => RAstArithmeticOp::Rem,
-            _ => panic("unreachable"),
+            _ => unreachable(),
         };
         rLexer_next_token(lexer);
 
@@ -2703,7 +2703,7 @@ fn codegen_cast(codegen: &mut Codegen, value: &RAstExpr, to_type: &RType) -> STP
             STPair::ST(name, to_type)
         },
         CastOperation::None => STPair::ST(from_name, to_type),
-        CastOperation::Invalid => STPair::ST(from_name, to_type), // should be unreachable
+        CastOperation::Invalid => STPair::ST(from_name, to_type), // assume this case never occurs
     }
 }
 
@@ -2734,7 +2734,7 @@ fn codegen_unary_op(codegen: &mut Codegen, operator: &RAstUnaryOp, value: &RAstE
             let inner_type: RType = match ty {
                 RType::Reference(pointed, _) => rType_clone(box_deref::<RType>(&pointed)),
                 RType::RawPointerMut(pointed) => rType_clone(box_deref::<RType>(&pointed)),
-                _ => RType::Unit, // should be unreachable
+                _ => RType::Unit, // assume this case never occurs
             };
             let name: String = codegen_emit_load_value(codegen, &inner_type, &name);
             STPair::ST(name, inner_type)
@@ -5472,6 +5472,11 @@ fn panic(message: &str) -> ! {
     eprint_str(message);
     eprint_str("\n");
     exit_process(1);
+}
+
+/// Used to indicate unreachable code.
+fn unreachable() -> ! {
+    panic("unreachable code was reached")
 }
 
 /// Report an error message with source location and exit.
