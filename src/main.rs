@@ -940,7 +940,7 @@ fn type_matches(left: &RType, right: &RType) -> bool {
 
 /// Return true if the type has a value.
 /// This is true for all types, other than Unit and Never.
-fn type_has_value(ty: &RType) -> bool {
+fn rType_has_value(ty: &RType) -> bool {
     not(type_matches(ty, &RType::Unit))
 }
 
@@ -2610,7 +2610,7 @@ fn codegen_binding(codegen: &mut Codegen, variable: &RAstVariable, value: &RAstE
 
     match pattern {
         RAstPattern::Identifier(_, lvalue_name) => {
-            if type_has_value(binding_type) {
+            if rType_has_value(binding_type) {
                 let lvalue_pointer: String = codegen_emit_alloca_value(codegen, binding_type);
                 codegen_emit_store_value(codegen, binding_type, &rvalue_name, &lvalue_pointer);
 
@@ -2816,12 +2816,12 @@ fn codegen_literal(literal: &RLiteral) -> STPair {
 /// Emit LLVM-IR for a variable-use expression.
 fn codegen_variable_use(codegen: &mut Codegen, variable_name: &String) -> STPair {
     let STPair::ST(pointer_name, ty): STPair = codegen_scope_lookup(codegen, variable_name);
-    if type_has_value(&ty) {
+    if and(rType_has_value(&ty), not(rType_is_enum(&ty))) {
         let value_name: String = codegen_emit_load_value(codegen, &ty, &pointer_name);
         STPair::ST(value_name, ty)
     } else {
         // Unit and Never have no value, so don't load
-        STPair::ST(string_new(), ty)
+        STPair::ST(pointer_name, ty)
     }
 }
 
@@ -2880,7 +2880,7 @@ fn codegen_call(codegen: &mut Codegen, function: &String, values: &Vec<RAstExpr>
         _ => RType::Unit, // we assume this case never occurs
     };
 
-    let mut result_name: String = if type_has_value(&return_type) {
+    let mut result_name: String = if rType_has_value(&return_type) {
         codegen_emit_call_value(codegen, &function, &return_type, &value_types, &value_names)
     } else {
         codegen_emit_call_void(codegen, &function, &value_types, &value_names);
@@ -2918,7 +2918,7 @@ fn codegen_if(codegen: &mut Codegen, if_expression: &RAstIf) -> STPair {
 
     let STPair::ST(then_value, mut if_type): STPair = codegen_block(codegen, then_block);
 
-    if type_has_value(&if_type) {
+    if rType_has_value(&if_type) {
         codegen_emit_store_value(codegen, &if_type, &then_value, &result_pointer);
     }
 
@@ -2935,7 +2935,7 @@ fn codegen_if(codegen: &mut Codegen, if_expression: &RAstIf) -> STPair {
                 RAstElse::Block(block) => codegen_block(codegen, block),
             };
 
-            if type_has_value(&else_type) {
+            if rType_has_value(&else_type) {
                 codegen_emit_store_value(codegen, &else_type, &else_value, &result_pointer);
             }
 
@@ -2951,7 +2951,7 @@ fn codegen_if(codegen: &mut Codegen, if_expression: &RAstIf) -> STPair {
     codegen_emit_label(codegen, &end_label);
 
     // load and return the value if there is one
-    let result: String = if type_has_value(&if_type) {
+    let result: String = if rType_has_value(&if_type) {
         // now we know the type and thus the size to allocate on the stack
         codegen_fixup_alloca(codegen, alloca_idx, &if_type);
 
@@ -3032,7 +3032,7 @@ fn codegen_match(codegen: &mut Codegen, value: &RAstExpr, arms: &Vec<RAstArm>) -
     // start of the merge block
     codegen_emit_label(codegen, &end_label);
 
-    let result: String = if type_has_value(&return_type) {
+    let result: String = if rType_has_value(&return_type) {
         // now we know the type and thus the size to allocate on the stack
         codegen_fixup_alloca(codegen, alloca_idx, &return_type);
 
@@ -3116,7 +3116,7 @@ fn codegen_arm(
     }
 
     let STPair::ST(arm_value, arm_type) = codegen_expression(codegen, arm_expr);
-    if type_has_value(&arm_type) {
+    if rType_has_value(&arm_type) {
         codegen_emit_store_value(codegen, &arm_type, &arm_value, &result_pointer);
     }
 
