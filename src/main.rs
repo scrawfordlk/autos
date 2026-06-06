@@ -706,7 +706,7 @@ enum RType {
     Char,
     Unit,
     Never,
-    Custom(String),
+    Enum(String),
     /// inner, mutable
     Reference(Box<RType>, bool),
     /// `*mut T`
@@ -805,7 +805,7 @@ fn rAstLiteral_type(literal: &RLiteral) -> RType {
         RLiteral::Char(_) => RType::Char,
         RLiteral::Bool(_) => RType::Bool,
         RLiteral::String(_) => {
-            RType::Reference(box_new::<RType>(RType::Custom(string("str"))), false)
+            RType::Reference(box_new::<RType>(RType::Enum(string("str"))), false)
         },
     }
 }
@@ -820,17 +820,41 @@ fn rAstPatternLiteral_value(literal: &RAstPatternLiteral) -> usize {
 }
 
 /// Return the size of the given type in bytes.
-fn rType_size(ty: &RType) -> usize {
+fn rType_size(codegen: &Codegen, ty: &RType) -> usize {
     match ty {
         RType::U8 | RType::Char | RType::Bool => 1,
         RType::Usize | RType::Reference(_, _) | RType::RawPointerMut(_) => size_of::<usize>(),
         RType::Unit | RType::Never => 0,
-        RType::Custom(_) => size_of::<usize>(), // enums are mostly treated as pointers
+        RType::Enum(name) => match codegen_search_global(codegen, name) {
+            Option::Some(Item::Enum(rast_enum)) => rAstEnum_size(codegen, rast_enum),
+            _ => 0,
+        },
     }
 }
 
-/// Convert Rust AST type into a simple LLVM-IR type name.
-fn rType_to_llvm_name(ty: &RType) -> String {
+/// Return the size of an enum in bytes.
+fn rAstEnum_size(codegen: &Codegen, RAstEnum::Enum(_, variants): &RAstEnum) -> usize {
+    let mut max_size: usize = 0;
+    let mut i: usize = 0;
+    while i < vec_len::<RAstVariant>(variants) {
+        let RAstVariant::Variant(_, field_types): &RAstVariant = vec_at::<RAstVariant>(variants, i);
+
+        let mut j: usize = 0;
+        let mut size: usize = 0;
+        while j < vec_len::<RType>(field_types) {
+            let ty: &RType = vec_at::<RType>(field_types, j);
+            size = size + rType_size(codegen, ty);
+            j = j + 1;
+        }
+
+        max_size = max(max_size, size);
+        i = i + 1;
+    }
+    8 + max_size // 8 bytes for the discriminant
+}
+
+/// Convert a Rust type into a LLVM-IR type name.
+fn rType_to_llvm_name(codegen: &Codegen, ty: &RType) -> String {
     match ty {
         RType::U8 => string("i8"),
         RType::Usize => string("i64"), // assume 64-bit for now
@@ -840,7 +864,11 @@ fn rType_to_llvm_name(ty: &RType) -> String {
         RType::Never => string("void"),
         RType::Reference(_, _) => string("ptr"),
         RType::RawPointerMut(_) => string("ptr"),
-        RType::Custom(_) => string("ptr"), // enums are mostly treated as pointers
+        enum_type => {
+            let mut size: usize = rType_size(codegen, enum_type);
+            size = size + (8 - (size % 8));
+            size_to_llvm_array(size)
+        },
     }
 }
 
@@ -1168,7 +1196,7 @@ fn parse_type(lexer: &mut RLexer) -> RType {
             rLexer_next_token(lexer);
 
             if rLexer_try_consume(lexer, &RToken::Str) {
-                return RType::Custom(string("&str"));
+                return RType::Enum(string("&str"));
             }
 
             let mutable: bool = rLexer_try_consume(lexer, &RToken::Mut);
@@ -1183,7 +1211,7 @@ fn parse_type(lexer: &mut RLexer) -> RType {
         },
         RToken::Identifier(_) => {
             let enum_name: String = expect_identifier(lexer);
-            RType::Custom(enum_name)
+            RType::Enum(enum_name)
         },
         token => {
             let mut message: String = string("expected a type, but got: ");
@@ -2196,7 +2224,7 @@ fn semantic_check_enum(
     instance: &Vec<String>,
     values: &Vec<RAstExpr>,
 ) -> RType {
-    RType::Custom(string_clone(vec_at::<String>(instance, 0)))
+    RType::Enum(string_clone(vec_at::<String>(instance, 0)))
 }
 
 fn semantic_check_if(
@@ -2307,7 +2335,7 @@ fn semantic_check_pattern(semantic: &mut Semantic, pattern: &RAstPattern, expres
             return; // type agnostic
         },
         RAstPattern::Wildcard => return, // type agnostic
-        RAstPattern::EnumVariant(enum_name, _, _) => RType::Custom(string_clone(enum_name)),
+        RAstPattern::EnumVariant(enum_name, _, _) => RType::Enum(string_clone(enum_name)),
     };
 
     semantic_expect_type_match(&pattern_type, &expression_type);
@@ -2450,10 +2478,10 @@ fn codegen_function(codegen: &mut Codegen, function: &RAstFunction) {
         if rType_eq(&return_type, &RType::Unit) {
             string("i64")
         } else {
-            rType_to_llvm_name(&return_type)
+            rType_to_llvm_name(codegen, &return_type)
         }
     } else {
-        rType_to_llvm_name(&return_type)
+        rType_to_llvm_name(codegen, &return_type)
     };
 
     codegen_emit_function_header(codegen, function_name, &llvm_return_type, parameters);
@@ -2750,7 +2778,7 @@ fn codegen_literal(literal: &RLiteral) -> STPair {
         RLiteral::Bool(value) => STPair::ST(integer_to_string(*value as usize), RType::Bool),
         RLiteral::String(_) => STPair::ST(
             string_new(),
-            RType::Reference(box_new::<RType>(RType::Custom(string("str"))), false),
+            RType::Reference(box_new::<RType>(RType::Enum(string("str"))), false),
         ),
     }
 }
@@ -3112,7 +3140,7 @@ fn codegen_emit_binary(
     string_push_str(&mut line, " = ");
     string_push_str(&mut line, op_name);
     string_push(&mut line, ' ');
-    string_push_string(&mut line, &rType_to_llvm_name(ty));
+    string_push_string(&mut line, &rType_to_llvm_name(codegen, ty));
     string_push(&mut line, ' ');
     string_push_string(&mut line, lhs);
     string_push(&mut line, ',');
@@ -3150,7 +3178,7 @@ fn codegen_emit_icmp(
     string_push_str(&mut line, " = icmp ");
     string_push_str(&mut line, op_name);
     string_push(&mut line, ' ');
-    string_push_string(&mut line, &rType_to_llvm_name(ty));
+    string_push_string(&mut line, &rType_to_llvm_name(codegen, ty));
     string_push(&mut line, ' ');
     string_push_string(&mut line, lhs);
     string_push(&mut line, ',');
@@ -3168,7 +3196,7 @@ fn codegen_emit_ret_value(codegen: &mut Codegen, ty: &RType, value: &String) {
     let mut line: String = string_new();
     string_push_str(&mut line, "  ");
     string_push_str(&mut line, "ret ");
-    string_push_string(&mut line, &rType_to_llvm_name(ty));
+    string_push_string(&mut line, &rType_to_llvm_name(codegen, ty));
     string_push(&mut line, ' ');
     string_push_string(&mut line, value);
 
@@ -3249,11 +3277,11 @@ fn codegen_emit_cast(
     string_push_str(&mut line, " = ");
     string_push_str(&mut line, op);
     string_push(&mut line, ' ');
-    string_push_string(&mut line, &rType_to_llvm_name(from_type));
+    string_push_string(&mut line, &rType_to_llvm_name(codegen, from_type));
     string_push(&mut line, ' ');
     string_push_string(&mut line, value);
     string_push_str(&mut line, " to ");
-    string_push_string(&mut line, &rType_to_llvm_name(to_type));
+    string_push_string(&mut line, &rType_to_llvm_name(codegen, to_type));
     string_push(&mut line, '\n');
 
     codegen_emit_line(codegen, line);
@@ -3340,7 +3368,8 @@ fn codegen_emit_alloca(codegen: &mut Codegen, object: &String) -> String {
 /// ```
 /// Returns `%<name>`.
 fn codegen_emit_alloca_value(codegen: &mut Codegen, ty: &RType) -> String {
-    codegen_emit_alloca(codegen, &rType_to_llvm_name(ty))
+    let llvm_type: String = rType_to_llvm_name(codegen, ty);
+    codegen_emit_alloca(codegen, &llvm_type)
 }
 
 /// Emit an allocate instruction for contiguous memory.
@@ -3374,7 +3403,8 @@ fn codegen_emit_store(codegen: &mut Codegen, object: &String, value: &String, po
 /// store <ty> <value>, ptr <pointer>
 /// ```
 fn codegen_emit_store_value(codegen: &mut Codegen, ty: &RType, value: &String, pointer: &String) {
-    codegen_emit_store(codegen, &rType_to_llvm_name(ty), value, pointer);
+    let llvm_type: String = rType_to_llvm_name(codegen, ty);
+    codegen_emit_store(codegen, &llvm_type, value, pointer);
 }
 
 /// Emit a store instruction for contiguous memory.
@@ -3411,7 +3441,8 @@ fn codegen_emit_load(codegen: &mut Codegen, object: &String, pointer: &String) -
 /// ```
 /// Returns `%<name>`.
 fn codegen_emit_load_value(codegen: &mut Codegen, ty: &RType, pointer: &String) -> String {
-    codegen_emit_load(codegen, &rType_to_llvm_name(ty), pointer)
+    let llvm_type: String = rType_to_llvm_name(codegen, ty);
+    codegen_emit_load(codegen, &llvm_type, pointer)
 }
 
 /// Emit a load instruction for contiguous memory.
@@ -3434,7 +3465,7 @@ fn codegen_emit_load_array(codegen: &mut Codegen, size: usize, pointer: &String)
 fn emit_pointer_add(codegen: &mut Codegen, pointer: &String, ty: &RType, index: usize) -> String {
     let ptr_type: RType = RType::RawPointerMut(box_new(RType::Unit)); // dummy type to use `ptr` type
     let addition: RAstArithmeticOp = RAstArithmeticOp::Add;
-    let offset: String = integer_to_string(index * rType_size(ty));
+    let offset: String = integer_to_string(index * rType_size(codegen, ty));
 
     let t0: String = codegen_emit_ptrtoint(codegen, &ptr_type, &RType::Usize, pointer);
     let t1: String = codegen_emit_binary(codegen, &addition, &RType::Usize, &t0, &offset);
@@ -3453,7 +3484,7 @@ fn emit_pointer_add(codegen: &mut Codegen, pointer: &String, ty: &RType, index: 
 fn emit_enum_copy(codegen: &mut Codegen, enum_ptr: &String, size: usize) -> String {
     let name: String = codegen_emit_alloca_array(codegen, size);
     let copy: String = codegen_emit_load_array(codegen, size, enum_ptr);
-    codegen_emit_store_value(codegen, &RType::Unit, &copy, &name); // TODO: [2 x i64]
+    codegen_emit_store_array(codegen, size, &copy, &name);
     name
 }
 
@@ -3475,7 +3506,7 @@ fn codegen_emit_call_value(
     string_push_str(&mut line, "  ");
     string_push_string(&mut line, &name);
     string_push_str(&mut line, " = call ");
-    string_push_string(&mut line, &rType_to_llvm_name(return_type));
+    string_push_string(&mut line, &rType_to_llvm_name(codegen, return_type));
     string_push_str(&mut line, " @");
     string_push_string(&mut line, function_name);
     string_push(&mut line, '(');
@@ -3485,7 +3516,7 @@ fn codegen_emit_call_value(
     while i < len {
         let argument_type: &RType = vec_at::<RType>(argument_types, i);
         let argument_value: &String = vec_at::<String>(argument_values, i);
-        string_push_string(&mut line, &rType_to_llvm_name(argument_type));
+        string_push_string(&mut line, &rType_to_llvm_name(codegen, argument_type));
         string_push(&mut line, ' ');
         string_push_string(&mut line, argument_value);
 
@@ -3520,7 +3551,7 @@ fn codegen_emit_call_void(
     while i < len {
         let argument_type: &RType = vec_at::<RType>(argument_types, i);
         let argument_value: &String = vec_at::<String>(argument_values, i);
-        string_push_string(&mut line, &rType_to_llvm_name(argument_type));
+        string_push_string(&mut line, &rType_to_llvm_name(codegen, argument_type));
         string_push(&mut line, ' ');
         string_push_string(&mut line, argument_value);
 
@@ -3565,7 +3596,7 @@ fn codegen_emit_function_header(
             _ => string("arg"),
         };
 
-        string_push_string(&mut line, &rType_to_llvm_name(parameter_type));
+        string_push_string(&mut line, &rType_to_llvm_name(codegen, parameter_type));
         string_push_str(&mut line, " %");
         string_push_string(&mut line, &parameter_name);
 
@@ -3592,7 +3623,7 @@ fn codegen_emit_declare(
 ) {
     let mut line: String = string_new();
     string_push_str(&mut line, "declare ");
-    string_push_string(&mut line, &rType_to_llvm_name(return_type));
+    string_push_string(&mut line, &rType_to_llvm_name(codegen, return_type));
     string_push_str(&mut line, " @");
     string_push_string(&mut line, fn_name);
     string_push_str(&mut line, "(");
@@ -3603,7 +3634,7 @@ fn codegen_emit_declare(
         let RAstVariable::Variable(_, parameter_type): &RAstVariable =
             vec_at::<RAstVariable>(parameters, i);
 
-        string_push_string(&mut line, &rType_to_llvm_name(parameter_type));
+        string_push_string(&mut line, &rType_to_llvm_name(codegen, parameter_type));
 
         i = i + 1;
         if i < len {
@@ -3638,7 +3669,7 @@ fn codegen_fixup_alloca(codegen: &mut Codegen, index: usize, new_type: &RType) {
         i = i + 1;
     }
 
-    string_push_string(&mut new_alloca, &rType_to_llvm_name(new_type));
+    string_push_string(&mut new_alloca, &rType_to_llvm_name(codegen, new_type));
 
     codegen_fixup(codegen, index, new_alloca);
 }
@@ -5022,8 +5053,8 @@ fn emu_set_exit_code(Emu::Emu(_, _, _, _, _, exit_code): &mut Emu, code: usize) 
     *exit_code = Option::Some(code);
 }
 
-/// Align the given address or size to a double-word boundary.
-fn emu_align_to_double(value: usize) -> usize {
+/// Align the given value to a double-word boundary.
+fn align_to_double(value: usize) -> usize {
     let align: usize = size_of::<usize>();
     if value % align == 0 {
         value
@@ -5047,7 +5078,7 @@ fn emu_allocate_stack(emulator: &mut Emu, size: usize) -> Option<usize> {
 /// Allocate `size` bytes on the heap and return the address.
 fn emu_allocate_heap(emulator: &mut Emu, size: usize) -> Option<usize> {
     let size: usize = max(size, size_of::<usize>());
-    let aligned_size: usize = emu_align_to_double(size);
+    let aligned_size: usize = align_to_double(size);
     let heap_pointer: usize = emu_get_heap_pointer(emulator);
     let new_heap_pointer: usize = heap_pointer + aligned_size;
     let stack_pointer: usize = emu_get_sp(emulator);
@@ -5068,7 +5099,7 @@ fn emu_load_globals(emulator: &mut Emu, ast: &LAst) {
     while i < vec_len::<LGlobal>(lAst_globals(ast)) {
         let LGlobal::String(name, value): &LGlobal = vec_at::<LGlobal>(lAst_globals(ast), i);
 
-        let alloc_size: usize = emu_align_to_double(string_len(value));
+        let alloc_size: usize = align_to_double(string_len(value));
         let address: usize = data_pointer;
 
         let mut j: usize = 0;
@@ -6306,8 +6337,8 @@ fn rType_eq(a: &RType, b: &RType) -> bool {
             RType::Never => true,
             _ => false,
         },
-        RType::Custom(left) => match b {
-            RType::Custom(right) => string_eq(left, right),
+        RType::Enum(left) => match b {
+            RType::Enum(right) => string_eq(left, right),
             _ => false,
         },
         RType::Reference(left, left_mut) => match b {
@@ -6622,7 +6653,7 @@ fn rType_clone(t: &RType) -> RType {
         RType::Char => RType::Char,
         RType::Unit => RType::Unit,
         RType::Never => RType::Never,
-        RType::Custom(name) => RType::Custom(string_clone(name)),
+        RType::Enum(name) => RType::Enum(string_clone(name)),
         RType::Reference(inner, mutable) => RType::Reference(
             box_new::<RType>(rType_clone(box_deref::<RType>(inner))),
             *mutable,
