@@ -2780,23 +2780,28 @@ fn codegen_unary_op(codegen: &mut Codegen, operator: &RAstUnaryOp, value: &RAstE
             },
             _ => {
                 let STPair::ST(name, ty): STPair = codegen_expression(codegen, value);
-                let reference: String = codegen_emit_alloca_value(codegen, &ty);
-                codegen_emit_store_value(codegen, &ty, &name, &reference);
-                STPair::ST(
-                    reference,
-                    RType::Reference(box_new::<RType>(ty), *mutable_ref),
-                )
+                let is_enum: bool = rType_is_enum(&ty);
+                let new_type: RType = RType::Reference(box_new::<RType>(ty), *mutable_ref);
+                if is_enum {
+                    STPair::ST(name, new_type) // enum is already a pointer
+                } else {
+                    let reference: String = codegen_emit_alloca_value(codegen, &new_type);
+                    codegen_emit_store_value(codegen, &new_type, &name, &reference);
+                    STPair::ST(reference, new_type)
+                }
             },
         },
 
         RAstUnaryOp::Dereference => {
-            let STPair::ST(name, ty): STPair = codegen_expression(codegen, value);
+            let STPair::ST(mut name, ty): STPair = codegen_expression(codegen, value);
             let inner_type: RType = match ty {
                 RType::Reference(pointed, _) => rType_clone(box_deref::<RType>(&pointed)),
                 RType::RawPointerMut(pointed) => rType_clone(box_deref::<RType>(&pointed)),
                 _ => RType::Unit, // assume this case never occurs
             };
-            let name: String = codegen_emit_load_value(codegen, &inner_type, &name);
+            if not(rType_is_enum(&inner_type)) {
+                name = codegen_emit_load_value(codegen, &inner_type, &name);
+            }
             STPair::ST(name, inner_type)
         },
     }
