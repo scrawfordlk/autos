@@ -11,12 +11,15 @@ enum Colour {
 fn main() {
     let colour = my_function(Colour::Green('a'));
 
-    match colour {
+    match &colour {
         Colour::Red(val) => println!("It's red"),
         // copy nothing
         Colour::Blue => println!("It's blue"),
         x => println!("It's green"),
     }
+
+    let p = unsafe { malloc(size_of::<Colour>()) as *mut Colour };
+    unsafe { *p = colour };
 
     // match and let code should be very similar, so that I can share code
     // something like expr always is ptr, but only if copy is needed (variable), then load & store
@@ -30,4 +33,8 @@ fn my_function(colour: Colour) -> Colour {
     };
 
     Colour::Green('c')
+}
+
+unsafe extern "C" {
+    fn malloc(size: usize) -> *mut u8;
 }
