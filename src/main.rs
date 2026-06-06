@@ -2497,7 +2497,6 @@ fn codegen_function(codegen: &mut Codegen, function: &RAstFunction) {
 
     let llvm_return_type: String = if string_eq(function_name, &string("main")) {
         codegen_mark_as_main(codegen, true);
-
         if rType_eq(&return_type, &RType::Unit) {
             string("i64")
         } else {
@@ -2506,7 +2505,6 @@ fn codegen_function(codegen: &mut Codegen, function: &RAstFunction) {
     } else {
         rType_to_llvm_name(codegen, &return_type)
     };
-
     codegen_emit_fn_signature(codegen, function_name, &llvm_return_type, parameters);
 
     codegen_push_scope(codegen);
@@ -2528,11 +2526,10 @@ fn codegen_function(codegen: &mut Codegen, function: &RAstFunction) {
             },
             _ => {},
         }
-
         i = i + 1;
     }
 
-    let STPair::ST(value_name, block_type): STPair = codegen_block(codegen, body);
+    let STPair::ST(mut value_name, block_type): STPair = codegen_block(codegen, body);
     match &return_type {
         RType::Unit | RType::Never => {
             if codegen_is_main(codegen) {
@@ -2547,6 +2544,9 @@ fn codegen_function(codegen: &mut Codegen, function: &RAstFunction) {
                 // return dummy value, it is never reached anyway
                 codegen_emit_ret_value(codegen, &return_type, &integer_to_string(0));
             } else {
+                if rType_is_enum(&return_type) {
+                    value_name = codegen_emit_load_value(codegen, &return_type, &value_name);
+                }
                 codegen_emit_ret_value(codegen, &return_type, &value_name);
             }
         },
