@@ -2519,7 +2519,7 @@ fn codegen_function(codegen: &mut Codegen, function: &RAstFunction) {
                 let param_ptr: String = codegen_emit_alloca_value(codegen, param_type);
                 let mut param_register: String = string("%");
                 string_push_string(&mut param_register, name);
-                codegen_emit_store_value(codegen, param_type, &param_register, &param_ptr);
+                codegen_emit_store(codegen, param_type, &param_register, &param_ptr);
 
                 let name: String = string_clone(name);
                 codegen_scope_insert(codegen, name, rType_clone(param_type), param_ptr);
@@ -2544,7 +2544,7 @@ fn codegen_function(codegen: &mut Codegen, function: &RAstFunction) {
                 codegen_emit_line(codegen, string("unreachable"));
             } else {
                 if rType_is_enum(&return_type) {
-                    value_name = codegen_emit_load_value(codegen, &return_type, &value_name);
+                    value_name = codegen_emit_load(codegen, &return_type, &value_name);
                 }
                 codegen_emit_ret_value(codegen, &return_type, &value_name);
             }
@@ -2604,14 +2604,14 @@ fn codegen_binding(codegen: &mut Codegen, variable: &RAstVariable, value: &RAstE
 
     let STPair::ST(mut rvalue_name, _): STPair = codegen_expression(codegen, value);
     if rType_is_enum(&binding_type) {
-        rvalue_name = codegen_emit_load_value(codegen, &binding_type, &rvalue_name);
+        rvalue_name = codegen_emit_load(codegen, &binding_type, &rvalue_name);
     }
 
     match pattern {
         RAstPattern::Identifier(_, lvalue_name) => {
             if rType_has_value(binding_type) {
                 let lvalue_pointer: String = codegen_emit_alloca_value(codegen, binding_type);
-                codegen_emit_store_value(codegen, binding_type, &rvalue_name, &lvalue_pointer);
+                codegen_emit_store(codegen, binding_type, &rvalue_name, &lvalue_pointer);
 
                 let name: String = string_clone(lvalue_name);
                 codegen_scope_insert(codegen, name, rType_clone(binding_type), lvalue_pointer);
@@ -2663,7 +2663,7 @@ fn codegen_return(codegen: &mut Codegen, returned: &Option<Box<RAstExpr>>) -> ST
             let STPair::ST(mut name, ty): STPair =
                 codegen_expression(codegen, box_deref::<RAstExpr>(expression));
             if rType_is_enum(&ty) {
-                name = codegen_emit_load_value(codegen, &ty, &name);
+                name = codegen_emit_load(codegen, &ty, &name);
             }
             codegen_emit_ret_value(codegen, &ty, &name);
         },
@@ -2687,10 +2687,10 @@ fn codegen_assignment(codegen: &mut Codegen, left: &RAstExpr, right: &RAstExpr) 
     let STPair::ST(pointer_name, left_type): STPair = codegen_assignment_lvalue(codegen, left);
 
     if rType_is_enum(&left_type) {
-        right_name = codegen_emit_load_value(codegen, &left_type, &right_name);
+        right_name = codegen_emit_load(codegen, &left_type, &right_name);
     }
 
-    codegen_emit_store_value(codegen, &left_type, &right_name, &pointer_name);
+    codegen_emit_store(codegen, &left_type, &right_name, &pointer_name);
     STPair::ST(right_name, RType::Unit)
 }
 
@@ -2786,7 +2786,7 @@ fn codegen_unary_op(codegen: &mut Codegen, operator: &RAstUnaryOp, value: &RAstE
                     STPair::ST(name, new_type) // enum is already a pointer
                 } else {
                     let reference: String = codegen_emit_alloca_value(codegen, &new_type);
-                    codegen_emit_store_value(codegen, &new_type, &name, &reference);
+                    codegen_emit_store(codegen, &new_type, &name, &reference);
                     STPair::ST(reference, new_type)
                 }
             },
@@ -2800,7 +2800,7 @@ fn codegen_unary_op(codegen: &mut Codegen, operator: &RAstUnaryOp, value: &RAstE
                 _ => RType::Unit, // assume this case never occurs
             };
             if not(rType_is_enum(&inner_type)) {
-                name = codegen_emit_load_value(codegen, &inner_type, &name);
+                name = codegen_emit_load(codegen, &inner_type, &name);
             }
             STPair::ST(name, inner_type)
         },
@@ -2824,7 +2824,7 @@ fn codegen_literal(literal: &RLiteral) -> STPair {
 fn codegen_variable_use(codegen: &mut Codegen, variable_name: &String) -> STPair {
     let STPair::ST(pointer_name, ty): STPair = codegen_scope_lookup(codegen, variable_name);
     if and(rType_has_value(&ty), not(rType_is_enum(&ty))) {
-        let value_name: String = codegen_emit_load_value(codegen, &ty, &pointer_name);
+        let value_name: String = codegen_emit_load(codegen, &ty, &pointer_name);
         STPair::ST(value_name, ty)
     } else {
         // Unit and Never have no value, so don't load
@@ -2842,7 +2842,7 @@ fn codegen_path(codegen: &mut Codegen, path: &Vec<String>, values: &Vec<RAstExpr
 
             let enum_type: RType = RType::Enum(string_clone(enum_name));
             let enum_ptr: String = codegen_emit_alloca_value(codegen, &enum_type);
-            codegen_emit_store_value(codegen, &RType::Usize, &tag, &enum_ptr);
+            codegen_emit_store(codegen, &RType::Usize, &tag, &enum_ptr);
 
             let mut offset_ptr: String = string_clone(&enum_ptr);
             let mut i: usize = 0;
@@ -2850,10 +2850,10 @@ fn codegen_path(codegen: &mut Codegen, path: &Vec<String>, values: &Vec<RAstExpr
                 let expression: &RAstExpr = vec_at::<RAstExpr>(values, i);
                 let STPair::ST(mut register, ty): STPair = codegen_expression(codegen, expression);
                 if rType_is_enum(&ty) {
-                    register = codegen_emit_load_value(codegen, &ty, &register);
+                    register = codegen_emit_load(codegen, &ty, &register);
                 }
                 offset_ptr = emit_pointer_add(codegen, &offset_ptr, &ty, 1);
-                codegen_emit_store_value(codegen, &ty, &register, &offset_ptr);
+                codegen_emit_store(codegen, &ty, &register, &offset_ptr);
                 i = i + 1;
             }
             STPair::ST(enum_ptr, enum_type)
@@ -2874,7 +2874,7 @@ fn codegen_call(codegen: &mut Codegen, function: &String, values: &Vec<RAstExpr>
 
         let STPair::ST(mut value_name, value_type): STPair = codegen_expression(codegen, value);
         if rType_is_enum(&value_type) {
-            value_name = codegen_emit_load_value(codegen, &value_type, &value_name);
+            value_name = codegen_emit_load(codegen, &value_type, &value_name);
         }
 
         vec_push::<RType>(&mut value_types, value_type);
@@ -2896,7 +2896,7 @@ fn codegen_call(codegen: &mut Codegen, function: &String, values: &Vec<RAstExpr>
 
     if rType_is_enum(&return_type) {
         let pointer: String = codegen_emit_alloca_value(codegen, &return_type);
-        codegen_emit_store_value(codegen, &return_type, &result_name, &pointer);
+        codegen_emit_store(codegen, &return_type, &result_name, &pointer);
         result_name = pointer;
     }
 
@@ -2926,7 +2926,7 @@ fn codegen_if(codegen: &mut Codegen, if_expression: &RAstIf) -> STPair {
     let STPair::ST(then_value, mut if_type): STPair = codegen_block(codegen, then_block);
 
     if rType_has_value(&if_type) {
-        codegen_emit_store_value(codegen, &if_type, &then_value, &result_pointer);
+        codegen_emit_store(codegen, &if_type, &then_value, &result_pointer);
     }
 
     // end of then block, so jump to the end
@@ -2943,7 +2943,7 @@ fn codegen_if(codegen: &mut Codegen, if_expression: &RAstIf) -> STPair {
             };
 
             if rType_has_value(&else_type) {
-                codegen_emit_store_value(codegen, &else_type, &else_value, &result_pointer);
+                codegen_emit_store(codegen, &else_type, &else_value, &result_pointer);
             }
 
             if_type = rType_coerce(if_type, else_type);
@@ -2962,7 +2962,7 @@ fn codegen_if(codegen: &mut Codegen, if_expression: &RAstIf) -> STPair {
         // now we know the type and thus the size to allocate on the stack
         codegen_fixup_alloca(codegen, alloca_idx, &if_type);
 
-        codegen_emit_load_value(codegen, &if_type, &result_pointer)
+        codegen_emit_load(codegen, &if_type, &result_pointer)
     } else {
         codegen_fixup(codegen, alloca_idx, string_new()); // alloca was not needed
         string_new() // no value is returned, so some placeholder
@@ -3043,7 +3043,7 @@ fn codegen_match(codegen: &mut Codegen, value: &RAstExpr, arms: &Vec<RAstArm>) -
         // now we know the type and thus the size to allocate on the stack
         codegen_fixup_alloca(codegen, alloca_idx, &return_type);
 
-        codegen_emit_load_value(codegen, &return_type, &result_pointer)
+        codegen_emit_load(codegen, &return_type, &result_pointer)
     } else {
         codegen_fixup(codegen, alloca_idx, string_new()); // alloca was not needed
         string_new() // no value is returned, so some placeholder
@@ -3106,14 +3106,14 @@ fn codegen_arm(
             },
             RAstPattern::Identifier(_, identifier) => {
                 let pointer_name: String = codegen_emit_alloca_value(codegen, &expr_type);
-                codegen_emit_store_value(codegen, &expr_type, &expr_name, &pointer_name);
+                codegen_emit_store(codegen, &expr_type, &expr_name, &pointer_name);
 
                 let variable_name: String = string_clone(identifier);
                 let variable_type: RType = rType_clone(&expr_type);
                 codegen_scope_insert(codegen, variable_name, variable_type, pointer_name);
             },
+            RAstPattern::EnumVariant(name, variant, inner_patterns) => {},
             RAstPattern::Wildcard => {},
-            RAstPattern::EnumVariant(_, _, _) => {}, // unimplemented
         }
         j = j + 1;
     }
@@ -3124,7 +3124,7 @@ fn codegen_arm(
 
     let STPair::ST(arm_value, arm_type) = codegen_expression(codegen, arm_expr);
     if rType_has_value(&arm_type) {
-        codegen_emit_store_value(codegen, &arm_type, &arm_value, &result_pointer);
+        codegen_emit_store(codegen, &arm_type, &arm_value, &result_pointer);
     }
 
     // arm evaluated, so jump to end
@@ -3203,7 +3203,6 @@ fn codegen_emit_binary(
         RAstArithmeticOp::Rem => "urem",
     };
     let name: String = codegen_next_register(codegen);
-
     let mut line: String = string_new();
     string_push_str(&mut line, "  ");
     string_push_string(&mut line, &name);
@@ -3215,7 +3214,6 @@ fn codegen_emit_binary(
     string_push_string(&mut line, lhs);
     string_push(&mut line, ',');
     string_push_string(&mut line, rhs);
-
     codegen_emit_line(codegen, line);
     name
 }
@@ -3241,7 +3239,6 @@ fn codegen_emit_icmp(
         RAstComparisonOp::Le => "ule",
     };
     let name: String = codegen_next_register(codegen);
-
     let mut line: String = string_new();
     string_push_str(&mut line, "  ");
     string_push_string(&mut line, &name);
@@ -3253,7 +3250,6 @@ fn codegen_emit_icmp(
     string_push_string(&mut line, lhs);
     string_push(&mut line, ',');
     string_push_string(&mut line, rhs);
-
     codegen_emit_line(codegen, line);
     name
 }
@@ -3269,7 +3265,6 @@ fn codegen_emit_ret_value(codegen: &mut Codegen, ty: &RType, value: &String) {
     string_push_string(&mut line, &rType_to_llvm_name(codegen, ty));
     string_push(&mut line, ' ');
     string_push_string(&mut line, value);
-
     codegen_emit_line(codegen, line);
 }
 
@@ -3290,7 +3285,6 @@ fn codegen_emit_label(codegen: &mut Codegen, label: &String) {
     string_push(&mut line, '\n');
     string_push_string(&mut line, label);
     string_push(&mut line, ':');
-
     codegen_emit_line(codegen, line);
 }
 
@@ -3302,133 +3296,80 @@ fn codegen_emit_br(codegen: &mut Codegen, target_label: &String) {
     let mut line: String = string_new();
     string_push_str(&mut line, "  br label %");
     string_push_string(&mut line, target_label);
-
     codegen_emit_line(codegen, line);
 }
 
 /// Emit a conditional branch.
 /// ```llvm
-/// br i1 <condition>, label %<then_label>, label %<else_label>
+/// br i1 <cond>, label %<then>, label %<else_br>
 /// ```
-fn codegen_emit_br_conditional(
-    codegen: &mut Codegen,
-    condition: &String,
-    then_label: &String,
-    else_label: &String,
-) {
+fn codegen_emit_br_conditional(code: &mut Codegen, cond: &String, then: &String, else_br: &String) {
     let mut line: String = string_new();
     string_push_str(&mut line, "  br i1 ");
-    string_push_string(&mut line, condition);
+    string_push_string(&mut line, cond);
     string_push_str(&mut line, ", label %");
-    string_push_string(&mut line, then_label);
+    string_push_string(&mut line, then);
     string_push_str(&mut line, ", label %");
-    string_push_string(&mut line, else_label);
-
-    codegen_emit_line(codegen, line);
+    string_push_string(&mut line, else_br);
+    codegen_emit_line(code, line);
 }
 
 /// Emit a cast instruction.
 /// ```llvm
-/// %<name> = <op> <from_type> <value> to <to_type>
+/// %<name> = <op> <from> <x> to <to>
 /// ```
 /// Returns `%<name>`.
-fn codegen_emit_cast(
-    codegen: &mut Codegen,
-    op: &str,
-    from_type: &RType,
-    to_type: &RType,
-    value: &String,
-) -> String {
-    let name: String = codegen_next_register(codegen);
-
+fn codegen_emit_cast(code: &mut Codegen, op: &str, from: &RType, to: &RType, x: &String) -> String {
+    let name: String = codegen_next_register(code);
     let mut line: String = string_new();
     string_push_str(&mut line, "  ");
     string_push_string(&mut line, &name);
     string_push_str(&mut line, " = ");
     string_push_str(&mut line, op);
     string_push(&mut line, ' ');
-    string_push_string(&mut line, &rType_to_llvm_name(codegen, from_type));
+    string_push_string(&mut line, &rType_to_llvm_name(code, from));
     string_push(&mut line, ' ');
-    string_push_string(&mut line, value);
+    string_push_string(&mut line, x);
     string_push_str(&mut line, " to ");
-    string_push_string(&mut line, &rType_to_llvm_name(codegen, to_type));
-
-    codegen_emit_line(codegen, line);
+    string_push_string(&mut line, &rType_to_llvm_name(code, to));
+    codegen_emit_line(code, line);
     name
 }
 
 /// Emit a zero-extend instruction.
 /// ```llvm
-/// %<name> = zext <from_type> <value> to <to_type>
+/// %<name> = zext <from> <value> to <to>
 /// ```
 /// Returns `%<name>`.
-fn codegen_emit_zext(
-    codegen: &mut Codegen,
-    from_type: &RType,
-    to_type: &RType,
-    value: &String,
-) -> String {
-    codegen_emit_cast(codegen, "zext", from_type, to_type, value)
+fn codegen_emit_zext(codegen: &mut Codegen, from: &RType, to: &RType, value: &String) -> String {
+    codegen_emit_cast(codegen, "zext", from, to, value)
 }
 
 /// Emit a truncate instruction.
 /// ```llvm
-/// %<name> = trunc <from_type> <value> to <to_type>
+/// %<name> = trunc <from> <value> to <to>
 /// ```
 /// Returns `%<name>`.
-fn codegen_emit_trunc(
-    codegen: &mut Codegen,
-    from_type: &RType,
-    to_type: &RType,
-    value: &String,
-) -> String {
-    codegen_emit_cast(codegen, "trunc", from_type, to_type, value)
+fn codegen_emit_trunc(codegen: &mut Codegen, from: &RType, to: &RType, val: &String) -> String {
+    codegen_emit_cast(codegen, "trunc", from, to, val)
 }
 
 /// Emit an integer-to-pointer instruction.
 /// ```llvm
-/// %<name> = inttoptr <from_type> <value> to <to_type>
+/// %<name> = inttoptr <from> <value> to <to>
 /// ```
 /// Returns `%<name>`.
-fn codegen_emit_inttoptr(
-    codegen: &mut Codegen,
-    from_type: &RType,
-    to_type: &RType,
-    value: &String,
-) -> String {
-    codegen_emit_cast(codegen, "inttoptr", from_type, to_type, value)
+fn codegen_emit_inttoptr(codegen: &mut Codegen, from: &RType, to: &RType, val: &String) -> String {
+    codegen_emit_cast(codegen, "inttoptr", from, to, val)
 }
 
 /// Emit a pointer-to-integer instruction.
 /// ```llvm
-/// %<name> = ptrtoint <from_type> <value> to <to_type>
+/// %<name> = ptrtoint <from> <value> to <to>
 /// ```
 /// Returns `%<name>`.
-fn codegen_emit_ptrtoint(
-    codegen: &mut Codegen,
-    from_type: &RType,
-    to_type: &RType,
-    value: &String,
-) -> String {
-    codegen_emit_cast(codegen, "ptrtoint", from_type, to_type, value)
-}
-
-/// Emit an allocate instruction.
-/// ```llvm
-/// %<name> = alloca <object>
-/// ```
-/// Returns `%<name>`.
-fn codegen_emit_alloca(codegen: &mut Codegen, object: &String) -> String {
-    let name: String = codegen_next_register(codegen);
-
-    let mut line: String = string_new();
-    string_push_str(&mut line, "  ");
-    string_push_string(&mut line, &name);
-    string_push_str(&mut line, " = alloca ");
-    string_push_string(&mut line, object);
-
-    codegen_emit_line(codegen, line);
-    name
+fn codegen_emit_ptrtoint(codegen: &mut Codegen, from: &RType, to: &RType, val: &String) -> String {
+    codegen_emit_cast(codegen, "ptrtoint", from, to, val)
 }
 
 /// Emit an allocate instruction for a given Rust type.
@@ -3437,71 +3378,30 @@ fn codegen_emit_alloca(codegen: &mut Codegen, object: &String) -> String {
 /// ```
 /// Returns `%<name>`.
 fn codegen_emit_alloca_value(codegen: &mut Codegen, ty: &RType) -> String {
-    let llvm_type: String = rType_to_llvm_name(codegen, ty);
-    codegen_emit_alloca(codegen, &llvm_type)
-}
-
-/// Emit an allocate instruction for contiguous memory.
-/// ```llvm
-/// %<name> = alloca [<size> x i64]
-/// ```
-/// Returns `%<name>`.
-fn codegen_emit_alloca_array(codegen: &mut Codegen, size: usize) -> String {
-    codegen_emit_alloca(codegen, &size_to_llvm_array(size))
-}
-
-/// Emit a store instruction.
-/// ```llvm
-/// store <object> <value>, ptr <pointer>
-/// ```
-fn codegen_emit_store(codegen: &mut Codegen, object: &String, value: &String, pointer: &String) {
+    let name: String = codegen_next_register(codegen);
     let mut line: String = string_new();
-    string_push_str(&mut line, "  store ");
-    string_push_string(&mut line, object);
-    string_push(&mut line, ' ');
-    string_push_string(&mut line, value);
-    string_push(&mut line, ',');
-    string_push_str(&mut line, " ptr ");
-    string_push_string(&mut line, pointer);
-
+    string_push_str(&mut line, "  ");
+    string_push_string(&mut line, &name);
+    string_push_str(&mut line, " = alloca ");
+    string_push_string(&mut line, &rType_to_llvm_name(codegen, ty));
     codegen_emit_line(codegen, line);
+    name
 }
 
 /// Emit a store instruction for a given Rust type.
 /// ```llvm
 /// store <ty> <value>, ptr <pointer>
 /// ```
-fn codegen_emit_store_value(codegen: &mut Codegen, ty: &RType, value: &String, pointer: &String) {
-    let llvm_type: String = rType_to_llvm_name(codegen, ty);
-    codegen_emit_store(codegen, &llvm_type, value, pointer);
-}
-
-/// Emit a store instruction for contiguous memory.
-/// ```llvm
-/// store <ty> <value>, ptr <pointer>
-/// ```
-fn codegen_emit_store_array(codegen: &mut Codegen, size: usize, value: &String, pointer: &String) {
-    codegen_emit_store(codegen, &size_to_llvm_array(size), value, pointer);
-}
-
-/// Emit a load instruction.
-/// ```llvm
-/// %<name> = load <object>, ptr <pointer>
-/// ```
-/// Returns `%<name>`.
-fn codegen_emit_load(codegen: &mut Codegen, object: &String, pointer: &String) -> String {
-    let name: String = codegen_next_register(codegen);
+fn codegen_emit_store(codegen: &mut Codegen, ty: &RType, value: &String, pointer: &String) {
     let mut line: String = string_new();
-    string_push_str(&mut line, "  ");
-    string_push_string(&mut line, &name);
-    string_push_str(&mut line, " = load ");
-    string_push_string(&mut line, object);
+    string_push_str(&mut line, "  store ");
+    string_push_string(&mut line, &rType_to_llvm_name(codegen, ty));
+    string_push(&mut line, ' ');
+    string_push_string(&mut line, value);
     string_push(&mut line, ',');
     string_push_str(&mut line, " ptr ");
     string_push_string(&mut line, pointer);
-
     codegen_emit_line(codegen, line);
-    name
 }
 
 /// Emit a load instruction for a given Rust type.
@@ -3509,18 +3409,18 @@ fn codegen_emit_load(codegen: &mut Codegen, object: &String, pointer: &String) -
 /// %<name> = load <ty>, ptr <pointer>
 /// ```
 /// Returns `%<name>`.
-fn codegen_emit_load_value(codegen: &mut Codegen, ty: &RType, pointer: &String) -> String {
-    let llvm_type: String = rType_to_llvm_name(codegen, ty);
-    codegen_emit_load(codegen, &llvm_type, pointer)
-}
-
-/// Emit a load instruction for contiguous memory.
-/// ```llvm
-/// %<name> = load [<size> x i64], ptr <pointer>
-/// ```
-/// Returns `%<name>`.
-fn codegen_emit_load_array(codegen: &mut Codegen, size: usize, pointer: &String) -> String {
-    codegen_emit_load(codegen, &size_to_llvm_array(size), pointer)
+fn codegen_emit_load(codegen: &mut Codegen, ty: &RType, pointer: &String) -> String {
+    let name: String = codegen_next_register(codegen);
+    let mut line: String = string_new();
+    string_push_str(&mut line, "  ");
+    string_push_string(&mut line, &name);
+    string_push_str(&mut line, " = load ");
+    string_push_string(&mut line, &rType_to_llvm_name(codegen, ty));
+    string_push(&mut line, ',');
+    string_push_str(&mut line, " ptr ");
+    string_push_string(&mut line, pointer);
+    codegen_emit_line(codegen, line);
+    name
 }
 
 /// Emit pointer arithmetic using integer casts and addition.
@@ -3540,20 +3440,6 @@ fn emit_pointer_add(codegen: &mut Codegen, pointer: &String, ty: &RType, index: 
     let t1: String = codegen_emit_binary(codegen, &addition, &RType::Usize, &t0, &offset);
     let name: String = codegen_emit_inttoptr(codegen, &RType::Usize, &ptr_type, &t1);
 
-    name
-}
-
-/// Emit a shallow copy of the given enum of `size` bytes.
-/// ```llvm
-/// %<name> = alloca [<size> x i64]
-/// %t = load [<size> x i64], ptr <enum_ptr>
-/// store [<size> x i64] %t, ptr %<name>
-/// ```
-/// Returns `%<name>`.
-fn emit_enum_copy(codegen: &mut Codegen, enum_ptr: &String, size: usize) -> String {
-    let name: String = codegen_emit_alloca_array(codegen, size);
-    let copy: String = codegen_emit_load_array(codegen, size, enum_ptr);
-    codegen_emit_store_array(codegen, size, &copy, &name);
     name
 }
 
