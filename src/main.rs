@@ -2841,7 +2841,10 @@ fn codegen_path(codegen: &mut Codegen, path: &Vec<String>, values: &Vec<RAstExpr
             let mut i: usize = 0;
             while i < vec_len::<RAstExpr>(values) {
                 let expression: &RAstExpr = vec_at::<RAstExpr>(values, i);
-                let STPair::ST(register, ty): STPair = codegen_expression(codegen, expression);
+                let STPair::ST(mut register, ty): STPair = codegen_expression(codegen, expression);
+                if rType_is_enum(&ty) {
+                    register = codegen_emit_load_value(codegen, &ty, &register);
+                }
                 offset_ptr = emit_pointer_add(codegen, &offset_ptr, &ty, 1);
                 codegen_emit_store_value(codegen, &ty, &register, &offset_ptr);
                 i = i + 1;
@@ -2862,7 +2865,10 @@ fn codegen_call(codegen: &mut Codegen, function: &String, values: &Vec<RAstExpr>
     while i < vec_len::<RAstExpr>(values) {
         let value: &RAstExpr = vec_at::<RAstExpr>(values, i);
 
-        let STPair::ST(value_name, value_type): STPair = codegen_expression(codegen, value);
+        let STPair::ST(mut value_name, value_type): STPair = codegen_expression(codegen, value);
+        if rType_is_enum(&value_type) {
+            value_name = codegen_emit_load_value(codegen, &value_type, &value_name);
+        }
 
         vec_push::<RType>(&mut value_types, value_type);
         vec_push::<String>(&mut value_names, value_name);
