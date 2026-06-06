@@ -853,6 +853,19 @@ fn rAstEnum_size(codegen: &Codegen, RAstEnum::Enum(_, variants): &RAstEnum) -> u
     8 + max_size // 8 bytes for the discriminant
 }
 
+/// Get an identifying discriminator for a given variant of variants.
+fn variants_get_discriminator(variants: &Vec<RAstVariant>, variant: &String) -> usize {
+    let mut tag: usize = 0;
+    while tag < vec_len::<RAstVariant>(variants) {
+        let RAstVariant::Variant(name, _): &RAstVariant = vec_at::<RAstVariant>(variants, tag);
+        if string_eq(name, variant) {
+            return tag;
+        }
+        tag = tag + 1;
+    }
+    unreachable()
+}
+
 /// Convert a Rust type into a LLVM-IR type name.
 fn rType_to_llvm_name(codegen: &Codegen, ty: &RType) -> String {
     match ty {
@@ -2795,10 +2808,34 @@ fn codegen_variable_use(codegen: &mut Codegen, variable_name: &String) -> STPair
     }
 }
 
-/// Emit LLVM-IR for a function call expression.
+/// Emit LLVM-IR for a path expression (either function call or enum instantiation).
 fn codegen_path(codegen: &mut Codegen, path: &Vec<String>, values: &Vec<RAstExpr>) -> STPair {
-    let function_name: String = rAstPath_to_string(path);
-    codegen_call(codegen, &function_name, values)
+    let enum_type: &String = vec_at::<String>(path, 0);
+    match codegen_search_global(codegen, &enum_type) {
+        Option::Some(Item::Enum(RAstEnum::Enum(enum_name, variants))) => {
+            let variant: &String = vec_at::<String>(path, 1);
+            let tag: String = integer_to_string(variants_get_discriminator(variants, variant));
+
+            let enum_type: RType = RType::Enum(string_clone(enum_name));
+            let enum_ptr: String = codegen_emit_alloca_value(codegen, &enum_type);
+            codegen_emit_store_value(codegen, &RType::Usize, &tag, &enum_ptr);
+
+            let mut offset_ptr: String = string_clone(&enum_ptr);
+            let mut i: usize = 0;
+            while i < vec_len::<RAstExpr>(values) {
+                let expression: &RAstExpr = vec_at::<RAstExpr>(values, i);
+                let STPair::ST(register, ty): STPair = codegen_expression(codegen, expression);
+                offset_ptr = emit_pointer_add(codegen, &offset_ptr, &ty, 1);
+                codegen_emit_store_value(codegen, &ty, &register, &offset_ptr);
+                i = i + 1;
+            }
+            STPair::ST(enum_ptr, enum_type)
+        },
+        _ => {
+            let function: String = rAstPath_to_string(path);
+            codegen_call(codegen, &function, values)
+        },
+    }
 }
 
 fn codegen_call(codegen: &mut Codegen, function: &String, values: &Vec<RAstExpr>) -> STPair {
@@ -2817,7 +2854,7 @@ fn codegen_call(codegen: &mut Codegen, function: &String, values: &Vec<RAstExpr>
 
     let return_type: RType = match codegen_search_global(codegen, &function) {
         Option::Some(Item::Function(return_type, _, _)) => rType_clone(return_type),
-        _ => codegen_error("unknown codegen function"),
+        _ => RType::Unit, // we assume this case never occurs
     };
 
     let result_name: String = if type_has_value(&return_type) {
@@ -2827,10 +2864,6 @@ fn codegen_call(codegen: &mut Codegen, function: &String, values: &Vec<RAstExpr>
         string_new()
     };
     STPair::ST(result_name, return_type)
-}
-
-fn codegen_enum(codegen: &mut Codegen, name: &String) -> STPair {
-    STPair::ST(string_new(), RType::Unit)
 }
 
 /// Emit LLVM-IR for an if expression.
