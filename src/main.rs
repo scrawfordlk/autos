@@ -3282,7 +3282,6 @@ fn codegen_emit_cast(
     string_push_string(&mut line, value);
     string_push_str(&mut line, " to ");
     string_push_string(&mut line, &rType_to_llvm_name(codegen, to_type));
-    string_push(&mut line, '\n');
 
     codegen_emit_line(codegen, line);
     name
