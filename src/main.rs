@@ -880,7 +880,7 @@ fn rType_to_llvm_name(codegen: &Codegen, ty: &RType) -> String {
         RType::RawPointerMut(_) => string("ptr"),
         enum_type => {
             let mut size: usize = rType_size(codegen, enum_type);
-            size = size + (8 - (size % 8));
+            size = round_to_next_multiple(size, 8);
             size_to_llvm_array(size)
         },
     }
@@ -5105,11 +5105,7 @@ fn emu_set_exit_code(Emu::Emu(_, _, _, _, _, exit_code): &mut Emu, code: usize) 
 /// Align the given value to a double-word boundary.
 fn align_to_double(value: usize) -> usize {
     let align: usize = size_of::<usize>();
-    if value % align == 0 {
-        value
-    } else {
-        value + (align - (value % align))
-    }
+    round_to_next_multiple(value, align)
 }
 
 /// Allocate `size` many double words on the stack and return the address.
@@ -5542,6 +5538,15 @@ fn max(n: usize, m: usize) -> usize {
 /// Return true if the number is negative (Two's Complement).
 fn is_negative(number: usize) -> bool {
     number >= 9223372036854775808
+}
+
+/// Rounds `n` up to the next multiple of `multiple`
+fn round_to_next_multiple(n: usize, multiple: usize) -> usize {
+    if n % 8 == 0 {
+        n
+    } else {
+        n + (multiple - (n % multiple))
+    }
 }
 
 // -------------------------- Error --------------------------------
