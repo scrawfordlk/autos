@@ -2459,10 +2459,10 @@ fn codegen_function(codegen: &mut Codegen, function: &RAstFunction) {
     codegen_emit_function_header(codegen, function_name, &llvm_return_type, parameters);
 
     codegen_push_scope(codegen);
-    let mut parameter_index: usize = 0;
-    while parameter_index < vec_len::<RAstVariable>(parameters) {
+    let mut i: usize = 0;
+    while i < vec_len::<RAstVariable>(parameters) {
         let RAstVariable::Variable(pattern, param_type): &RAstVariable =
-            vec_at::<RAstVariable>(parameters, parameter_index);
+            vec_at::<RAstVariable>(parameters, i);
 
         match pattern {
             RAstPattern::Identifier(_, name) => {
@@ -2478,7 +2478,7 @@ fn codegen_function(codegen: &mut Codegen, function: &RAstFunction) {
             _ => {},
         }
 
-        parameter_index = parameter_index + 1;
+        i = i + 1;
     }
 
     let STPair::ST(value_name, block_type): STPair = codegen_block(codegen, body);
@@ -6010,10 +6010,10 @@ fn stringMapStack_insert<T>(stack: &mut StringMapStack<T>, name: String, value: 
 /// Look up a value in any visible scope.
 fn stringMapStack_lookup<'a, T>(stack: &'a StringMapStack<T>, name: &String) -> Option<&'a T> {
     let StringMapStack::Stack(scopes, top) = stack;
-    let mut index: usize = *top;
-    while index > 0 {
-        index = index - 1;
-        let scope: &StringMap<T> = unwrap::<&StringMap<T>>(vec_get::<StringMap<T>>(scopes, index));
+    let mut i: usize = *top;
+    while i > 0 {
+        i = i - 1;
+        let scope: &StringMap<T> = unwrap::<&StringMap<T>>(vec_get::<StringMap<T>>(scopes, i));
         match stringMap_get::<T>(scope, name) {
             Option::Some(value) => return Option::Some(value),
             Option::None => {},
