@@ -2534,7 +2534,8 @@ fn codegen_function(codegen: &mut Codegen, function: &RAstFunction) {
         },
         _ => {
             if rType_eq(&block_type, &RType::Never) {
-                codegen_emit_line(codegen, string("unreachable"));
+                // dummy return value that is unreachable
+                codegen_emit_ret_value(codegen, &return_type, &string("0"));
             } else {
                 value_name = codegen_emit_load_if_enum(codegen, value_name, &return_type);
                 codegen_emit_ret_value(codegen, &return_type, &value_name);
