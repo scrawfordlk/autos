@@ -2543,9 +2543,7 @@ fn codegen_function(codegen: &mut Codegen, function: &RAstFunction) {
             if rType_eq(&block_type, &RType::Never) {
                 codegen_emit_line(codegen, string("unreachable"));
             } else {
-                if rType_is_enum(&return_type) {
-                    value_name = codegen_emit_load(codegen, &return_type, &value_name);
-                }
+                value_name = codegen_emit_load_if_enum(codegen, value_name, &return_type);
                 codegen_emit_ret_value(codegen, &return_type, &value_name);
             }
         },
@@ -2603,9 +2601,7 @@ fn codegen_binding(codegen: &mut Codegen, variable: &RAstVariable, value: &RAstE
     let RAstVariable::Variable(pattern, binding_type): &RAstVariable = variable;
 
     let STPair::ST(mut rvalue_name, _): STPair = codegen_expression(codegen, value);
-    if rType_is_enum(&binding_type) {
-        rvalue_name = codegen_emit_load(codegen, &binding_type, &rvalue_name);
-    }
+    rvalue_name = codegen_emit_load_if_enum(codegen, rvalue_name, &binding_type);
 
     match pattern {
         RAstPattern::Identifier(_, lvalue_name) => {
@@ -2662,9 +2658,7 @@ fn codegen_return(codegen: &mut Codegen, returned: &Option<Box<RAstExpr>>) -> ST
         Option::Some(expression) => {
             let STPair::ST(mut name, ty): STPair =
                 codegen_expression(codegen, box_deref::<RAstExpr>(expression));
-            if rType_is_enum(&ty) {
-                name = codegen_emit_load(codegen, &ty, &name);
-            }
+            name = codegen_emit_load_if_enum(codegen, name, &ty);
             codegen_emit_ret_value(codegen, &ty, &name);
         },
 
@@ -2685,11 +2679,7 @@ fn codegen_return(codegen: &mut Codegen, returned: &Option<Box<RAstExpr>>) -> ST
 fn codegen_assignment(codegen: &mut Codegen, left: &RAstExpr, right: &RAstExpr) -> STPair {
     let STPair::ST(mut right_name, _): STPair = codegen_expression(codegen, right);
     let STPair::ST(pointer_name, left_type): STPair = codegen_assignment_lvalue(codegen, left);
-
-    if rType_is_enum(&left_type) {
-        right_name = codegen_emit_load(codegen, &left_type, &right_name);
-    }
-
+    right_name = codegen_emit_load_if_enum(codegen, right_name, &left_type);
     codegen_emit_store(codegen, &left_type, &right_name, &pointer_name);
     STPair::ST(right_name, RType::Unit)
 }
@@ -2849,9 +2839,7 @@ fn codegen_path(codegen: &mut Codegen, path: &Vec<String>, values: &Vec<RAstExpr
             while i < vec_len::<RAstExpr>(values) {
                 let expression: &RAstExpr = vec_at::<RAstExpr>(values, i);
                 let STPair::ST(mut register, ty): STPair = codegen_expression(codegen, expression);
-                if rType_is_enum(&ty) {
-                    register = codegen_emit_load(codegen, &ty, &register);
-                }
+                register = codegen_emit_load_if_enum(codegen, register, &ty);
                 offset_ptr = emit_pointer_add(codegen, &offset_ptr, &ty, 1);
                 codegen_emit_store(codegen, &ty, &register, &offset_ptr);
                 i = i + 1;
@@ -2873,9 +2861,7 @@ fn codegen_call(codegen: &mut Codegen, function: &String, values: &Vec<RAstExpr>
         let value: &RAstExpr = vec_at::<RAstExpr>(values, i);
 
         let STPair::ST(mut value_name, value_type): STPair = codegen_expression(codegen, value);
-        if rType_is_enum(&value_type) {
-            value_name = codegen_emit_load(codegen, &value_type, &value_name);
-        }
+        value_name = codegen_emit_load_if_enum(codegen, value_name, &value_type);
 
         vec_push::<RType>(&mut value_types, value_type);
         vec_push::<String>(&mut value_names, value_name);
@@ -3441,6 +3427,16 @@ fn emit_pointer_add(codegen: &mut Codegen, pointer: &String, ty: &RType, index: 
     let name: String = codegen_emit_inttoptr(codegen, &RType::Usize, &ptr_type, &t1);
 
     name
+}
+
+/// If the value is an enum, load the value and return the name of the register with the loaded
+/// value, otherwise return back the given value's name.
+fn codegen_emit_load_if_enum(codegen: &mut Codegen, value: String, ty: &RType) -> String {
+    if rType_is_enum(&ty) {
+        codegen_emit_load(codegen, &ty, &value)
+    } else {
+        value
+    }
 }
 
 /// Emit a call instruction that returns a value.
