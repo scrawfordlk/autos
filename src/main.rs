@@ -1605,14 +1605,7 @@ fn insert_item_into_global_table(table: &mut StringMap<Item>, item: &RAstItem) {
                 let RAstVariant::Variant(name, field_types): &RAstVariant =
                     vec_at::<RAstVariant>(variants, i);
 
-                let mut types: Vec<RType> = vec_new::<RType>();
-                let mut j: usize = 0;
-                while j < vec_len::<RType>(field_types) {
-                    let ty: &RType = vec_at::<RType>(field_types, j);
-                    vec_push::<RType>(&mut types, rType_clone(ty));
-                    j = j + 1;
-                }
-
+                let types: Vec<RType> = types_clone(field_types);
                 let variant: RAstVariant = RAstVariant::Variant(string_clone(name), types);
                 vec_push::<RAstVariant>(&mut cloned_variants, variant);
                 i = i + 1;
@@ -6612,6 +6605,18 @@ fn rType_clone(t: &RType) -> RType {
             RType::RawPointerMut(box_new::<RType>(rType_clone(box_deref::<RType>(inner))))
         },
     }
+}
+
+/// Clone a vector of Rust types.
+fn types_clone(types: &Vec<RType>) -> Vec<RType> {
+    let mut copy: Vec<RType> = vec_new::<RType>();
+    let mut i: usize = 0;
+    while i < vec_len::<RType>(types) {
+        let ty: RType = rType_clone(vec_at::<RType>(types, i));
+        vec_push::<RType>(&mut copy, ty);
+        i = i + 1;
+    }
+    copy
 }
 
 /// Clone a STPair
