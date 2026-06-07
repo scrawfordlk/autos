@@ -2764,13 +2764,13 @@ fn codegen_unary_op(codegen: &mut Codegen, operator: &RAstUnaryOp, value: &RAstE
             },
             _ => {
                 let STPair::ST(name, ty): STPair = codegen_expression(codegen, value);
-                let is_enum: bool = rType_is_enum(&ty);
-                let new_type: RType = RType::Reference(box_new::<RType>(ty), *mutable_ref);
-                if is_enum {
+                if rType_is_enum(&ty) {
+                    let new_type: RType = RType::Reference(box_new::<RType>(ty), *mutable_ref);
                     STPair::ST(name, new_type) // enum is already a pointer
                 } else {
-                    let reference: String = codegen_emit_alloca_value(codegen, &new_type);
-                    codegen_emit_store(codegen, &new_type, &name, &reference);
+                    let reference: String = codegen_emit_alloca_value(codegen, &ty);
+                    codegen_emit_store(codegen, &ty, &name, &reference);
+                    let new_type: RType = RType::Reference(box_new::<RType>(ty), *mutable_ref);
                     STPair::ST(reference, new_type)
                 }
             },
