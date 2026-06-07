@@ -3053,10 +3053,10 @@ fn codegen_arm(
     let else_label: String = codegen_next_label(codegen, "match.else");
     let eq: RAstComparisonOp = RAstComparisonOp::Eq;
 
-    let mut j: usize = 0;
-    while j < vec_len::<RAstPattern>(patterns) {
-        let pattern: &RAstPattern = vec_at::<RAstPattern>(patterns, j);
-        let is_last_pattern: bool = j == vec_len::<RAstPattern>(patterns) - 1;
+    let mut i: usize = 0;
+    while i < vec_len::<RAstPattern>(patterns) {
+        let pattern: &RAstPattern = vec_at::<RAstPattern>(patterns, i);
+        let is_last_pattern: bool = i == vec_len::<RAstPattern>(patterns) - 1;
 
         match pattern {
             RAstPattern::Literal(literal) => {
@@ -3078,18 +3078,15 @@ fn codegen_arm(
                     }
                 } // otherwise no branch, arm is executed unconditionally
             },
-            RAstPattern::Identifier(_, identifier) => {
-                let pointer_name: String = codegen_emit_alloca_value(codegen, &expr_type);
-                codegen_emit_store(codegen, &expr_type, &expr_name, &pointer_name);
-
-                let variable_name: String = string_clone(identifier);
-                let variable_type: RType = rType_clone(&expr_type);
-                codegen_scope_insert(codegen, variable_name, variable_type, pointer_name);
+            RAstPattern::EnumVariant(name, variant, inner_patterns) => {
+                // TODO:
             },
-            RAstPattern::EnumVariant(name, variant, inner_patterns) => {},
-            RAstPattern::Wildcard => {},
+            _ => {}, // catch-all patterns do not branch conditionally
         }
-        j = j + 1;
+
+        codegen_arm_destructuring(codegen, pattern, expr_name, expr_type);
+
+        i = i + 1;
     }
 
     if not(is_last_arm) {
@@ -3109,6 +3106,28 @@ fn codegen_arm(
     }
 
     arm_type
+}
+
+/// Generate code to destructure/bind pattern values to names.
+fn codegen_arm_destructuring(
+    codegen: &mut Codegen,
+    pattern: &RAstPattern,
+    expr_name: &String,
+    expr_type: &RType,
+) {
+    match pattern {
+        RAstPattern::Identifier(_, identifier) => {
+            let pointer_name: String = codegen_emit_alloca_value(codegen, &expr_type);
+            codegen_emit_store(codegen, &expr_type, &expr_name, &pointer_name);
+            let variable_name: String = string_clone(identifier);
+            let variable_type: RType = rType_clone(&expr_type);
+            codegen_scope_insert(codegen, variable_name, variable_type, pointer_name);
+        },
+        RAstPattern::EnumVariant(name, variant, patterns) => {
+            // TODO:
+        },
+        _ => {}, // do not destructure or bind values
+    }
 }
 
 // ---------------------------- Code Emission ---------------------------------
