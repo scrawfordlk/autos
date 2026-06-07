@@ -2509,7 +2509,7 @@ fn codegen_function(codegen: &mut Codegen, function: &RAstFunction) {
         match pattern {
             RAstPattern::Identifier(_, name) => {
                 // SSA: all variables (including parameters) are stored on the stack
-                let param_ptr: String = codegen_emit_alloca_value(codegen, param_type);
+                let param_ptr: String = codegen_emit_alloca(codegen, param_type);
                 let mut param_register: String = string("%");
                 string_push_string(&mut param_register, name);
                 codegen_emit_store(codegen, param_type, &param_register, &param_ptr);
@@ -2534,12 +2534,15 @@ fn codegen_function(codegen: &mut Codegen, function: &RAstFunction) {
         },
         _ => {
             if rType_eq(&block_type, &RType::Never) {
-                // dummy return value that is unreachable
-                codegen_emit_ret_value(codegen, &return_type, &string("0"));
-            } else {
-                value_name = codegen_emit_load_if_enum(codegen, value_name, &return_type);
-                codegen_emit_ret_value(codegen, &return_type, &value_name);
+                // there is not value, so dummy return value that is never reached anyway
+                value_name = if rType_is_enum(&return_type) {
+                    codegen_emit_alloca(codegen, &return_type)
+                } else {
+                    string("0")
+                };
             }
+            value_name = codegen_emit_load_if_enum(codegen, value_name, &return_type);
+            codegen_emit_ret_value(codegen, &return_type, &value_name);
         },
     }
     codegen_emit_line(codegen, string("}"));
@@ -2600,7 +2603,7 @@ fn codegen_binding(codegen: &mut Codegen, variable: &RAstVariable, value: &RAstE
     match pattern {
         RAstPattern::Identifier(_, lvalue_name) => {
             if rType_has_value(binding_type) {
-                let lvalue_pointer: String = codegen_emit_alloca_value(codegen, binding_type);
+                let lvalue_pointer: String = codegen_emit_alloca(codegen, binding_type);
                 codegen_emit_store(codegen, binding_type, &rvalue_name, &lvalue_pointer);
 
                 let name: String = string_clone(lvalue_name);
@@ -2768,7 +2771,7 @@ fn codegen_unary_op(codegen: &mut Codegen, operator: &RAstUnaryOp, value: &RAstE
                     let new_type: RType = RType::Reference(box_new::<RType>(ty), *mutable_ref);
                     STPair::ST(name, new_type) // enum is already a pointer
                 } else {
-                    let reference: String = codegen_emit_alloca_value(codegen, &ty);
+                    let reference: String = codegen_emit_alloca(codegen, &ty);
                     codegen_emit_store(codegen, &ty, &name, &reference);
                     let new_type: RType = RType::Reference(box_new::<RType>(ty), *mutable_ref);
                     STPair::ST(reference, new_type)
@@ -2825,7 +2828,7 @@ fn codegen_path(codegen: &mut Codegen, path: &Vec<String>, values: &Vec<RAstExpr
             let tag: String = integer_to_string(variants_get_discriminator(variants, variant));
 
             let enum_type: RType = RType::Enum(string_clone(enum_name));
-            let enum_ptr: String = codegen_emit_alloca_value(codegen, &enum_type);
+            let enum_ptr: String = codegen_emit_alloca(codegen, &enum_type);
             codegen_emit_store(codegen, &RType::Usize, &tag, &enum_ptr);
 
             let mut offset_ptr: String = string_clone(&enum_ptr);
@@ -2875,7 +2878,7 @@ fn codegen_call(codegen: &mut Codegen, function: &String, values: &Vec<RAstExpr>
     };
 
     if rType_is_enum(&return_type) {
-        let pointer: String = codegen_emit_alloca_value(codegen, &return_type);
+        let pointer: String = codegen_emit_alloca(codegen, &return_type);
         codegen_emit_store(codegen, &return_type, &result_name, &pointer);
         result_name = pointer;
     }
@@ -2895,7 +2898,7 @@ fn codegen_if(codegen: &mut Codegen, if_expression: &RAstIf) -> STPair {
 
     // Allocate memory for potential result value, though size is still unknown.
     // In the event that the result type is unit, this instruction will be removed later.
-    let result_pointer: String = codegen_emit_alloca_value(codegen, &RType::Unit);
+    let result_pointer: String = codegen_emit_alloca(codegen, &RType::Unit);
     let alloca_idx: usize = codegen_code_last_index(codegen);
 
     codegen_emit_br_conditional(codegen, &cond, &then_label, &else_label);
@@ -2989,7 +2992,7 @@ fn codegen_match(codegen: &mut Codegen, value: &RAstExpr, arms: &Vec<RAstArm>) -
 
     // Allocate memory for potential result value, though size is still unknown.
     // In the event that the result type is unit, this instruction will be removed later.
-    let result_pointer: String = codegen_emit_alloca_value(codegen, &RType::Unit);
+    let result_pointer: String = codegen_emit_alloca(codegen, &RType::Unit);
     let alloca_idx: usize = codegen_code_last_index(codegen);
 
     let mut return_type: RType = RType::Never; // still unknown, coercing arm types yields correct type
@@ -3118,7 +3121,7 @@ fn codegen_arm_destructuring(
 ) {
     match pattern {
         RAstPattern::Identifier(_, identifier) => {
-            let pointer_name: String = codegen_emit_alloca_value(codegen, &expr_type);
+            let pointer_name: String = codegen_emit_alloca(codegen, &expr_type);
             codegen_emit_store(codegen, &expr_type, &expr_name, &pointer_name);
             let variable_name: String = string_clone(identifier);
             let variable_type: RType = rType_clone(&expr_type);
@@ -3371,7 +3374,7 @@ fn codegen_emit_ptrtoint(codegen: &mut Codegen, from: &RType, to: &RType, val: &
 /// %<name> = alloca <ty>
 /// ```
 /// Returns `%<name>`.
-fn codegen_emit_alloca_value(codegen: &mut Codegen, ty: &RType) -> String {
+fn codegen_emit_alloca(codegen: &mut Codegen, ty: &RType) -> String {
     let name: String = codegen_next_register(codegen);
     let mut line: String = string_new();
     string_push_str(&mut line, "  ");
