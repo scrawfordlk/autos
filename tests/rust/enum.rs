@@ -1,0 +1,36 @@
+enum Shape {
+    Circle(usize),
+    Rect(Coords, Coords),
+}
+
+fn main() {
+    let mut shape: Shape = Shape::Circle(42);
+    shape = extractLastValue(Shape::Rect(Coords::Triple(5, 4, 3), Coords::Pair(7, 9)));
+
+    shape = shape;
+    let shape: Shape = shape;
+
+    unsafe {
+        let p: *mut Shape = malloc(8 + 4 * 8 * 2) as *mut Shape;
+        *p = shape;
+        &*&*p;
+    }
+
+    unsafe { exit(42) }
+}
+
+enum Coords {
+    Unit,
+    Single(usize),
+    Pair(usize, usize),
+    Triple(usize, usize, usize),
+}
+
+fn extractLastValue(shape: Shape) -> Shape {
+    return shape;
+}
+
+unsafe extern "C" {
+    fn malloc(size: usize) -> *mut u8;
+    fn exit(code: usize) -> !;
+}
