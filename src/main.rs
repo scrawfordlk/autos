@@ -3058,6 +3058,7 @@ fn codegen_arm(
 ) -> RType {
     let arm_label: String = codegen_next_label(codegen, "match.arm");
     let else_label: String = codegen_next_label(codegen, "match.else");
+    let eq: RAstComparisonOp = RAstComparisonOp::Eq;
 
     let mut j: usize = 0;
     while j < vec_len::<RAstPattern>(patterns) {
@@ -3068,14 +3069,8 @@ fn codegen_arm(
             RAstPattern::Literal(literal) => {
                 if not(is_last_arm) {
                     let value: String = integer_to_string(rAstPatternLiteral_value(literal));
-
-                    let cond_name: String = codegen_emit_icmp(
-                        codegen,
-                        &RAstComparisonOp::Eq,
-                        expr_type,
-                        expr_name,
-                        &value,
-                    );
+                    let cond: String =
+                        codegen_emit_icmp(codegen, &eq, expr_type, expr_name, &value);
 
                     let fail_label: String = if is_last_pattern {
                         string_clone(&else_label) // next arm
@@ -3083,7 +3078,7 @@ fn codegen_arm(
                         codegen_next_label(codegen, "match.check") // next pattern
                     };
 
-                    codegen_emit_br_conditional(codegen, &cond_name, &arm_label, &fail_label);
+                    codegen_emit_br_conditional(codegen, &cond, &arm_label, &fail_label);
 
                     if not(is_last_pattern) {
                         codegen_emit_label(codegen, &fail_label); // next pattern of arm
