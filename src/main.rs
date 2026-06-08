@@ -810,6 +810,41 @@ fn rAstLiteral_type(literal: &RLiteral) -> RType {
     }
 }
 
+/// Return true if the pattern is refutable
+fn rAstPattern_is_refutable(globals: &StringMap<Item>, pattern: &RAstPattern) -> bool {
+    match pattern {
+        RAstPattern::Literal(_) => true,
+        RAstPattern::Wildcard | RAstPattern::Identifier(_, _) => false,
+        RAstPattern::EnumVariant(name, _, _) => match stringMap_get(globals, name) {
+            Option::Some(item) => match item {
+                Item::Enum(RAstEnum::Enum(_, variants)) => vec_len::<RAstVariant>(variants) > 1,
+                _ => true,
+            },
+            _ => true,
+        },
+    }
+}
+
+/// Return true if the given patterns are all irrefutable.
+fn patterns_are_irrefutable(items: &StringMap<Item>, patterns: &Vec<RAstPattern>) -> bool {
+    let mut i: usize = 0;
+    while i < vec_len::<RAstPattern>(patterns) {
+        let pattern: &RAstPattern = vec_at::<RAstPattern>(patterns, i);
+        if rAstPattern_is_refutable(items, pattern) {
+            return false;
+        }
+        i = i + 1;
+    }
+    true
+}
+
+fn rAstPattern_is_wildcard(pattern: &RAstPattern) -> bool {
+    match pattern {
+        RAstPattern::Wildcard => true,
+        _ => false,
+    }
+}
+
 /// Get the integer value of a pattern literal (integer, char, bool).
 fn rAstPatternLiteral_value(literal: &RAstPatternLiteral) -> usize {
     match literal {
@@ -2309,6 +2344,18 @@ fn semantic_check_match(
 
             if is_multi_pattern {
                 match pattern {
+                    RAstPattern::EnumVariant(_, _, inner_patterns) => {
+                        let mut i: usize = 0;
+                        while i < vec_len::<RAstPattern>(inner_patterns) {
+                            let pattern: &RAstPattern = vec_at::<RAstPattern>(inner_patterns, i);
+                            if not(rAstPattern_is_wildcard(pattern)) {
+                                semantic_check_error(
+                                    "enums in multi-pattern match arms cannot bind values, use wildcards",
+                                );
+                            }
+                            i = i + 1;
+                        }
+                    },
                     RAstPattern::Literal(_) => {},
                     _ => {
                         semantic_check_error(
@@ -2318,7 +2365,7 @@ fn semantic_check_match(
                 }
             }
 
-            semantic_check_pattern(semantic, pattern, &expr_type);
+            semantic_check_pattern(semantic, pattern, &expr_type, globals);
             j = j + 1;
         }
 
@@ -2332,7 +2379,12 @@ fn semantic_check_match(
     return_type
 }
 
-fn semantic_check_pattern(semantic: &mut Semantic, pattern: &RAstPattern, expression_type: &RType) {
+fn semantic_check_pattern(
+    semantic: &mut Semantic,
+    pattern: &RAstPattern,
+    expression_type: &RType,
+    globals: &StringMap<Item>,
+) {
     let pattern_type: RType = match pattern {
         RAstPattern::Literal(literal) => match literal {
             RAstPatternLiteral::Int(_) => {
@@ -2351,7 +2403,12 @@ fn semantic_check_pattern(semantic: &mut Semantic, pattern: &RAstPattern, expres
             return; // type agnostic
         },
         RAstPattern::Wildcard => return, // type agnostic
-        RAstPattern::EnumVariant(enum_name, _, _) => RType::Enum(string_clone(enum_name)),
+        RAstPattern::EnumVariant(enum_name, _, inner_patterns) => {
+            if not(patterns_are_irrefutable(globals, inner_patterns)) {
+                semantic_check_error("An enum's inner patterns must all be irrefutable!");
+            }
+            RType::Enum(string_clone(enum_name))
+        },
     };
 
     semantic_expect_type_match(&pattern_type, &expression_type);
@@ -3104,7 +3161,6 @@ fn codegen_arm_match(
     fail_label: &String,
 ) {
     let eq: RAstComparisonOp = RAstComparisonOp::Eq;
-
     match pattern {
         RAstPattern::Literal(literal) => {
             let value: String = integer_to_string(rAstPatternLiteral_value(literal));
