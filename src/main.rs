@@ -3036,14 +3036,6 @@ fn codegen_match(codegen: &mut Codegen, value: &RAstExpr, arms: &Vec<RAstArm>) -
 }
 
 /// Generate code for a single match arm.
-///
-/// * `codegen`: The state of the code generator
-/// * `arm`: The arm to generate code for
-/// * `is_last_arm`: True, if the given arm is the last arm of the match expression.
-/// * `expr_name`: The name of the expression that is being matched on.
-/// * `expr_type`: The type of the expression that is being matched on.
-/// * `result_pointer`: The name of the pointer to the memory where the match result is stored
-/// * `end_label`: The merge-label of the match.
 fn codegen_arm(
     codegen: &mut Codegen,
     RAstArm::Arm(patterns, arm_expr): &RAstArm,
