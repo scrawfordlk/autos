@@ -3055,39 +3055,22 @@ fn codegen_arm(
 ) -> RType {
     let arm_label: String = codegen_next_label(codegen, "match.arm");
     let else_label: String = codegen_next_label(codegen, "match.else");
-    let eq: RAstComparisonOp = RAstComparisonOp::Eq;
 
     let mut i: usize = 0;
     while i < vec_len::<RAstPattern>(patterns) {
         let pattern: &RAstPattern = vec_at::<RAstPattern>(patterns, i);
         let is_last_pattern: bool = i == vec_len::<RAstPattern>(patterns) - 1;
 
-        match pattern {
-            RAstPattern::Literal(literal) => {
-                if not(is_last_arm) {
-                    let value: String = integer_to_string(rAstPatternLiteral_value(literal));
-                    let cond: String =
-                        codegen_emit_icmp(codegen, &eq, expr_type, expr_name, &value);
-
-                    let fail_label: String = if is_last_pattern {
-                        string_clone(&else_label) // next arm
-                    } else {
-                        codegen_next_label(codegen, "match.check") // next pattern
-                    };
-
-                    codegen_emit_br_conditional(codegen, &cond, &arm_label, &fail_label);
-
-                    if not(is_last_pattern) {
-                        codegen_emit_label(codegen, &fail_label); // next pattern of arm
-                    }
-                } // otherwise no branch, arm is executed unconditionally
-            },
-            RAstPattern::EnumVariant(name, variant, inner_patterns) => {
-                // TODO:
-            },
-            _ => {}, // catch-all patterns do not branch conditionally
-        }
-
+        codegen_arm_match(
+            codegen,
+            pattern,
+            expr_name,
+            expr_type,
+            is_last_arm,
+            is_last_pattern,
+            &arm_label,
+            &else_label,
+        );
         codegen_arm_destructuring(codegen, pattern, expr_name, expr_type);
 
         i = i + 1;
@@ -3110,6 +3093,43 @@ fn codegen_arm(
     }
 
     arm_type
+}
+
+/// Generate code that decides whether an arm is a match or not.
+fn codegen_arm_match(
+    codegen: &mut Codegen,
+    pattern: &RAstPattern,
+    expr_name: &String,
+    expr_type: &RType,
+    is_last_arm: bool,
+    is_last_pattern: bool,
+    arm_label: &String,
+    else_label: &String,
+) {
+    let eq: RAstComparisonOp = RAstComparisonOp::Eq;
+    match pattern {
+        RAstPattern::Literal(literal) => {
+            if not(is_last_arm) {
+                let value: String = integer_to_string(rAstPatternLiteral_value(literal));
+                let cond: String = codegen_emit_icmp(codegen, &eq, expr_type, expr_name, &value);
+
+                let fail_label: String = if is_last_pattern {
+                    string_clone(&else_label) // next arm
+                } else {
+                    codegen_next_label(codegen, "match.check") // next pattern
+                };
+
+                codegen_emit_br_conditional(codegen, &cond, arm_label, &fail_label);
+
+                if not(is_last_pattern) {
+                    codegen_emit_label(codegen, &fail_label); // next pattern of arm
+                }
+            } // otherwise no branch, arm is executed unconditionally
+        },
+        RAstPattern::EnumVariant(name, variant, inner_patterns) => {
+        },
+        _ => {}, // catch-all patterns do not branch conditionally
+    }
 }
 
 /// Generate code to destructure/bind pattern values to names.
