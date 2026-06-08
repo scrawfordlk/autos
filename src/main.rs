@@ -2473,10 +2473,14 @@ fn codegen_scope_lookup(Codegen::Codegen(_, _, _, stack, _): &Codegen, name: &St
     }
 }
 
+fn codegen_globals(codegen: &Codegen) -> &StringMap<Item> {
+    let Codegen::Codegen(_, _, _, _, items): &Codegen = codegen;
+    items
+}
+
 /// Lookup a global item (function or enum).
 fn codegen_search_global<'a>(codegen: &'a Codegen, name: &'a String) -> Option<&'a Item> {
-    let Codegen::Codegen(_, _, _, _, items): &Codegen = codegen;
-    stringMap_get::<Item>(items, name)
+    stringMap_get::<Item>(codegen_globals(codegen), name)
 }
 
 /// Get the current value of the SSA numbering scheme.
@@ -3166,13 +3170,26 @@ fn codegen_arm_match(
             let value: String = integer_to_string(rAstPatternLiteral_value(literal));
             let cond: String = codegen_emit_icmp(codegen, &eq, expr_type, expr_name, &value);
             codegen_emit_br_conditional(codegen, &cond, arm_label, &fail_label);
-            if not(is_last_pattern) {
-                codegen_emit_label(codegen, &fail_label); // next pattern of arm
-            }
         },
-        RAstPattern::EnumVariant(name, variant, inner_patterns) => {
+        RAstPattern::EnumVariant(name, variant, _) => {
+            let tag: usize = match codegen_search_global(codegen, name) {
+                Option::Some(Item::Enum(RAstEnum::Enum(_, variants))) => {
+                    variants_get_discriminator(variants, variant)
+                },
+                _ => 0, // assume this case does not occur
+            };
+            let tag: String = integer_to_string(tag);
+            let expr_tag: String = codegen_emit_load(codegen, &RType::Usize, expr_name);
+            let cond: String = codegen_emit_icmp(codegen, &eq, &RType::Usize, &tag, &expr_tag);
+            codegen_emit_br_conditional(codegen, &cond, &arm_label, &fail_label);
         },
         _ => {}, // catch-all patterns do not branch conditionally
+    }
+    if and(
+        rAstPattern_is_refutable(codegen_globals(codegen), pattern),
+        not(is_last_pattern),
+    ) {
+        codegen_emit_label(codegen, &fail_label); // next pattern of arm
     }
 }
 
