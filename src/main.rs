@@ -888,6 +888,19 @@ fn rAstEnum_size(codegen: &Codegen, RAstEnum::Enum(_, variants): &RAstEnum) -> u
     8 + max_size // 8 bytes for the discriminant
 }
 
+/// Get the types of the given enum variant's fields.
+fn rAstEnum_get_variant_types(variants: &Vec<RAstVariant>, variant: &String) -> Vec<RType> {
+    let mut i: usize = 0;
+    while i < vec_len::<RAstVariant>(variants) {
+        let RAstVariant::Variant(name, types): &RAstVariant = vec_at::<RAstVariant>(variants, i);
+        if string_eq(name, variant) {
+            return types_clone(types);
+        }
+        i = i + 1;
+    }
+    vec_new::<RType>()
+}
+
 /// Get an identifying discriminator for a given variant of variants.
 /// If the variant is not present, 0 is returned.
 fn variants_get_discriminator(variants: &Vec<RAstVariant>, variant: &String) -> usize {
@@ -3209,7 +3222,7 @@ fn codegen_arm_destructuring(
             codegen_scope_insert(codegen, variable_name, variable_type, pointer_name);
         },
         RAstPattern::EnumVariant(name, variant, patterns) => {
-            // TODO:
+            // we assume all inner patterns are irrefutable
         },
         _ => {}, // do not destructure or bind values
     }
