@@ -815,19 +815,6 @@ fn rAstPattern_is_refutable(globals: &StringMap<Item>, pattern: &RAstPattern) ->
     }
 }
 
-/// Return true if the given patterns are all irrefutable.
-fn patterns_are_irrefutable(items: &StringMap<Item>, patterns: &Vec<RAstPattern>) -> bool {
-    let mut i: usize = 0;
-    while i < vec_len::<RAstPattern>(patterns) {
-        let pattern: &RAstPattern = vec_at::<RAstPattern>(patterns, i);
-        if rAstPattern_is_refutable(items, pattern) {
-            return false;
-        }
-        i = i + 1;
-    }
-    true
-}
-
 fn rAstPattern_is_wildcard(pattern: &RAstPattern) -> bool {
     match pattern {
         RAstPattern::Wildcard => true,
@@ -2380,9 +2367,32 @@ fn semantic_check_pattern(
             return; // type agnostic
         },
         RAstPattern::Wildcard => return, // type agnostic
-        RAstPattern::EnumVariant(enum_name, _, inner_patterns) => {
-            if not(patterns_are_irrefutable(globals, inner_patterns)) {
-                semantic_error(&string("An enum's inner patterns must all be irrefutable!"));
+        RAstPattern::EnumVariant(enum_name, variant, inner_patterns) => {
+            let fields: Vec<RType> = match stringMap_get(globals, enum_name) {
+                Option::Some(item) => match item {
+                    Item::Enum(RAstEnum::Enum(_, variants)) => rAstEnum_get_variant_fields(variants, variant),
+                    _ => semantic_error(&string("unknown enum used in pattern!")),
+                },
+                _ => semantic_error(&string("unknown enum used in pattern!")),
+            };
+            if vec_len::<RType>(&fields) != vec_len::<RAstPattern>(inner_patterns) {
+                semantic_error(&string("enum field count mismatch in pattern"));
+            }
+            let mut i: usize = 0;
+            while i < vec_len::<RAstPattern>(inner_patterns) {
+                let pattern: &RAstPattern = vec_at::<RAstPattern>(inner_patterns, i);
+                let ty: &RType = vec_at::<RType>(&fields, i);
+                match pattern {
+                    RAstPattern::Identifier(mutable, name) => {
+                        semantic_insert_variable(semantic, string_clone(name), rType_clone(ty), *mutable);
+                    },
+                    RAstPattern::Wildcard => {},
+                    RAstPattern::EnumVariant(name, _, _) => {
+                        // TODO: check if it is irrefutable
+                    },
+                    _ => semantic_error(&string("An enum's inner patterns must all be irrefutable!")),
+                }
+                i = i + 1;
             }
             RType::Enum(string_clone(enum_name))
         },
