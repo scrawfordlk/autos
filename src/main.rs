@@ -866,7 +866,7 @@ fn rAstEnum_size(codegen: &Codegen, RAstEnum::Enum(_, variants): &RAstEnum) -> u
 }
 
 /// Get the types of the given enum variant's fields.
-fn rAstEnum_get_variant_types(variants: &Vec<RAstVariant>, variant: &String) -> Vec<RType> {
+fn rAstEnum_get_variant_fields(variants: &Vec<RAstVariant>, variant: &String) -> Vec<RType> {
     let mut i: usize = 0;
     while i < vec_len::<RAstVariant>(variants) {
         let RAstVariant::Variant(name, types): &RAstVariant = vec_at::<RAstVariant>(variants, i);
@@ -2874,7 +2874,7 @@ fn codegen_path(codegen: &mut Codegen, path: &Vec<String>, values: &Vec<RAstExpr
                 let expression: &RAstExpr = vec_at::<RAstExpr>(values, i);
                 let STPair::ST(mut register, ty): STPair = codegen_expression(codegen, expression);
                 register = codegen_emit_load_if_enum(codegen, register, &ty);
-                offset_ptr = emit_pointer_add(codegen, &offset_ptr, &ty, 1);
+                offset_ptr = codegen_emit_pointer_add(codegen, &offset_ptr, &ty, 1);
                 codegen_emit_store(codegen, &ty, &register, &offset_ptr);
                 i = i + 1;
             }
@@ -3185,7 +3185,31 @@ fn codegen_arm_destructuring(
             codegen_scope_insert(codegen, variable_name, variable_type, pointer_name);
         },
         RAstPattern::EnumVariant(name, variant, patterns) => {
-            // we assume all inner patterns are irrefutable
+            // assume all inner patterns are irrefutable
+            let fields: Vec<RType> = match codegen_search_global(codegen, name) {
+                Option::Some(item) => match item {
+                    Item::Enum(RAstEnum::Enum(_, variants)) => rAstEnum_get_variant_fields(variants, variant),
+                    _ => vec_new::<RType>(), // assume case this does not occur
+                },
+                _ => vec_new::<RType>(), // assume this case does not occur
+            };
+            let mut offset: String = string_clone(expr_name); // skip discriminator
+            let mut i: usize = 0;
+            while i < vec_len::<RType>(&fields) {
+                let ty: &RType = vec_at::<RType>(&fields, i);
+                match vec_at::<RAstPattern>(patterns, i) {
+                    RAstPattern::Identifier(_, name) => {
+                        let pointer: String = codegen_emit_alloca(codegen, ty);
+                        offset = codegen_emit_pointer_add(codegen, &offset, ty, 1);
+                        let result: String = codegen_emit_load(codegen, ty, &offset);
+                        codegen_emit_store(codegen, ty, &result, &pointer);
+                        codegen_scope_insert(codegen, string_clone(name), rType_clone(ty), pointer);
+                    },
+                    RAstPattern::EnumVariant(_, _, _) => panic("not implemented (assume irrefutable)"),
+                    _ => {}, // assume case this does not occur
+                }
+                i = i + 1;
+            }
         },
         _ => {}, // do not destructure or bind values
     }
@@ -3485,7 +3509,7 @@ fn codegen_emit_load(codegen: &mut Codegen, ty: &RType, pointer: &String) -> Str
 /// %<name> = inttoptr i64 %t1 to ptr
 /// ```
 /// Returns `%<name>`.
-fn emit_pointer_add(codegen: &mut Codegen, pointer: &String, ty: &RType, index: usize) -> String {
+fn codegen_emit_pointer_add(codegen: &mut Codegen, pointer: &String, ty: &RType, index: usize) -> String {
     let ptr_type: RType = RType::RawPointerMut(box_new(RType::Unit)); // dummy type to use `ptr` type
     let addition: RAstArithmeticOp = RAstArithmeticOp::Add;
     let offset: String = integer_to_string(index * rType_size(codegen, ty));
