@@ -1,3 +1,4 @@
+max_width = 110
 comment_width = 100 # max width of comments before forcing wrap
 wrap_comments = true
 

@@ -9,17 +9,13 @@ fn main() {
 
     let args: StdVec<StdString> = std::env::args().collect();
     if args.len() <= 1 {
-        eprintln!(
-            "Usage: <program> ( -c <input> [ -o <output> ] [ -e ] [ --unsafe ] | -e <inputllvm> )"
-        );
+        eprintln!("Usage: <program> ( -c <input> [ -o <output> ] [ -e ] [ --unsafe ] | -e <inputllvm> )");
         exit_process(1);
     }
 
     if args[1] == "-c" {
         if args.len() < 3 {
-            eprintln!(
-                "Usage: <program> ( -c <input> [ -o <output> ] [ -e ] [ --unsafe ] | -e <inputllvm> )"
-            );
+            eprintln!("Usage: <program> ( -c <input> [ -o <output> ] [ -e ] [ --unsafe ] | -e <inputllvm> )");
             exit_process(1);
         }
         let input = args[2].clone();
@@ -84,9 +80,7 @@ fn main() {
 
     if args[1] == "-e" {
         if args.len() < 3 {
-            eprintln!(
-                "Usage: <program> ( -c <input> [ -o <output> ] [ -e ] [ --unsafe ] | -e <inputllvm> )"
-            );
+            eprintln!("Usage: <program> ( -c <input> [ -o <output> ] [ -e ] [ --unsafe ] | -e <inputllvm> )");
             exit_process(1);
         }
         let llvm_ir: StdString = std::fs::read_to_string(&args[2]).expect("no llvm file found");
@@ -94,9 +88,7 @@ fn main() {
         exit_process(exit_code);
     }
 
-    eprintln!(
-        "Usage: <program> ( -c <input> [ -o <output> ] [ -e ] [ --unsafe ] | -e <inputllvm> )"
-    );
+    eprintln!("Usage: <program> ( -c <input> [ -o <output> ] [ -e ] [ --unsafe ] | -e <inputllvm> )");
     exit_process(1);
 }
 
@@ -804,9 +796,7 @@ fn rAstLiteral_type(literal: &RLiteral) -> RType {
         RLiteral::Int(_) => RType::Usize,
         RLiteral::Char(_) => RType::Char,
         RLiteral::Bool(_) => RType::Bool,
-        RLiteral::String(_) => {
-            RType::Reference(box_new::<RType>(RType::Enum(string("str"))), false)
-        },
+        RLiteral::String(_) => RType::Reference(box_new::<RType>(RType::Enum(string("str"))), false),
     }
 }
 
@@ -978,10 +968,7 @@ fn type_matches(left: &RType, right: &RType) -> bool {
     or(
         // Never is a special type that indicates the value is unreachable, so it matches every
         // type
-        or(
-            rType_eq(left, &RType::Never),
-            rType_eq(right, &RType::Never),
-        ),
+        or(rType_eq(left, &RType::Never), rType_eq(right, &RType::Never)),
         rType_eq(left, right),
     )
 }
@@ -1049,8 +1036,7 @@ fn parse_language(lexer: &mut RLexer) -> RAst {
                 vec_push::<RAstItem>(&mut items, enumeration);
             },
             token => {
-                let mut message: String =
-                    string("expected function, enum, or extern block, but got: ");
+                let mut message: String = string("expected function, enum, or extern block, but got: ");
                 string_push_string(&mut message, &token_to_string(token));
                 parse_error(lexer, &message);
             },
@@ -1883,10 +1869,7 @@ fn castOperation_get_cast_operation(left_type: &RType, right_type: &RType) -> Ca
         RType::Reference(left_inner, mutable) => match right_type {
             RType::RawPointerMut(right_inner) => {
                 if and(
-                    rType_eq(
-                        box_deref::<RType>(left_inner),
-                        box_deref::<RType>(right_inner),
-                    ),
+                    rType_eq(box_deref::<RType>(left_inner), box_deref::<RType>(right_inner)),
                     *mutable,
                 ) {
                     CastOperation::None
@@ -1926,11 +1909,7 @@ fn semantic_check_language(semantic: &mut Semantic, ast: &RAst, globals: &String
 }
 
 /// Analyze one function and validate body against its signature.
-fn semantic_check_function(
-    semantic: &mut Semantic,
-    function: &RAstFunction,
-    globals: &StringMap<Item>,
-) {
+fn semantic_check_function(semantic: &mut Semantic, function: &RAstFunction, globals: &StringMap<Item>) {
     let RAstFunction::Fn(is_unsafe, _, parameters, return_type, body): &RAstFunction = function;
 
     semantic_set_current_fn_return_type(semantic, rType_clone(return_type));
@@ -2071,9 +2050,7 @@ fn semantic_check_expression(
         RAstExpr::Literal(literal) => rAstLiteral_type(literal),
         RAstExpr::Variable(name) => semantic_check_variable_use(semantic, name),
         RAstExpr::Path(path, values) => semantic_check_path(semantic, path, values, globals),
-        RAstExpr::Block(is_unsafe, block) => {
-            semantic_check_block(semantic, block, *is_unsafe, globals)
-        },
+        RAstExpr::Block(is_unsafe, block) => semantic_check_block(semantic, block, *is_unsafe, globals),
         RAstExpr::If(if_expression) => semantic_check_if(semantic, if_expression, globals),
         RAstExpr::While(condition, body) => {
             semantic_check_while(semantic, box_deref::<RAstExpr>(condition), body, globals)
@@ -2091,8 +2068,7 @@ fn semantic_check_return(
 ) -> RType {
     match returned {
         Option::Some(expression) => {
-            let ty: RType =
-                semantic_check_expression(semantic, box_deref::<RAstExpr>(expression), globals);
+            let ty: RType = semantic_check_expression(semantic, box_deref::<RAstExpr>(expression), globals);
             semantic_expect_type_match(&ty, semantic_current_fn_return_type(semantic));
         },
         Option::None => {
@@ -2270,9 +2246,7 @@ fn semantic_check_call(
                         semantic_expect_type_match(ty, &arg_type);
                     },
                     _ => {
-                        semantic_check_error(
-                            "function call has more arguments than there are parameters",
-                        );
+                        semantic_check_error("function call has more arguments than there are parameters");
                     },
                 }
                 i = i + 1;
@@ -2283,19 +2257,11 @@ fn semantic_check_call(
     }
 }
 
-fn semantic_check_enum(
-    semantic: &mut Semantic,
-    instance: &Vec<String>,
-    values: &Vec<RAstExpr>,
-) -> RType {
+fn semantic_check_enum(semantic: &mut Semantic, instance: &Vec<String>, values: &Vec<RAstExpr>) -> RType {
     RType::Enum(string_clone(vec_at::<String>(instance, 0)))
 }
 
-fn semantic_check_if(
-    semantic: &mut Semantic,
-    if_expression: &RAstIf,
-    globals: &StringMap<Item>,
-) -> RType {
+fn semantic_check_if(semantic: &mut Semantic, if_expression: &RAstIf, globals: &StringMap<Item>) -> RType {
     let RAstIf::If(condition, then_block, else_branch): &RAstIf = if_expression;
     let condition_type: RType =
         semantic_check_expression(semantic, box_deref::<RAstExpr>(condition), globals);
@@ -2371,9 +2337,7 @@ fn semantic_check_match(
                     },
                     RAstPattern::Literal(_) => {},
                     _ => {
-                        semantic_check_error(
-                            "multi-pattern match arms only support literal patterns",
-                        );
+                        semantic_check_error("multi-pattern match arms only support literal patterns");
                     },
                 }
             }
@@ -2692,31 +2656,23 @@ fn codegen_binding(codegen: &mut Codegen, variable: &RAstVariable, value: &RAstE
 fn codegen_expression(codegen: &mut Codegen, expression: &RAstExpr) -> STPair {
     match expression {
         RAstExpr::Return(returned) => codegen_return(codegen, returned),
-        RAstExpr::Assign(left, right) => codegen_assignment(
-            codegen,
-            box_deref::<RAstExpr>(left),
-            box_deref::<RAstExpr>(right),
-        ),
+        RAstExpr::Assign(left, right) => {
+            codegen_assignment(codegen, box_deref::<RAstExpr>(left), box_deref::<RAstExpr>(right))
+        },
         RAstExpr::Binary(operator, left, right) => codegen_binary_op(
             codegen,
             operator,
             box_deref::<RAstExpr>(left),
             box_deref::<RAstExpr>(right),
         ),
-        RAstExpr::Cast(value, to_type) => {
-            codegen_cast(codegen, box_deref::<RAstExpr>(value), to_type)
-        },
-        RAstExpr::Unary(operator, value) => {
-            codegen_unary_op(codegen, operator, box_deref::<RAstExpr>(value))
-        },
+        RAstExpr::Cast(value, to_type) => codegen_cast(codegen, box_deref::<RAstExpr>(value), to_type),
+        RAstExpr::Unary(operator, value) => codegen_unary_op(codegen, operator, box_deref::<RAstExpr>(value)),
         RAstExpr::Literal(literal) => codegen_literal(literal),
         RAstExpr::Variable(name) => codegen_variable_use(codegen, name),
         RAstExpr::Path(path, arguments) => codegen_path(codegen, path, arguments),
         RAstExpr::Block(_, block) => codegen_block(codegen, block),
         RAstExpr::If(if_expression) => codegen_if(codegen, if_expression),
-        RAstExpr::While(condition, body) => {
-            codegen_while(codegen, box_deref::<RAstExpr>(condition), body)
-        },
+        RAstExpr::While(condition, body) => codegen_while(codegen, box_deref::<RAstExpr>(condition), body),
         RAstExpr::Match(value, arms) => codegen_match(codegen, box_deref::<RAstExpr>(value), arms),
     }
 }
@@ -2834,10 +2790,7 @@ fn codegen_unary_op(codegen: &mut Codegen, operator: &RAstUnaryOp, value: &RAstE
         RAstUnaryOp::Reference(mutable_ref) => match value {
             RAstExpr::Variable(name) => {
                 let STPair::ST(pointer_name, ty): STPair = codegen_scope_lookup(codegen, name);
-                STPair::ST(
-                    pointer_name,
-                    RType::Reference(box_new::<RType>(ty), *mutable_ref),
-                )
+                STPair::ST(pointer_name, RType::Reference(box_new::<RType>(ty), *mutable_ref))
             },
             _ => {
                 let STPair::ST(name, ty): STPair = codegen_expression(codegen, value);
@@ -3686,8 +3639,7 @@ fn codegen_emit_declare(
     let mut i: usize = 0;
     let len: usize = vec_len::<RAstVariable>(parameters);
     while i < len {
-        let RAstVariable::Variable(_, parameter_type): &RAstVariable =
-            vec_at::<RAstVariable>(parameters, i);
+        let RAstVariable::Variable(_, parameter_type): &RAstVariable = vec_at::<RAstVariable>(parameters, i);
 
         string_push_string(&mut line, &rType_to_llvm_name(codegen, parameter_type));
 
@@ -4200,11 +4152,9 @@ fn parser_expect_value_type(parser: &Parser, value: &LValue, expected: &LType) {
 
 fn parser_value_has_type(parser: &Parser, value: &LValue, expected: &LType) -> bool {
     match value {
-        LValue::Register(name) => {
-            match lLocalSymbolTable_lookup_register_type(parser_local(parser), name) {
-                Option::Some(actual) => llvmType_eq(actual, expected),
-                Option::None => false,
-            }
+        LValue::Register(name) => match lLocalSymbolTable_lookup_register_type(parser_local(parser), name) {
+            Option::Some(actual) => llvmType_eq(actual, expected),
+            Option::None => false,
         },
         LValue::Literal(_) => match expected {
             LType::I1 | LType::I8 | LType::I64 => true, // allow overflows
@@ -4399,10 +4349,7 @@ fn instructionBlock_instructions(
 }
 
 /// Get the instructions of the block labelled by the given label.
-fn instructionBlock_fetch_instructions(
-    blocks: &Vec<InstructionBlock>,
-    label: String,
-) -> &Vec<Instruction> {
+fn instructionBlock_fetch_instructions(blocks: &Vec<InstructionBlock>, label: String) -> &Vec<Instruction> {
     let mut i: usize = 0;
     while i < vec_len::<InstructionBlock>(blocks) {
         let block: &InstructionBlock = vec_at::<InstructionBlock>(blocks, i);
@@ -4530,8 +4477,7 @@ fn parser_parse_language(parser: &mut Parser) {
             LToken::Define => parser_parse_function(parser),
             LToken::Declare => parser_parse_declare(parser),
             _ => {
-                let message: String =
-                    parser_expected_message(parser, &string("LLVM top-level item"));
+                let message: String = parser_expected_message(parser, &string("LLVM top-level item"));
                 parser_error(parser, &message)
             },
         }
@@ -4638,8 +4584,7 @@ fn parser_parse_parameters(parser: &mut Parser, named: bool) -> Vec<LParameter> 
             parser_next_token(parser);
 
             let parameter_type: LType = parser_parse_type(parser);
-            let param_name: String =
-                parser_parse_parameter_name(parser, vec_len::<LParameter>(&parameters));
+            let param_name: String = parser_parse_parameter_name(parser, vec_len::<LParameter>(&parameters));
 
             if named {
                 if not(lLocalSymbolTable_insert_register(
@@ -4771,8 +4716,7 @@ fn parser_parse_assignment(parser: &mut Parser) -> AssignInstruction {
         LToken::Load => parser_parse_load_assign(parser),
         LToken::Call => parser_parse_call_assign(parser),
         _ => {
-            let message: String =
-                parser_expected_message(parser, &string("LLVM assignment operation"));
+            let message: String = parser_expected_message(parser, &string("LLVM assignment operation"));
             parser_error(parser, &message)
         },
     };
@@ -4958,8 +4902,7 @@ fn parser_parse_type(parser: &mut Parser) -> LType {
                     parser_next_token(parser);
                 },
                 _ => {
-                    let message: String =
-                        parser_expected_message(parser, &string("x in LLVM array type"));
+                    let message: String = parser_expected_message(parser, &string("x in LLVM array type"));
                     parser_error(parser, &message)
                 },
             }
@@ -5274,9 +5217,7 @@ fn emu_execute_function(
             }
 
             let mut current_label: String =
-                string_clone(instructionBlock_label(vec_at::<InstructionBlock>(
-                    blocks, 0,
-                )));
+                string_clone(instructionBlock_label(vec_at::<InstructionBlock>(blocks, 0)));
             while true {
                 let instructions: &Vec<Instruction> =
                     instructionBlock_fetch_instructions(blocks, string_clone(&current_label));
@@ -5350,12 +5291,9 @@ fn emu_execute_instructions(
             },
             Instruction::Br(branch) => {
                 return match branch {
-                    Branch::Unconditional(target_label) => {
-                        ExecFlow::Jump(string_clone(target_label))
-                    },
+                    Branch::Unconditional(target_label) => ExecFlow::Jump(string_clone(target_label)),
                     Branch::Conditional(condition, then_label, else_label) => {
-                        let condition_value: usize =
-                            llvm_eval_value(emulator, registers, condition);
+                        let condition_value: usize = llvm_eval_value(emulator, registers, condition);
 
                         if condition_value == 1 {
                             ExecFlow::Jump(string_clone(then_label))
@@ -5976,8 +5914,7 @@ fn stringMap_new<T>() -> StringMap<T> {
 /// Create a map with explicit len.
 fn stringMap_with_len<T>(len: usize) -> StringMap<T> {
     let bucket_len: usize = if len == 0 { 1 } else { len };
-    let mut buckets: Vec<List<StringMapEntry<T>>> =
-        vec_with_capacity::<List<StringMapEntry<T>>>(bucket_len);
+    let mut buckets: Vec<List<StringMapEntry<T>>> = vec_with_capacity::<List<StringMapEntry<T>>>(bucket_len);
     let mut i: usize = 0;
     while i < bucket_len {
         vec_push::<List<StringMapEntry<T>>>(&mut buckets, List::Nil);
@@ -5990,9 +5927,8 @@ fn stringMap_with_len<T>(len: usize) -> StringMap<T> {
 fn stringMap_insert<T>(StringMap::Map(buckets): &mut StringMap<T>, key: String, value: T) {
     let bucket_index: usize = { string_hash(&key, vec_len::<List<StringMapEntry<T>>>(buckets)) };
 
-    let bucket: &mut List<StringMapEntry<T>> = unwrap::<&mut List<StringMapEntry<T>>>(
-        vec_get_mut::<List<StringMapEntry<T>>>(buckets, bucket_index),
-    );
+    let bucket: &mut List<StringMapEntry<T>> =
+        unwrap::<&mut List<StringMapEntry<T>>>(vec_get_mut::<List<StringMapEntry<T>>>(buckets, bucket_index));
 
     let mut old_bucket: List<StringMapEntry<T>> = List::Nil;
     unsafe {
@@ -6091,8 +6027,7 @@ fn stringMapStack_insert<T>(stack: &mut StringMapStack<T>, name: String, value: 
     }
 
     let idx: usize = *top - 1;
-    let scope: &mut StringMap<T> =
-        unwrap::<&mut StringMap<T>>(vec_get_mut::<StringMap<T>>(scopes, idx));
+    let scope: &mut StringMap<T> = unwrap::<&mut StringMap<T>>(vec_get_mut::<StringMap<T>>(scopes, idx));
     let already_used: bool = stringMap_contains::<T>(scope, &name);
     stringMap_insert::<T>(scope, name, value);
     already_used
@@ -6138,10 +6073,7 @@ fn llvmType_eq(left: &LType, right: &LType) -> bool {
         LType::Array(left_len, left_inner) => match right {
             LType::Array(right_len, right_inner) => {
                 *left_len == *right_len
-                    && llvmType_eq(
-                        box_deref::<LType>(left_inner),
-                        box_deref::<LType>(right_inner),
-                    )
+                    && llvmType_eq(box_deref::<LType>(left_inner), box_deref::<LType>(right_inner))
             },
             _ => false,
         },
@@ -6409,9 +6341,7 @@ fn rType_eq(a: &RType, b: &RType) -> bool {
             _ => false,
         },
         RType::RawPointerMut(left) => match b {
-            RType::RawPointerMut(right) => {
-                rType_eq(box_deref::<RType>(left), box_deref::<RType>(right))
-            },
+            RType::RawPointerMut(right) => rType_eq(box_deref::<RType>(left), box_deref::<RType>(right)),
             _ => false,
         },
     }
@@ -6714,10 +6644,9 @@ fn rType_clone(t: &RType) -> RType {
         RType::Unit => RType::Unit,
         RType::Never => RType::Never,
         RType::Enum(name) => RType::Enum(string_clone(name)),
-        RType::Reference(inner, mutable) => RType::Reference(
-            box_new::<RType>(rType_clone(box_deref::<RType>(inner))),
-            *mutable,
-        ),
+        RType::Reference(inner, mutable) => {
+            RType::Reference(box_new::<RType>(rType_clone(box_deref::<RType>(inner))), *mutable)
+        },
         RType::RawPointerMut(inner) => {
             RType::RawPointerMut(box_new::<RType>(rType_clone(box_deref::<RType>(inner))))
         },
@@ -6801,10 +6730,9 @@ fn llvmType_clone(ty: &LType) -> LType {
         LType::I8 => LType::I8,
         LType::I64 => LType::I64,
         LType::Ptr => LType::Ptr,
-        LType::Array(len, inner) => LType::Array(
-            *len,
-            box_new::<LType>(llvmType_clone(box_deref::<LType>(inner))),
-        ),
+        LType::Array(len, inner) => {
+            LType::Array(*len, box_new::<LType>(llvmType_clone(box_deref::<LType>(inner))))
+        },
         LType::Void => LType::Void,
     }
 }
