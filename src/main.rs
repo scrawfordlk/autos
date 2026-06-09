@@ -1740,7 +1740,7 @@ fn semantic_check_run(ast: &RAst, items: &StringMap<Item>) {
 /// Check if the given types are equal, otherwise throw an error.
 fn semantic_expect_type_match(left: &RType, right: &RType) {
     if not(rType_eq(left, right)) {
-        semantic_check_error("types do not match perfectly");
+        semantic_error(&string("types do not match perfectly"));
     }
 }
 
@@ -1752,19 +1752,19 @@ fn semantic_expect_type_match(left: &RType, right: &RType) {
 /// 3. b == Never
 fn semantic_expect_coerced_type_match(left: &RType, right: &RType) {
     if not(type_matches(left, right)) {
-        semantic_check_error("type mismatch");
+        semantic_error(&string("type mismatch"));
     }
 }
 
 fn semantic_expect_numeric_type(ty: &RType) {
     if not(rType_is_numeric(ty)) {
-        semantic_check_error("expected numeric type");
+        semantic_error(&string("expected numeric type"));
     }
 }
 
 fn semantic_expect_bool_type(ty: &RType) {
     if not(rType_eq(ty, &RType::Bool)) {
-        semantic_check_error("expected bool type");
+        semantic_error(&string("expected bool type"));
     }
 }
 
@@ -1930,7 +1930,7 @@ fn semantic_check_function(semantic: &mut Semantic, function: &RAstFunction, glo
                     *is_mutable,
                 );
                 if already_used {
-                    semantic_check_error("duplicate parameter name");
+                    semantic_error(&string("duplicate parameter name"));
                 }
             },
             _ => {},
@@ -2048,7 +2048,7 @@ fn semantic_check_expression(
             semantic_check_unary_op(semantic, operator, box_deref::<RAstExpr>(value), globals)
         },
         RAstExpr::Literal(literal) => rAstLiteral_type(literal),
-        RAstExpr::Variable(name) => semantic_check_variable_use(semantic, name),
+        RAstExpr::Variable(name) => semantic_check_variable_use(semantic, false, name),
         RAstExpr::Path(path, values) => semantic_check_path(semantic, path, values, globals),
         RAstExpr::Block(is_unsafe, block) => semantic_check_block(semantic, block, *is_unsafe, globals),
         RAstExpr::If(if_expression) => semantic_check_if(semantic, if_expression, globals),
@@ -2096,35 +2096,27 @@ fn semantic_check_assignment_lvalue_type(
     globals: &StringMap<Item>,
 ) -> RType {
     match expression {
-        RAstExpr::Variable(name) => match semantic_lookup_variable(semantic, name) {
-            Option::Some(Variable::Variable(variable_type, mutable)) => {
-                if not(mutable) {
-                    semantic_check_error("invalid assignment to immutable variable");
-                }
-                variable_type
-            },
-            Option::None => semantic_check_error("undefined variable"),
-        },
+        RAstExpr::Variable(name) => semantic_check_variable_use(semantic, true, name),
         RAstExpr::Unary(RAstUnaryOp::Dereference, value) => {
             let pointer_type: RType =
                 semantic_check_expression(semantic, box_deref::<RAstExpr>(value), globals);
             match pointer_type {
                 RType::Reference(inner, mutable) => {
                     if not(mutable) {
-                        semantic_check_error("invalid assignment using immutable reference");
+                        semantic_error(&string("invalid assignment using immutable reference"));
                     }
                     rType_clone(box_deref::<RType>(&inner))
                 },
                 RType::RawPointerMut(inner) => {
                     if not(semantic_is_unsafe_context(semantic)) {
-                        semantic_check_error("raw pointer dereference requires unsafe");
+                        semantic_error(&string("raw pointer dereference requires unsafe"));
                     }
                     rType_clone(box_deref::<RType>(&inner))
                 },
-                _ => semantic_check_error("invalid assignment to an expression"),
+                _ => semantic_error(&string("invalid assignment to an expression")),
             }
         },
-        _ => semantic_check_error("invalid assignment target"),
+        _ => semantic_error(&string("invalid assignment target")),
     }
 }
 
@@ -2156,7 +2148,7 @@ fn semantic_check_cast(
 ) -> RType {
     let from_type: RType = semantic_check_expression(semantic, value, globals);
     match castOperation_get_cast_operation(&from_type, to_type) {
-        CastOperation::Invalid => semantic_check_error("invalid cast"),
+        CastOperation::Invalid => semantic_error(&string("invalid cast")),
         _ => rType_clone(to_type),
     }
 }
@@ -2169,15 +2161,10 @@ fn semantic_check_unary_op(
 ) -> RType {
     match operator {
         RAstUnaryOp::Reference(mutable_ref) => match value {
-            RAstExpr::Variable(name) => match semantic_lookup_variable(semantic, name) {
-                Option::Some(Variable::Variable(ty, mutable_var)) => {
-                    if and(*mutable_ref, not(mutable_var)) {
-                        semantic_check_error("cannot take mutable reference to immutable variable");
-                    }
-                    RType::Reference(box_new::<RType>(ty), *mutable_ref)
-                },
-                _ => semantic_check_error("undefined variable"),
-            },
+            RAstExpr::Variable(name) => RType::Reference(
+                box_new::<RType>(semantic_check_variable_use(semantic, *mutable_ref, name)),
+                *mutable_ref,
+            ),
             _ => {
                 let ty: RType = semantic_check_expression(semantic, value, globals);
                 RType::Reference(box_new::<RType>(ty), *mutable_ref)
@@ -2189,20 +2176,31 @@ fn semantic_check_unary_op(
                 RType::Reference(pointed, _) => rType_clone(box_deref::<RType>(&pointed)),
                 RType::RawPointerMut(pointed) => {
                     if not(semantic_is_unsafe_context(semantic)) {
-                        semantic_check_error("raw pointer dereference requires unsafe context");
+                        semantic_error(&string("raw pointer dereference requires unsafe context"));
                     }
                     rType_clone(box_deref::<RType>(&pointed))
                 },
-                _ => semantic_check_error("cannot dereference this expression"),
+                _ => semantic_error(&string("cannot dereference this expression")),
             }
         },
     }
 }
 
-fn semantic_check_variable_use(semantic: &mut Semantic, name: &String) -> RType {
+fn semantic_check_variable_use(semantic: &mut Semantic, mutable: bool, name: &String) -> RType {
     match semantic_lookup_variable(semantic, name) {
-        Option::Some(Variable::Variable(ty, _)) => ty,
-        _ => semantic_check_error("undefined variable"),
+        Option::Some(Variable::Variable(ty, is_mutable)) => {
+            if and(mutable, not(is_mutable)) {
+                let mut message: String = string("immutable variable cannot be used in mutable context: ");
+                string_push_string(&mut message, name);
+                semantic_error(&message)
+            }
+            ty
+        },
+        _ => {
+            let mut message: String = string("undefined variable: ");
+            string_push_string(&mut message, name);
+            semantic_error(&message)
+        },
     }
 }
 
@@ -2233,7 +2231,7 @@ fn semantic_check_call(
             let return_type: RType = rType_clone(return_type);
 
             if and(*is_unsafe, not(semantic_is_unsafe_context(semantic))) {
-                semantic_check_error("calling an unsafe function requires unsafe");
+                semantic_error(&string("calling an unsafe function requires unsafe"));
             }
 
             let mut i: usize = 0;
@@ -2246,14 +2244,16 @@ fn semantic_check_call(
                         semantic_expect_type_match(ty, &arg_type);
                     },
                     _ => {
-                        semantic_check_error("function call has more arguments than there are parameters");
+                        semantic_error(&string(
+                            "function call has more arguments than there are parameters",
+                        ));
                     },
                 }
                 i = i + 1;
             }
             return_type
         },
-        _ => semantic_check_error("call to undefined function"),
+        _ => semantic_error(&string("call to undefined function")),
     }
 }
 
@@ -2304,7 +2304,7 @@ fn semantic_check_match(
     globals: &StringMap<Item>,
 ) -> RType {
     if vec_len::<RAstArm>(arms) == 0 {
-        semantic_check_error("match requires at least one arm");
+        semantic_error(&string("match requires at least one arm"));
     }
 
     let expr_type: RType = semantic_check_expression(semantic, value, globals);
@@ -2328,16 +2328,16 @@ fn semantic_check_match(
                         while i < vec_len::<RAstPattern>(inner_patterns) {
                             let pattern: &RAstPattern = vec_at::<RAstPattern>(inner_patterns, i);
                             if not(rAstPattern_is_wildcard(pattern)) {
-                                semantic_check_error(
+                                semantic_error(&string(
                                     "enums in multi-pattern match arms cannot bind values, use wildcards",
-                                );
+                                ));
                             }
                             i = i + 1;
                         }
                     },
                     RAstPattern::Literal(_) => {},
                     _ => {
-                        semantic_check_error("multi-pattern match arms only support literal patterns");
+                        semantic_error(&string("multi-pattern match arms only support literal patterns"));
                     },
                 }
             }
@@ -2382,7 +2382,7 @@ fn semantic_check_pattern(
         RAstPattern::Wildcard => return, // type agnostic
         RAstPattern::EnumVariant(enum_name, _, inner_patterns) => {
             if not(patterns_are_irrefutable(globals, inner_patterns)) {
-                semantic_check_error("An enum's inner patterns must all be irrefutable!");
+                semantic_error(&string("An enum's inner patterns must all be irrefutable!"));
             }
             RType::Enum(string_clone(enum_name))
         },
@@ -5591,8 +5591,11 @@ fn codegen_error(message: &str) -> ! {
     panic!("Codegeneration error: {}", message)
 }
 
-fn semantic_check_error(message: &str) -> ! {
-    panic!("Semantic error: {}", message);
+fn semantic_error(message: &String) -> ! {
+    eprint_str("Semantic error: ");
+    eprint_string(message);
+    eprintln();
+    exit_process(1)
 }
 
 /// Emit an LLVM parser error and panic.
