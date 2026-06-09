@@ -3726,52 +3726,53 @@ fn codegen_fixup_alloca(codegen: &mut Codegen, index: usize, new_type: &RType) {
 // -----------------------------------------------------------------
 
 /// Tokens produced by the LLVM lexer.
+#[derive(Debug)]
 enum LToken {
-    Define,          // "define"
-    Declare,         // "declare"
-    Ret,             // "ret"
-    IntToPtr,        // "inttoptr"
-    PtrToInt,        // "ptrtoint"
-    Br,              // "br"
-    Label,           // "label"
-    Add,             // "add"
-    Sub,             // "sub"
-    Mul,             // "mul"
-    Udiv,            // "udiv"
-    Urem,            // "urem"
-    Icmp,            // "icmp"
-    Zext,            // "zext"
-    Trunc,           // "trunc"
-    Alloca,          // "alloca"
-    Store,           // "store"
-    Load,            // "load"
-    To,              // "to"
-    Call,            // "call"
-    Constant,        // "constant"
-    Eq,              // "eq"
-    Ne,              // "ne"
-    Ugt,             // "ugt"
-    Uge,             // "uge"
-    Ult,             // "ult"
-    Ule,             // "ule"
-    Ptr,             // "ptr"
-    I64,             // "i64"
-    I8,              // "i8"
-    I1,              // "i1"
-    Void,            // "void"
-    At,              // "@"
-    Percent,         // "%"
-    LParen,          // "("
-    RParen,          // ")"
-    LBrace,          // "{"
-    RBrace,          // "}"
-    LBracket,        // "["
-    RBracket,        // "]"
-    Comma,           // ","
-    Assign,          // "="
-    Colon,           // ":"
-    CString(String), // c"..."
-    Identifier(String),
+    Define,             // "define"
+    Declare,            // "declare"
+    Ret,                // "ret"
+    IntToPtr,           // "inttoptr"
+    PtrToInt,           // "ptrtoint"
+    Br,                 // "br"
+    Label,              // "label"
+    Add,                // "add"
+    Sub,                // "sub"
+    Mul,                // "mul"
+    Udiv,               // "udiv"
+    Urem,               // "urem"
+    Icmp,               // "icmp"
+    Zext,               // "zext"
+    Trunc,              // "trunc"
+    Alloca,             // "alloca"
+    Store,              // "store"
+    Load,               // "load"
+    To,                 // "to"
+    Call,               // "call"
+    Constant,           // "constant"
+    Eq,                 // "eq"
+    Ne,                 // "ne"
+    Ugt,                // "ugt"
+    Uge,                // "uge"
+    Ult,                // "ult"
+    Ule,                // "ule"
+    Ptr,                // "ptr"
+    I64,                // "i64"
+    I8,                 // "i8"
+    I1,                 // "i1"
+    Void,               // "void"
+    X,                  // "x"
+    LParen,             // "("
+    RParen,             // ")"
+    LBrace,             // "{"
+    RBrace,             // "}"
+    LBracket,           // "["
+    RBracket,           // "]"
+    Comma,              // ","
+    Assign,             // "="
+    CString(String),    // c"..."
+    Local(String),      // %...
+    LabelIdent(String), // ...:
+    Global(String),     // @...
     Integer(usize),
     Eof,
 }
@@ -3866,9 +3867,8 @@ fn lLexer_next_token(lexer: &mut LLexer) -> LToken {
             if and(ch == 'c', lLexer_next_char_eq(lexer, '"')) {
                 let value: String = lLexer_scan_cstring(lexer);
                 LToken::CString(value)
-            } else if or(is_alpha(ch), ch == '.') {
-                let ident: String = lLexer_scan_identifier_or_keyword(lexer);
-                llvm_identifier_to_token(ident)
+            } else if is_alpha(ch) {
+                lLexer_scan_keyword_or_label(lexer)
             } else if is_digit(ch) {
                 let value: usize = lLexer_scan_integer(lexer);
                 LToken::Integer(value)
@@ -3943,7 +3943,9 @@ fn lLexer_scan_identifier_or_keyword(lexer: &mut LLexer) -> String {
     identifier // satisfy compiler
 }
 
-fn llvm_identifier_to_token(identifier: String) -> LToken {
+fn lLexer_scan_keyword_or_label(lexer: &mut LLexer) -> LToken {
+    let identifier: String = lLexer_scan_identifier_or_keyword(lexer);
+
     if string_eq(&identifier, &string("define")) {
         LToken::Define
     } else if string_eq(&identifier, &string("declare")) {
@@ -4008,8 +4010,16 @@ fn llvm_identifier_to_token(identifier: String) -> LToken {
         LToken::I1
     } else if string_eq(&identifier, &string("void")) {
         LToken::Void
+    } else if string_eq(&identifier, &string("x")) {
+        LToken::X
     } else {
-        LToken::Identifier(identifier)
+        match lLexer_peek_char(lexer) {
+            Option::Some(c) => {
+                lLexer_consume_char(lexer);
+                LToken::LabelIdent(identifier)
+            },
+            _ => panic("unexpected identifier"),
+        }
     }
 }
 
@@ -4034,8 +4044,14 @@ fn lLexer_scan_integer(lexer: &mut LLexer) -> usize {
 
 fn lLexer_scan_symbol(lexer: &mut LLexer) -> LToken {
     match unwrap::<char>(lLexer_consume_char(lexer)) {
-        '@' => LToken::At,
-        '%' => LToken::Percent,
+        '@' => {
+            let ident: String = lLexer_scan_identifier_or_keyword(lexer);
+            LToken::Global(ident)
+        },
+        '%' => {
+            let ident: String = lLexer_scan_identifier_or_keyword(lexer);
+            LToken::Local(ident)
+        },
         '(' => LToken::LParen,
         ')' => LToken::RParen,
         '{' => LToken::LBrace,
@@ -4044,7 +4060,6 @@ fn lLexer_scan_symbol(lexer: &mut LLexer) -> LToken {
         ']' => LToken::RBracket,
         ',' => LToken::Comma,
         '=' => LToken::Assign,
-        ':' => LToken::Colon,
         _ => panic("unsupported token in LLVM input"),
     }
 }
@@ -4164,17 +4179,36 @@ fn parser_expect_token(parser: &mut Parser, token: &LToken) {
 }
 
 /// Read and consume one identifier token.
-fn parser_expect_identifier(parser: &mut Parser) -> String {
-    match parser_current_token(parser) {
-        LToken::Identifier(identifier) => {
-            let value: String = string_clone(identifier);
-            parser_next_token(parser);
-            value
-        },
-        _ => {
-            let message: String = parser_expected_message(parser, &string("LLVM identifier"));
-            parser_error(parser, &message)
-        },
+fn parser_expect_identifier(parser: &mut Parser, is_local: bool) -> String {
+    if is_local {
+        match parser_current_token(parser) {
+            LToken::Local(identifier) => {
+                let value: String = string_clone(identifier);
+                parser_next_token(parser);
+                value
+            },
+            LToken::LabelIdent(identifier) => {
+                let value: String = string_clone(identifier);
+                parser_next_token(parser);
+                value
+            },
+            _ => {
+                let message: String = parser_expected_message(parser, &string("local LLVM identifier"));
+                parser_error(parser, &message)
+            },
+        }
+    } else {
+        match parser_current_token(parser) {
+            LToken::Global(identifier) => {
+                let value: String = string_clone(identifier);
+                parser_next_token(parser);
+                value
+            },
+            _ => {
+                let message: String = parser_expected_message(parser, &string("global LLVM identifier"));
+                parser_error(parser, &message)
+            },
+        }
     }
 }
 
@@ -4204,8 +4238,8 @@ fn parser_value_has_type(parser: &Parser, value: &LValue, expected: &LType) -> b
 /// Return true if the current token indicates the start of a new instruction.
 fn parser_is_instruction_start(parser: &mut Parser) -> bool {
     match parser_current_token(parser) {
-        LToken::RBrace | LToken::Identifier(_) => false,
-        _ => true,
+        LToken::Ret | LToken::Br | LToken::Local(_) | LToken::Store | LToken::Call => true,
+        _ => false,
     }
 }
 
@@ -4507,7 +4541,7 @@ enum LTypedValue {
 fn parser_parse_language(parser: &mut Parser) {
     while not(parser_current_token_eq(parser, &LToken::Eof)) {
         match parser_current_token(parser) {
-            LToken::At => parser_parse_string(parser),
+            LToken::Global(_) => parser_parse_string(parser),
             LToken::Define => parser_parse_function(parser),
             LToken::Declare => parser_parse_declare(parser),
             _ => {
@@ -4519,7 +4553,7 @@ fn parser_parse_language(parser: &mut Parser) {
 }
 
 fn parser_parse_string(parser: &mut Parser) {
-    let name: String = parser_parse_global_name(parser);
+    let name: String = parser_expect_identifier(parser, false);
     parser_expect_token(parser, &LToken::Assign);
     parser_expect_token(parser, &LToken::Constant);
     parser_parse_type(parser);
@@ -4546,7 +4580,7 @@ fn parser_parse_string(parser: &mut Parser) {
 fn parser_parse_function(parser: &mut Parser) {
     parser_expect_token(parser, &LToken::Define);
     let return_type: LType = parser_parse_type(parser);
-    let function_name: String = parser_parse_global_name(parser);
+    let function_name: String = parser_expect_identifier(parser, false);
 
     lLocalSymbolTable_clear(parser_local_mut(parser));
 
@@ -4569,7 +4603,7 @@ fn parser_parse_function(parser: &mut Parser) {
 fn parser_parse_declare(parser: &mut Parser) {
     parser_expect_token(parser, &LToken::Declare);
     let return_type: LType = parser_parse_type(parser);
-    let function_name: String = parser_parse_global_name(parser);
+    let function_name: String = parser_expect_identifier(parser, false);
 
     lLocalSymbolTable_clear(parser_local_mut(parser));
     let parameters: Vec<LParameter> = parser_parse_parameters(parser, false);
@@ -4639,18 +4673,14 @@ fn parser_parse_parameters(parser: &mut Parser, named: bool) -> Vec<LParameter> 
 }
 
 fn parser_parse_parameter_name(parser: &mut Parser, index: usize) -> String {
-    if parser_current_token_eq(parser, &LToken::Percent) {
-        parser_parse_register(parser)
-    } else {
-        let mut name: String = string("arg");
-        string_push_string(&mut name, &integer_to_string(index));
-        name
+    match parser_current_token(parser) {
+        LToken::Local(_) => parser_expect_identifier(parser, true),
+        _ => {
+            let mut name: String = string("arg");
+            string_push_string(&mut name, &integer_to_string(index));
+            name
+        },
     }
-}
-
-fn parser_parse_global_name(parser: &mut Parser) -> String {
-    parser_expect_token(parser, &LToken::At);
-    parser_expect_identifier(parser)
 }
 
 fn parser_parse_blocks(parser: &mut Parser) -> Vec<InstructionBlock> {
@@ -4663,29 +4693,21 @@ fn parser_parse_blocks(parser: &mut Parser) -> Vec<InstructionBlock> {
 }
 
 fn parser_parse_block(parser: &mut Parser) -> InstructionBlock {
-    let label: String = parser_expect_identifier(parser);
-    parser_expect_token(parser, &LToken::Colon);
-    // TODO: insert into symbol table
+    let label: String = parser_expect_identifier(parser, true);
 
     let mut instructions: Vec<Instruction> = vec_new::<Instruction>();
     while parser_is_instruction_start(parser) {
         let instruction: Instruction = parser_parse_instruction(parser);
         vec_push::<Instruction>(&mut instructions, instruction);
     }
-
     InstructionBlock::Block(label, instructions)
-}
-
-fn parser_parse_register(parser: &mut Parser) -> String {
-    parser_expect_token(parser, &LToken::Percent);
-    parser_expect_identifier(parser)
 }
 
 fn parser_parse_instruction(parser: &mut Parser) -> Instruction {
     match parser_current_token(parser) {
         LToken::Ret => parser_parse_return(parser),
         LToken::Br => parser_parse_branch(parser),
-        LToken::Percent => Instruction::Assignment(parser_parse_assignment(parser)),
+        LToken::Local(_) => Instruction::Assignment(parser_parse_assignment(parser)),
         LToken::Store => parser_parse_store(parser),
         LToken::Call => {
             parser_next_token(parser);
@@ -4712,7 +4734,7 @@ fn parser_parse_return(parser: &mut Parser) -> Instruction {
 fn parser_parse_branch(parser: &mut Parser) -> Instruction {
     parser_expect_token(parser, &LToken::Br);
     let branch: Branch = if parser_try_consume(parser, &LToken::Label) {
-        let target_label: String = parser_parse_register(parser);
+        let target_label: String = parser_expect_identifier(parser, true);
         Branch::Unconditional(target_label)
     } else {
         parser_expect_token(parser, &LToken::I1);
@@ -4720,11 +4742,11 @@ fn parser_parse_branch(parser: &mut Parser) -> Instruction {
         parser_expect_token(parser, &LToken::Comma);
 
         parser_expect_token(parser, &LToken::Label);
-        let then_label: String = parser_parse_register(parser);
+        let then_label: String = parser_expect_identifier(parser, true);
         parser_expect_token(parser, &LToken::Comma);
 
         parser_expect_token(parser, &LToken::Label);
-        let else_label: String = parser_parse_register(parser);
+        let else_label: String = parser_expect_identifier(parser, true);
 
         Branch::Conditional(condition, then_label, else_label)
     };
@@ -4732,7 +4754,7 @@ fn parser_parse_branch(parser: &mut Parser) -> Instruction {
 }
 
 fn parser_parse_assignment(parser: &mut Parser) -> AssignInstruction {
-    let target_register: String = parser_parse_register(parser);
+    let target_register: String = parser_expect_identifier(parser, true);
 
     parser_expect_token(parser, &LToken::Assign);
     let operation: AssignOp = match parser_consume_current_token(parser) {
@@ -4893,7 +4915,7 @@ fn parser_parse_store(parser: &mut Parser) -> Instruction {
 
 fn parser_parse_call(parser: &mut Parser) -> Call {
     let return_type: LType = parser_parse_type(parser);
-    let callee: String = parser_parse_global_name(parser);
+    let callee: String = parser_expect_identifier(parser, false);
 
     parser_expect_token(parser, &LToken::LParen);
     let mut arguments: Vec<LTypedValue> = vec_new::<LTypedValue>();
@@ -4927,12 +4949,7 @@ fn parser_parse_type(parser: &mut Parser) -> LType {
         LToken::LBracket => {
             let len: usize = parser_parse_integer(parser);
             match parser_current_token(parser) {
-                LToken::Identifier(separator) => {
-                    if not(string_eq(separator, &string("x"))) {
-                        let message: String =
-                            parser_expected_message(parser, &string("x in LLVM array type"));
-                        parser_error(parser, &message);
-                    }
+                LToken::X => {
                     parser_next_token(parser);
                 },
                 _ => {
@@ -4953,8 +4970,8 @@ fn parser_parse_type(parser: &mut Parser) -> LType {
 
 fn parser_parse_value(parser: &mut Parser) -> LValue {
     match parser_current_token(parser) {
-        LToken::Percent => LValue::Register(parser_parse_register(parser)),
-        LToken::At => LValue::Global(parser_parse_global_name(parser)),
+        LToken::Global(_) => LValue::Global(parser_expect_identifier(parser, false)),
+        LToken::Local(_) => LValue::Register(parser_expect_identifier(parser, true)),
         LToken::Integer(_) => LValue::Literal(parser_parse_integer(parser)),
         _ => {
             let message: String = parser_expected_message(parser, &string("LLVM value"));
@@ -6553,12 +6570,8 @@ fn llvmToken_eq(left: &LToken, right: &LToken) -> bool {
             LToken::Void => true,
             _ => false,
         },
-        LToken::At => match right {
-            LToken::At => true,
-            _ => false,
-        },
-        LToken::Percent => match right {
-            LToken::Percent => true,
+        LToken::X => match right {
+            LToken::X => true,
             _ => false,
         },
         LToken::LParen => match right {
@@ -6593,16 +6606,20 @@ fn llvmToken_eq(left: &LToken, right: &LToken) -> bool {
             LToken::Assign => true,
             _ => false,
         },
-        LToken::Colon => match right {
-            LToken::Colon => true,
-            _ => false,
-        },
         LToken::CString(left_value) => match right {
             LToken::CString(right_value) => string_eq(left_value, right_value),
             _ => false,
         },
-        LToken::Identifier(left_name) => match right {
-            LToken::Identifier(right_name) => string_eq(left_name, right_name),
+        LToken::Local(left_name) => match right {
+            LToken::Local(right_name) => string_eq(left_name, right_name),
+            _ => false,
+        },
+        LToken::Global(left_name) => match right {
+            LToken::Global(right_name) => string_eq(left_name, right_name),
+            _ => false,
+        },
+        LToken::LabelIdent(left_name) => match right {
+            LToken::LabelIdent(right_name) => string_eq(left_name, right_name),
             _ => false,
         },
         LToken::Integer(left_value) => match right {
@@ -6780,8 +6797,7 @@ fn llvmToken_clone(token: &LToken) -> LToken {
         LToken::I8 => LToken::I8,
         LToken::I1 => LToken::I1,
         LToken::Void => LToken::Void,
-        LToken::At => LToken::At,
-        LToken::Percent => LToken::Percent,
+        LToken::X => LToken::X,
         LToken::LParen => LToken::LParen,
         LToken::RParen => LToken::RParen,
         LToken::LBrace => LToken::LBrace,
@@ -6790,9 +6806,10 @@ fn llvmToken_clone(token: &LToken) -> LToken {
         LToken::RBracket => LToken::RBracket,
         LToken::Comma => LToken::Comma,
         LToken::Assign => LToken::Assign,
-        LToken::Colon => LToken::Colon,
         LToken::CString(value) => LToken::CString(string_clone(value)),
-        LToken::Identifier(name) => LToken::Identifier(string_clone(name)),
+        LToken::Local(name) => LToken::Local(string_clone(name)),
+        LToken::Global(name) => LToken::Global(string_clone(name)),
+        LToken::LabelIdent(name) => LToken::LabelIdent(string_clone(name)),
         LToken::Integer(value) => LToken::Integer(*value),
         LToken::Eof => LToken::Eof,
     }
@@ -7074,8 +7091,7 @@ fn llvmToken_to_string(token: &LToken) -> String {
         LToken::I8 => string("i8"),
         LToken::I1 => string("i1"),
         LToken::Void => string("void"),
-        LToken::At => string("@"),
-        LToken::Percent => string("%"),
+        LToken::X => string("x"),
         LToken::LParen => string("("),
         LToken::RParen => string(")"),
         LToken::LBrace => string("{"),
@@ -7084,7 +7100,6 @@ fn llvmToken_to_string(token: &LToken) -> String {
         LToken::RBracket => string("]"),
         LToken::Comma => string(","),
         LToken::Assign => string("="),
-        LToken::Colon => string(":"),
         LToken::CString(value) => {
             let mut string: String = string_new();
             string_push_str(&mut string, "c\"");
@@ -7092,7 +7107,21 @@ fn llvmToken_to_string(token: &LToken) -> String {
             string_push(&mut string, '"');
             string
         },
-        LToken::Identifier(name) => string_clone(name),
+        LToken::Local(name) => {
+            let mut string: String = string("%");
+            string_push_string(&mut string, name);
+            string
+        },
+        LToken::Global(name) => {
+            let mut string: String = string("@");
+            string_push_string(&mut string, name);
+            string
+        },
+        LToken::LabelIdent(name) => {
+            let mut string: String = string_clone(name);
+            string_push(&mut string, ':');
+            string
+        },
         LToken::Integer(value) => integer_to_string(*value),
         LToken::Eof => string("<eof>"),
     }

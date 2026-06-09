@@ -12,7 +12,9 @@ function -> "define" type global
 
 global   -> "@" identifier
 
-block    -> identifier ":" { instruction }
+label    -> identifier ":"
+
+block    -> label { instruction }
 ```
 
 ## Instructions
