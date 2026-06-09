@@ -5085,12 +5085,6 @@ fn emu_set_exit_code(Emu::Emu(_, _, _, _, _, exit_code): &mut Emu, code: usize) 
     *exit_code = Option::Some(code);
 }
 
-/// Align the given value to a double-word boundary.
-fn align_to_double(value: usize) -> usize {
-    let align: usize = size_of::<usize>();
-    round_to_next_multiple(value, align)
-}
-
 /// Allocate `size` many double words on the stack and return the address.
 fn emu_allocate_stack(emulator: &mut Emu, size: usize) -> Option<usize> {
     let bytes: usize = size * size_of::<usize>();
@@ -5106,7 +5100,7 @@ fn emu_allocate_stack(emulator: &mut Emu, size: usize) -> Option<usize> {
 /// Allocate `size` bytes on the heap and return the address.
 fn emu_allocate_heap(emulator: &mut Emu, size: usize) -> Option<usize> {
     let size: usize = max(size, size_of::<usize>());
-    let aligned_size: usize = align_to_double(size);
+    let aligned_size: usize = round_to_next_multiple(size, size_of::<usize>());
     let heap_pointer: usize = emu_get_heap_pointer(emulator);
     let new_heap_pointer: usize = heap_pointer + aligned_size;
     let stack_pointer: usize = emu_get_sp(emulator);
@@ -5127,7 +5121,7 @@ fn emu_load_globals(emulator: &mut Emu, ast: &LAst) {
     while i < vec_len::<LGlobal>(lAst_globals(ast)) {
         let LGlobal::String(name, value): &LGlobal = vec_at::<LGlobal>(lAst_globals(ast), i);
 
-        let alloc_size: usize = align_to_double(string_len(value));
+        let alloc_size: usize = round_to_next_multiple(string_len(value), size_of::<usize>());
         let address: usize = data_pointer;
 
         let mut j: usize = 0;
