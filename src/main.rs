@@ -2199,7 +2199,10 @@ fn semantic_check_path(
 ) -> RType {
     let first_ident: &String = vec_at::<String>(path, 0);
     match stringMap_get::<Item>(globals, first_ident) {
-        Option::Some(Item::Enum(_)) => semantic_check_enum(semantic, path, values),
+        Option::Some(Item::Enum(e)) => {
+            let variant: &String = vec_at::<String>(path, 1);
+            semantic_check_enum(semantic, e, variant, values, globals)
+        },
         _ => {
             let callee: String = rAstPath_to_string(path);
             semantic_check_call(semantic, &callee, values, globals)
@@ -2244,8 +2247,28 @@ fn semantic_check_call(
     }
 }
 
-fn semantic_check_enum(semantic: &mut Semantic, instance: &Vec<String>, values: &Vec<RAstExpr>) -> RType {
-    RType::Enum(string_clone(vec_at::<String>(instance, 0)))
+fn semantic_check_enum(
+    semantic: &mut Semantic,
+    RAstEnum::Enum(name, variants): &RAstEnum,
+    variant: &String,
+    values: &Vec<RAstExpr>,
+    globals: &StringMap<Item>,
+) -> RType {
+    let fields: Vec<RType> = rAstEnum_get_variant_fields(variants, variant);
+    if vec_len::<RType>(&fields) != vec_len::<RAstExpr>(values) {
+        semantic_error(&string(
+            "enum constructor does not have the same number of fields as its definition",
+        ));
+    }
+    let mut i: usize = 0;
+    while i < vec_len::<RType>(&fields) {
+        let ty: &RType = vec_at::<RType>(&fields, i);
+        let expr: &RAstExpr = vec_at::<RAstExpr>(values, i);
+        let expr_type: RType = semantic_check_expression(semantic, expr, globals);
+        semantic_expect_type_match(ty, &expr_type);
+        i = i + 1;
+    }
+    RType::Enum(string_clone(name))
 }
 
 fn semantic_check_if(semantic: &mut Semantic, if_expression: &RAstIf, globals: &StringMap<Item>) -> RType {
