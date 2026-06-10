@@ -36,7 +36,7 @@ No structs, impl blocks, traits, modules, macros.
 
 You can use:
 
-- decimal integer literals (`usize` or `u8`)
+- integer literals are type `usize` (`u8` requires explicit casting)
 - char literals (`char`)
 - string literals (`&str`)
 
@@ -53,12 +53,15 @@ Type inference is not supported. Hence, all types need to be written explicitly:
 ```rust
 let s: &str = "Hello World";
 let mut y: usize = 2;
+let n: u8 = 42 as u8;
 ```
 
 Assignments (for mutable variables) are straightforward:
 
 ```rust
+let mut y: usize = 0;
 y = y + 1;
+let ptr: &mut = &mut y;
 *ptr = 42;
 ```
 
@@ -71,7 +74,7 @@ y = y + 1;
 
 ## Control flow
 
-- `if` / `else` (`if`)
+- `if` / `else`
 
   ```rust
   let x: char = if b { 'a' } else { 'b' };
