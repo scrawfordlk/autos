@@ -805,7 +805,7 @@ fn rAstPattern_is_refutable(globals: &StringMap<Item>, pattern: &RAstPattern) ->
     match pattern {
         RAstPattern::Literal(_) => true,
         RAstPattern::Wildcard | RAstPattern::Identifier(_, _) => false,
-        RAstPattern::EnumVariant(name, _, _) => match stringMap_get(globals, name) {
+        RAstPattern::EnumVariant(name, _, _) => match stringMap_get::<Item>(globals, name) {
             Option::Some(item) => match item {
                 Item::Enum(RAstEnum::Enum(_, variants)) => vec_len::<RAstVariant>(variants) > 1,
                 _ => true,
@@ -2314,6 +2314,7 @@ fn semantic_check_while(
     RType::Unit
 }
 
+// TODO: exhaustiveness checking
 fn semantic_check_match(
     semantic: &mut Semantic,
     value: &RAstExpr,
@@ -2359,7 +2360,7 @@ fn semantic_check_match(
                 }
             }
 
-            semantic_check_pattern(semantic, pattern, &expr_type, globals);
+            semantic_check_pattern(semantic, pattern, &expr_type, true, globals);
             j = j + 1;
         }
 
@@ -2373,23 +2374,35 @@ fn semantic_check_match(
     return_type
 }
 
+/// Check semantics of a pattern.
+///
+/// * `pattern`: the pattern to check.
+/// * `expression_type`: the type of the value being matched on.
+/// * `refutable`: if true, allow refutable patterns, otherwise do not.
 fn semantic_check_pattern(
     semantic: &mut Semantic,
     pattern: &RAstPattern,
     expression_type: &RType,
+    refutable_ok: bool,
     globals: &StringMap<Item>,
 ) {
     let pattern_type: RType = match pattern {
-        RAstPattern::Literal(literal) => match literal {
-            RAstPatternLiteral::Int(_) => {
-                if rType_is_numeric(expression_type) {
-                    return; // numeric expression matches on numeric pattern
-                } else {
-                    RType::Usize
+        RAstPattern::Literal(literal) => {
+            if refutable_ok {
+                match literal {
+                    RAstPatternLiteral::Int(_) => {
+                        if rType_is_numeric(expression_type) {
+                            return; // numeric expression matches on numeric pattern
+                        } else {
+                            RType::Usize
+                        }
+                    },
+                    RAstPatternLiteral::Char(_) => RType::Char,
+                    RAstPatternLiteral::Bool(_) => RType::Bool,
                 }
-            },
-            RAstPatternLiteral::Char(_) => RType::Char,
-            RAstPatternLiteral::Bool(_) => RType::Bool,
+            } else {
+                semantic_error(&string("nested patterns must all be irrefutable"))
+            }
         },
         RAstPattern::Identifier(mutable, name) => {
             let variable_type: RType = rType_clone(expression_type);
@@ -2398,9 +2411,12 @@ fn semantic_check_pattern(
         },
         RAstPattern::Wildcard => return, // type agnostic
         RAstPattern::EnumVariant(enum_name, variant, inner_patterns) => {
-            let fields: Vec<RType> = match stringMap_get(globals, enum_name) {
+            let fields: Vec<RType> = match stringMap_get::<Item>(globals, enum_name) {
                 Option::Some(item) => match item {
                     Item::Enum(RAstEnum::Enum(_, variants)) => {
+                        if and(not(refutable_ok), vec_len::<RAstVariant>(variants) > 1) {
+                            semantic_error(&string("nested enum patterns must all be irrefutable"));
+                        }
                         match rAstEnum_get_variant_fields(variants, variant) {
                             Option::Some(fields) => fields,
                             _ => semantic_error(&string("unknown enum variant used in pattern")),
@@ -2421,10 +2437,10 @@ fn semantic_check_pattern(
                     RAstPattern::Identifier(mutable, name) => {
                         semantic_insert_variable(semantic, string_clone(name), rType_clone(ty), *mutable);
                     },
-                    RAstPattern::Wildcard => {},
-                    RAstPattern::EnumVariant(name, _, _) => {
-                        // TODO: check if it is irrefutable
+                    RAstPattern::EnumVariant(_, _, _) => {
+                        semantic_check_pattern(semantic, pattern, ty, false, globals);
                     },
+                    RAstPattern::Wildcard => {},
                     _ => semantic_error(&string("An enum's inner patterns must all be irrefutable!")),
                 }
                 i = i + 1;
@@ -2432,7 +2448,6 @@ fn semantic_check_pattern(
             RType::Enum(string_clone(enum_name))
         },
     };
-
     semantic_expect_type_match(&pattern_type, &expression_type);
 }
 
