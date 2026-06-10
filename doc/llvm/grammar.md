@@ -57,9 +57,9 @@ gep         -> "getelementptr" type "," "ptr" value "," type value { "," type va
 ```
 local      -> "%" identifier
 
-type       -> integer | "void" | "ptr" | "[" number "x" type "]"
+type       -> integer | "void" | "ptr" | "[" number "x" "i64" ]"
 
-integer    -> "i64" | "i32" | "i8" | "i1"
+integer    -> "i64" | "i8" | "i1"
 
 value      -> local | number | global
 

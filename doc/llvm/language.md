@@ -29,10 +29,10 @@ entry:
 
 ## 3. Types
 
-- `i1`, `i8`, `i32`, `i64`: integers with width of 1, 8, 32 or 64 respectively
+- `i1`, `i8`, `i64`: integers with width of 1, 8 or 64 respectively
 - `void`: no return value
 - `ptr`: pointer
-- `[N x T]`: array with `N` elements of type `T`
+- `[N x i64]`: array with `N` elements of type `i64`
 
 Every instruction is explicitly typed. For example, arithmetic states the operand type:
 
@@ -44,7 +44,7 @@ Every instruction is explicitly typed. For example, arithmetic states the operan
 
 Supported literals:
 
-- integer literal: `0`, `42`, `-1`
+- integer literal: `0`, `42`
 - string literal for constant byte arrays: `c"hello\00"`
 - array literal: `[i8 104, i8 105, i8 0]`
 
