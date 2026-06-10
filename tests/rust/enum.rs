@@ -1,10 +1,10 @@
 enum Shape {
-    Circle(usize),
+    Circle(char, u8, usize),
     Rect(Coords, Coords),
 }
 
 fn main() {
-    let mut shape: Shape = Shape::Circle(42);
+    let mut shape: Shape = Shape::Circle('a', 5 as u8, 42);
     shape = extractLastValue(Shape::Rect(Coords::Triple(5, 4, 3), Coords::Pair(7, 9)));
 
     shape = shape;
