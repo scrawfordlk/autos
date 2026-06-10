@@ -2868,14 +2868,16 @@ fn codegen_path(codegen: &mut Codegen, path: &Vec<String>, values: &Vec<RAstExpr
             let enum_ptr: String = codegen_emit_alloca(codegen, &enum_type);
             codegen_emit_store(codegen, &RType::Usize, &tag, &enum_ptr);
 
-            let mut offset_ptr: String = string_clone(&enum_ptr);
+            let mut offset_ptr: String = codegen_emit_pointer_add(codegen, &enum_ptr, &RType::Usize, 1);
             let mut i: usize = 0;
             while i < vec_len::<RAstExpr>(values) {
                 let expression: &RAstExpr = vec_at::<RAstExpr>(values, i);
                 let STPair::ST(mut register, ty): STPair = codegen_expression(codegen, expression);
                 register = codegen_emit_load_if_enum(codegen, register, &ty);
-                offset_ptr = codegen_emit_pointer_add(codegen, &offset_ptr, &ty, 1);
                 codegen_emit_store(codegen, &ty, &register, &offset_ptr);
+                if i < vec_len::<RAstExpr>(values) - 1 {
+                    offset_ptr = codegen_emit_pointer_add(codegen, &offset_ptr, &ty, 1);
+                } // only compute next address if there is another field
                 i = i + 1;
             }
             STPair::ST(enum_ptr, enum_type)
@@ -3191,28 +3193,31 @@ fn codegen_arm_destructuring(
             let fields: Vec<RType> = match codegen_search_global(codegen, name) {
                 Option::Some(item) => match item {
                     Item::Enum(RAstEnum::Enum(_, variants)) => rAstEnum_get_variant_fields(variants, variant),
-                    _ => vec_new::<RType>(), // assume case this does not occur
+                    _ => return, // assume case this does not occur
                 },
-                _ => vec_new::<RType>(), // assume this case does not occur
+                _ => return, // assume this case does not occur
             };
-            let mut offset: String = string_clone(expr_name); // skip discriminator
+            let field_count: usize = vec_len::<RType>(&fields);
+            if field_count == 0 {
+                return;
+            }
+            let mut offset: String = codegen_emit_pointer_add(codegen, &expr_name, &RType::Usize, 1); // skip discriminant
             let mut i: usize = 0;
-            let mut last_type: RType = RType::Usize;
-            while i < vec_len::<RType>(&fields) {
+            while i < field_count {
                 let ty: &RType = vec_at::<RType>(&fields, i);
                 match vec_at::<RAstPattern>(patterns, i) {
                     RAstPattern::Identifier(_, name) => {
-                        codegen_emit_line(codegen, string("; name binding for inner pattern"));
                         let pointer: String = codegen_emit_alloca(codegen, ty);
-                        offset = codegen_emit_pointer_add(codegen, &offset, &last_type, 1);
                         let result: String = codegen_emit_load(codegen, ty, &offset);
                         codegen_emit_store(codegen, ty, &result, &pointer);
                         codegen_scope_insert(codegen, string_clone(name), rType_clone(ty), pointer);
-                        last_type = rType_clone(ty)
                     },
                     RAstPattern::EnumVariant(_, _, _) => panic("not implemented (assume irrefutable)"),
                     _ => {}, // assume case this does not occur
                 }
+                if i < field_count - 1 {
+                    offset = codegen_emit_pointer_add(codegen, &offset, &ty, 1);
+                } // only compute next offset if there is another field
                 i = i + 1;
             }
         },
@@ -3224,7 +3229,7 @@ fn codegen_arm_destructuring(
 
 /// The emitted LLVM-IR code.
 enum Code {
-    /// code lines, cursor index
+    /// code lines
     Code(Vec<String>),
 }
 
