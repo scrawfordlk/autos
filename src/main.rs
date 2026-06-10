@@ -2205,8 +2205,7 @@ fn semantic_check_path(
                 semantic_check_enum(semantic, e, variant, values, globals)
             },
             Item::Function(return_type, param_types, is_unsafe) => {
-                let callee: String = rAstPath_to_string(path);
-                semantic_check_call(semantic, &callee, values, globals)
+                semantic_check_call(semantic, return_type, param_types, *is_unsafe, values, globals)
             },
         },
         _ => {
@@ -2219,39 +2218,27 @@ fn semantic_check_path(
 
 fn semantic_check_call(
     semantic: &mut Semantic,
-    callee: &String,
+    return_type: &RType,
+    parameter_types: &Vec<RType>,
+    is_unsafe: bool,
     values: &Vec<RAstExpr>,
     globals: &StringMap<Item>,
 ) -> RType {
-    match stringMap_get::<Item>(globals, callee) {
-        Option::Some(Item::Function(return_type, parameter_types, is_unsafe)) => {
-            let return_type: RType = rType_clone(return_type);
-
-            if and(*is_unsafe, not(semantic_is_unsafe_context(semantic))) {
-                semantic_error(&string("calling an unsafe function requires unsafe"));
-            }
-
-            let mut i: usize = 0;
-            while i < vec_len::<RAstExpr>(values) {
-                let argument: &RAstExpr = vec_at::<RAstExpr>(values, i);
-                let arg_type: RType = semantic_check_expression(semantic, argument, globals);
-
-                match vec_get::<RType>(&parameter_types, i) {
-                    Option::Some(ty) => {
-                        semantic_expect_type_match(ty, &arg_type);
-                    },
-                    _ => {
-                        semantic_error(&string(
-                            "function call has more arguments than there are parameters",
-                        ));
-                    },
-                }
-                i = i + 1;
-            }
-            return_type
-        },
-        _ => semantic_error(&string("call to undefined function")),
+    if and(is_unsafe, not(semantic_is_unsafe_context(semantic))) {
+        semantic_error(&string("calling an unsafe function requires unsafe"));
     }
+    if vec_len::<RType>(&parameter_types) != vec_len::<RAstExpr>(values) {
+        semantic_error(&string("function call does not have correct amount of arguments"));
+    }
+    let mut i: usize = 0;
+    while i < vec_len::<RAstExpr>(values) {
+        let param_type: &RType = vec_at::<RType>(parameter_types, i);
+        let arg: &RAstExpr = vec_at::<RAstExpr>(values, i);
+        let arg_type: RType = semantic_check_expression(semantic, arg, globals);
+        semantic_expect_type_match(param_type, &arg_type);
+        i = i + 1;
+    }
+    rType_clone(return_type)
 }
 
 fn semantic_check_enum(
@@ -2266,9 +2253,7 @@ fn semantic_check_enum(
         _ => semantic_error(&string("use of undefined enum variant constructor")),
     };
     if vec_len::<RType>(&fields) != vec_len::<RAstExpr>(values) {
-        semantic_error(&string(
-            "enum constructor does not have the same number of fields as its definition",
-        ));
+        semantic_error(&string("enum constructor does not correct amount of fields"));
     }
     let mut i: usize = 0;
     while i < vec_len::<RType>(&fields) {
