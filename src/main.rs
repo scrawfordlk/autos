@@ -866,16 +866,16 @@ fn rAstEnum_size(codegen: &Codegen, RAstEnum::Enum(_, variants): &RAstEnum) -> u
 }
 
 /// Get the types of the given enum variant's fields.
-fn rAstEnum_get_variant_fields(variants: &Vec<RAstVariant>, variant: &String) -> Vec<RType> {
+fn rAstEnum_get_variant_fields(variants: &Vec<RAstVariant>, variant: &String) -> Option<Vec<RType>> {
     let mut i: usize = 0;
     while i < vec_len::<RAstVariant>(variants) {
         let RAstVariant::Variant(name, types): &RAstVariant = vec_at::<RAstVariant>(variants, i);
         if string_eq(name, variant) {
-            return types_clone(types);
+            return Option::Some(types_clone(types));
         }
         i = i + 1;
     }
-    vec_new::<RType>()
+    Option::None
 }
 
 /// Get an identifying discriminator for a given variant of variants.
@@ -2199,13 +2199,20 @@ fn semantic_check_path(
 ) -> RType {
     let first_ident: &String = vec_at::<String>(path, 0);
     match stringMap_get::<Item>(globals, first_ident) {
-        Option::Some(Item::Enum(e)) => {
-            let variant: &String = vec_at::<String>(path, 1);
-            semantic_check_enum(semantic, e, variant, values, globals)
+        Option::Some(item) => match item {
+            Item::Enum(e) => {
+                let variant: &String = vec_at::<String>(path, 1);
+                semantic_check_enum(semantic, e, variant, values, globals)
+            },
+            Item::Function(return_type, param_types, is_unsafe) => {
+                let callee: String = rAstPath_to_string(path);
+                semantic_check_call(semantic, &callee, values, globals)
+            },
         },
         _ => {
-            let callee: String = rAstPath_to_string(path);
-            semantic_check_call(semantic, &callee, values, globals)
+            let mut message: String = string("use of undefined function or enum: ");
+            string_push_string(&mut message, &rAstPath_to_string(path));
+            semantic_error(&message);
         },
     }
 }
@@ -2254,7 +2261,10 @@ fn semantic_check_enum(
     values: &Vec<RAstExpr>,
     globals: &StringMap<Item>,
 ) -> RType {
-    let fields: Vec<RType> = rAstEnum_get_variant_fields(variants, variant);
+    let fields: Vec<RType> = match rAstEnum_get_variant_fields(variants, variant) {
+        Option::Some(fields) => fields,
+        _ => semantic_error(&string("use of undefined enum variant constructor")),
+    };
     if vec_len::<RType>(&fields) != vec_len::<RAstExpr>(values) {
         semantic_error(&string(
             "enum constructor does not have the same number of fields as its definition",
@@ -2393,10 +2403,15 @@ fn semantic_check_pattern(
         RAstPattern::EnumVariant(enum_name, variant, inner_patterns) => {
             let fields: Vec<RType> = match stringMap_get(globals, enum_name) {
                 Option::Some(item) => match item {
-                    Item::Enum(RAstEnum::Enum(_, variants)) => rAstEnum_get_variant_fields(variants, variant),
-                    _ => semantic_error(&string("unknown enum used in pattern!")),
+                    Item::Enum(RAstEnum::Enum(_, variants)) => {
+                        match rAstEnum_get_variant_fields(variants, variant) {
+                            Option::Some(fields) => fields,
+                            _ => semantic_error(&string("unknown enum variant used in pattern")),
+                        }
+                    },
+                    _ => semantic_error(&string("unknown enum used in pattern")),
                 },
-                _ => semantic_error(&string("unknown enum used in pattern!")),
+                _ => semantic_error(&string("unknown enum used in pattern")),
             };
             if vec_len::<RType>(&fields) != vec_len::<RAstPattern>(inner_patterns) {
                 semantic_error(&string("enum field count mismatch in pattern"));
@@ -3215,7 +3230,12 @@ fn codegen_arm_destructuring(
             // assume all inner patterns are irrefutable
             let fields: Vec<RType> = match codegen_search_global(codegen, name) {
                 Option::Some(item) => match item {
-                    Item::Enum(RAstEnum::Enum(_, variants)) => rAstEnum_get_variant_fields(variants, variant),
+                    Item::Enum(RAstEnum::Enum(_, variants)) => {
+                        match rAstEnum_get_variant_fields(variants, variant) {
+                            Option::Some(fields) => fields,
+                            _ => return, // assume case this does not occur
+                        }
+                    },
                     _ => return, // assume case this does not occur
                 },
                 _ => return, // assume this case does not occur
