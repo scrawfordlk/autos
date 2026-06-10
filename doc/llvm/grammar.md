@@ -1,10 +1,11 @@
 # Grammar of LLVM-IR
 
 ## Global
+
 ```
 llvm     -> { string | function }
 
-string   -> global "=" "constant" array "c"" { printable_character } "\""
+string   -> global "=" "constant" array "c"" { printable_character } """
 
 function -> "define" type global
             "(" [ type local { "," type local } ] ")"
@@ -18,6 +19,7 @@ block    -> label { instruction }
 ```
 
 ## Instructions
+
 ```
 instruction -> return | branch | assignment | store | call
 
@@ -42,18 +44,17 @@ binary      -> ( "add" | "sub" | "mul" | "udiv" | "urem" ) type value "," value
 
 icmp        -> "icmp" ( "eq" | "ne" | "ugt" | "ult" | "uge" | "ule" ) type value "," value
 
-cast        -> ( "zext" | "trunc" ) type value "to" type
+cast        -> ( "zext" | "trunc" | ptrtoint | inttoptr ) type value "to" type
 
 call        -> "call" type global "(" [ type value { "," type value } ] ")"
 
-alloca      -> "alloca" type "," "i64" number
+alloca      -> "alloca" type
 
 load        -> "load" type "," "ptr" value
-
-gep         -> "getelementptr" type "," "ptr" value "," type value { "," type value }
 ```
 
 ## Types, Literals & Identifiers
+
 ```
 local      -> "%" identifier
 
@@ -63,11 +64,7 @@ integer    -> "i64" | "i8" | "i1"
 
 value      -> local | number | global
 
-literal    -> number | array
-
-array      -> "[" [ type literal { "," type literal } ] "]"
-
-number     -> [ "-" ] digit { digit }
+number     -> digit { digit }
 
 identifier -> ( letter | "_" | "." ) { letter | digit | "_" | "." }
 

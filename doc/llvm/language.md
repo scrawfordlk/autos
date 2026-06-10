@@ -11,7 +11,8 @@ An LLVM-IR file is a sequence of:
 Example:
 
 ```llvm
-@.msg = constant [6 x i8] c"hello\00" ; null terminated
+@.msg = constant [5 x i8] c"hello"
+
 declare i64 @read()
 
 define i64 @main() {
@@ -32,7 +33,7 @@ entry:
 - `i1`, `i8`, `i64`: integers with width of 1, 8 or 64 respectively
 - `void`: no return value
 - `ptr`: pointer
-- `[N x i64]`: array with `N` elements of type `i64`
+- `[N x <type>]`: array with `N` elements of type `<type>`
 
 Every instruction is explicitly typed. For example, arithmetic states the operand type:
 
@@ -45,8 +46,7 @@ Every instruction is explicitly typed. For example, arithmetic states the operan
 Supported literals:
 
 - integer literal: `0`, `42`
-- string literal for constant byte arrays: `c"hello\00"`
-- array literal: `[i8 104, i8 105, i8 0]`
+- string literal for constant byte arrays: `c"hello"`
 
 Global constants use the form:
 
@@ -64,19 +64,27 @@ Example:
 
 ### Declaration (`declare`)
 
-Declares a function signature without a body (typically provided externally):
+Declares a function signature without a body (provided externally):
 
 ```llvm
 declare i64 @read()
 declare void @exit(i64)
 ```
 
+Declarable functions are:
+
+- `open()`
+- `read()`
+- `write()`
+- `malloc()`
+- `exit()`
+
 ### Definition (`define`)
 
 Defines a function:
 
 ```llvm
-define i64 @add1(i64 %x) {
+define i64 @increment(i64 %x) {
 entry:
   %y = add i64 %x, 1
   ret i64 %y
@@ -90,6 +98,8 @@ A function body is made of basic blocks. A block is:
 1. One label (`entry:`) at the beginning,
 2. $n$ normal instructions,
 3. one terminator instruction (`ret` or `br`) at the end.
+
+(A terminator instruction does not have to be at the end of a block. It may also appear anywhere else.)
 
 Branch instruction (`br`):
 
@@ -116,12 +126,12 @@ Here, `%name` denotes a label, not a virtual register with a value.
 Example:
 
 ```llvm
-%r = mul i64 40, 2
+%r = mul i64 21, 2
 ```
 
 ### Comparison
 
-- `icmp` compares two integer values as unsigned and returns `i1`.
+- `icmp` compares two integer values and returns a value of type `i1`.
 - The result depends on the comparison operation specified after `icmp`
   - `eq`
   - `ne`
@@ -138,7 +148,7 @@ Example:
 
 ### Casting
 
-Casting can be done by either zero-extending a type with a smaller bitwidth to a type with a larger bitwidth or by truncating a type with a larger bitwidth to a type with a smaller bitwidth.
+Casting can be done by zero-extending a type with a smaller bitwidth to a type with a larger bitwidth, by truncating a type with a larger bitwidth to a type with a smaller bitwidth, by interpreting an integer as a pointer or by interpreting a pointer as an integer.
 
 Examples:
 
@@ -151,6 +161,14 @@ Examples:
 %small_value = add i1 1, 0
 %extended = zext i1 %small_value to i64
 ```
+
+```llvm
+%p.as.int = ptrtoint ptr %p1 to i64
+%new.pointer = add i64 %p.as.int, 8
+%p2 = inttoptr i64 %new.pointer to ptr
+```
+
+As one can see, pointer arithmetic can be performed in this way, making the infamous `getelementptr` instruction redundant.
 
 ### Function call
 
@@ -173,25 +191,6 @@ ret void
 ret i64 %r
 ```
 
-### GEP (`getelementptr`)
-
-`getelementptr` computes a derived pointer from a base pointer plus typed indices. It handles any necessary pointer arithmetic.
-
-Example for getting a pointer to the first byte of a global array:
-
-```llvm
-%p = getelementptr [6 x i8], ptr @.msg, i64 0, i64 0
-```
-
-Interpretation:
-
-1. base object type is `[6 x i8]`
-2. base pointer is `@.msg`
-3. first `0` stays at the same object
-4. second `0` selects element `0` in the array
-
-Result `%p` is a `ptr` to that byte.
-
 ## 8. Static Single Assignment (SSA) form
 
 LLVM-IR follows Static Single Assignment (SSA) form:
@@ -211,27 +210,4 @@ while this violates SSA and hence is invalid:
 ```llvm
 %x = add i64 %y, 1
 %x = mul i64 %x, 2
-```
-
-## 9. Example
-
-```llvm
-@.msg = constant [6 x i8] c"hello\00"
-
-declare void @puts(ptr)
-
-define i64 @main() {
-entry:
-  %a = add i64 40, 2
-  %ok = icmp ult i64 0, %a
-  br i1 %ok, label %then, label %else
-
-then:
-  %p = getelementptr [6 x i8], ptr @.msg, i64 0, i64 0
-  call void @puts(ptr %p)
-  ret i64 %a
-
-else:
-  ret i64 0
-}
 ```
