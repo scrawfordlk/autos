@@ -3106,7 +3106,6 @@ fn codegen_arm(
                 &fail_label,
             );
         } // otherwise arm is executed unconditionally
-        codegen_arm_destructuring(codegen, pattern, expr_name, expr_type);
 
         i = i + 1;
     }
@@ -3114,6 +3113,9 @@ fn codegen_arm(
     if not(is_last_arm) {
         codegen_emit_label(codegen, &arm_label);
     }
+    // assume the arm only has a single pattern and destructure for the arm
+    let pattern: &RAstPattern = vec_at::<RAstPattern>(patterns, 0);
+    codegen_arm_destructuring(codegen, pattern, expr_name, expr_type);
 
     let STPair::ST(arm_value, arm_type) = codegen_expression(codegen, arm_expr);
     if rType_has_value(&arm_type) {
