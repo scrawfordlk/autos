@@ -3195,15 +3195,18 @@ fn codegen_arm_destructuring(
             };
             let mut offset: String = string_clone(expr_name); // skip discriminator
             let mut i: usize = 0;
+            let mut last_type: RType = RType::Usize;
             while i < vec_len::<RType>(&fields) {
                 let ty: &RType = vec_at::<RType>(&fields, i);
                 match vec_at::<RAstPattern>(patterns, i) {
                     RAstPattern::Identifier(_, name) => {
+                        codegen_emit_line(codegen, string("; name binding for inner pattern"));
                         let pointer: String = codegen_emit_alloca(codegen, ty);
-                        offset = codegen_emit_pointer_add(codegen, &offset, ty, 1);
+                        offset = codegen_emit_pointer_add(codegen, &offset, &last_type, 1);
                         let result: String = codegen_emit_load(codegen, ty, &offset);
                         codegen_emit_store(codegen, ty, &result, &pointer);
                         codegen_scope_insert(codegen, string_clone(name), rType_clone(ty), pointer);
+                        last_type = rType_clone(ty)
                     },
                     RAstPattern::EnumVariant(_, _, _) => panic("not implemented (assume irrefutable)"),
                     _ => {}, // assume case this does not occur
