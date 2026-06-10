@@ -971,9 +971,9 @@ fn expect_token(lexer: &mut RLexer, token: &RToken) {
     if not(rLexer_try_consume(lexer, token)) {
         let bad_token: &RToken = rLexer_current_token(lexer);
         let mut message: String = string("expected ");
-        string_push_string(&mut message, &token_to_string(token));
+        string_push_string(&mut message, &rToken_to_string(token));
         string_push_str(&mut message, ", but got: ");
-        string_push_string(&mut message, &token_to_string(bad_token));
+        string_push_string(&mut message, &rToken_to_string(bad_token));
         parse_error(lexer, &message);
     }
 }
@@ -988,7 +988,7 @@ fn expect_identifier(lexer: &mut RLexer) -> String {
         },
         token => {
             let mut message: String = string("expected identifier, but got: ");
-            string_push_string(&mut message, &token_to_string(token));
+            string_push_string(&mut message, &rToken_to_string(token));
             parse_error(lexer, &message);
         },
     }
@@ -1010,7 +1010,7 @@ fn parse_language(lexer: &mut RLexer) -> RAst {
                 },
                 token => {
                     let mut message: String = string("expected fn or extern, but got: ");
-                    string_push_string(&mut message, &token_to_string(&token));
+                    string_push_string(&mut message, &rToken_to_string(&token));
                     parse_error(lexer, &message);
                 },
             },
@@ -1024,7 +1024,7 @@ fn parse_language(lexer: &mut RLexer) -> RAst {
             },
             token => {
                 let mut message: String = string("expected function, enum, or extern block, but got: ");
-                string_push_string(&mut message, &token_to_string(token));
+                string_push_string(&mut message, &rToken_to_string(token));
                 parse_error(lexer, &message);
             },
         }
@@ -1040,14 +1040,14 @@ fn parse_extern_block(lexer: &mut RLexer) -> Vec<RAstExternFn> {
         RToken::Literal(RLiteral::String(value)) => {
             if not(string_eq(value, &string("C"))) {
                 let mut message: String = string("expected \"C\", but got: ");
-                string_push_string(&mut message, &token_to_string(rLexer_current_token(lexer)));
+                string_push_string(&mut message, &rToken_to_string(rLexer_current_token(lexer)));
                 parse_error(lexer, &message);
             }
             rLexer_next_token(lexer);
         },
         _ => {
             let mut message: String = string("expected \"C\", but got: ");
-            string_push_string(&mut message, &token_to_string(rLexer_current_token(lexer)));
+            string_push_string(&mut message, &rToken_to_string(rLexer_current_token(lexer)));
             parse_error(lexer, &message);
         },
     }
@@ -1257,7 +1257,7 @@ fn parse_type(lexer: &mut RLexer) -> RType {
         },
         token => {
             let mut message: String = string("expected a type, but got: ");
-            string_push_string(&mut message, &token_to_string(token));
+            string_push_string(&mut message, &rToken_to_string(token));
             parse_error(lexer, &message);
         },
     }
@@ -1423,7 +1423,7 @@ fn parse_factor(lexer: &mut RLexer) -> RAstExpr {
         RToken::Match => parse_match(lexer),
         token => {
             let mut message: String = string("unexpected token: ");
-            string_push_string(&mut message, &token_to_string(token));
+            string_push_string(&mut message, &rToken_to_string(token));
             parse_error(lexer, &message);
         },
     }
@@ -1560,7 +1560,7 @@ fn parse_pattern(lexer: &mut RLexer) -> RAstPattern {
         },
         token => {
             let mut message: String = string("expected pattern, but got: ");
-            string_push_string(&mut message, &token_to_string(token));
+            string_push_string(&mut message, &rToken_to_string(token));
             parse_error(lexer, &message);
         },
     }
@@ -1727,7 +1727,11 @@ fn semantic_check_run(ast: &RAst, items: &StringMap<Item>) {
 /// Check if the given types are equal, otherwise throw an error.
 fn semantic_expect_type_match(left: &RType, right: &RType) {
     if not(rType_eq(left, right)) {
-        semantic_error(&string("types do not match perfectly"));
+        let mut message: String = string("type mismatch: expected ");
+        string_push_string(&mut message, &rType_to_string(left));
+        string_push_str(&mut message, ", but got ");
+        string_push_string(&mut message, &rType_to_string(right));
+        semantic_error(&message);
     }
 }
 
@@ -1739,19 +1743,27 @@ fn semantic_expect_type_match(left: &RType, right: &RType) {
 /// 3. b == Never
 fn semantic_expect_coerced_type_match(left: &RType, right: &RType) {
     if not(type_matches(left, right)) {
-        semantic_error(&string("type mismatch"));
+        let mut message: String = string("coerced type mismatch: expected ");
+        string_push_string(&mut message, &rType_to_string(left));
+        string_push_str(&mut message, ", but got ");
+        string_push_string(&mut message, &rType_to_string(right));
+        semantic_error(&message);
     }
 }
 
 fn semantic_expect_numeric_type(ty: &RType) {
     if not(rType_is_numeric(ty)) {
-        semantic_error(&string("expected numeric type"));
+        let mut message: String = string("type mismatch: expected numeric type, but got ");
+        string_push_string(&mut message, &rType_to_string(ty));
+        semantic_error(&message);
     }
 }
 
 fn semantic_expect_bool_type(ty: &RType) {
     if not(rType_eq(ty, &RType::Bool)) {
-        semantic_error(&string("expected bool type"));
+        let mut message: String = string("type mismatch: expected bool type, but got ");
+        string_push_string(&mut message, &rType_to_string(ty));
+        semantic_error(&message);
     }
 }
 
@@ -3917,7 +3929,7 @@ fn lLexer_next_token(lexer: &mut LLexer) -> LToken {
         Option::None => LToken::Eof,
     };
 
-    lLexer_set_current_token(lexer, llvmToken_clone(&token));
+    lLexer_set_current_token(lexer, lToken_clone(&token));
     token
 }
 
@@ -4183,7 +4195,7 @@ fn parser_current_token(parser: &Parser) -> &LToken {
 /// Consume and return the current LLVM parser token.
 fn parser_consume_current_token(parser: &mut Parser) -> LToken {
     let lexer: &LLexer = parser_lexer(parser);
-    let token: LToken = llvmToken_clone(lLexer_current_token(lexer));
+    let token: LToken = lToken_clone(lLexer_current_token(lexer));
     parser_next_token(parser);
     token
 }
@@ -4195,7 +4207,7 @@ fn parser_next_token(parser: &mut Parser) -> LToken {
 
 /// Check whether parser current token equals expected token.
 fn parser_current_token_eq(parser: &Parser, token: &LToken) -> bool {
-    llvmToken_eq(parser_current_token(parser), token)
+    lToken_eq(parser_current_token(parser), token)
 }
 
 /// Try consuming one token and report success.
@@ -4211,7 +4223,7 @@ fn parser_try_consume(parser: &mut Parser, token: &LToken) -> bool {
 /// Require and consume one token.
 fn parser_expect_token(parser: &mut Parser, token: &LToken) {
     if not(parser_try_consume(parser, token)) {
-        let message: String = parser_expected_message(parser, &llvmToken_to_string(token));
+        let message: String = parser_expected_message(parser, &lToken_to_string(token));
         parser_error(parser, &message);
     }
 }
@@ -5714,10 +5726,6 @@ fn parse_error(lexer: &RLexer, message: &String) -> ! {
     lexer_error(lexer, message)
 }
 
-fn codegen_error(message: &str) -> ! {
-    panic!("Codegeneration error: {}", message)
-}
-
 fn semantic_error(message: &String) -> ! {
     eprint_str("Semantic error: ");
     eprint_string(message);
@@ -5742,7 +5750,7 @@ fn parser_expected_message(parser: &Parser, expected: &String) -> String {
     string_push_string(&mut message, expected);
     let token: &LToken = parser_current_token(parser);
     string_push_str(&mut message, ", but got: ");
-    string_push_string(&mut message, &llvmToken_to_string(token));
+    string_push_string(&mut message, &lToken_to_string(token));
     message
 }
 
@@ -6478,7 +6486,7 @@ fn rType_eq(a: &RType, b: &RType) -> bool {
 }
 
 /// Check two LLVM tokens for equality.
-fn llvmToken_eq(left: &LToken, right: &LToken) -> bool {
+fn lToken_eq(left: &LToken, right: &LToken) -> bool {
     match left {
         LToken::Define => match right {
             LToken::Define => true,
@@ -6801,7 +6809,7 @@ fn stPair_clone(STPair::ST(string, ty): &STPair) -> STPair {
 }
 
 /// Clone an LLVM token.
-fn llvmToken_clone(token: &LToken) -> LToken {
+fn lToken_clone(token: &LToken) -> LToken {
     match token {
         LToken::Define => LToken::Define,
         LToken::Declare => LToken::Declare,
@@ -7049,7 +7057,7 @@ fn integer_to_string(mut integer: usize) -> String {
 }
 
 /// Convert a token into a string.
-fn token_to_string(token: &RToken) -> String {
+fn rToken_to_string(token: &RToken) -> String {
     match token {
         RToken::Fn => string("fn"),
         RToken::Enum => string("enum"),
@@ -7094,8 +7102,31 @@ fn token_to_string(token: &RToken) -> String {
     }
 }
 
+/// Convert a Rust type into a string.
+fn rType_to_string(ty: &RType) -> String {
+    match ty {
+        RType::U8 => string("u8"),
+        RType::Usize => string("usize"),
+        RType::Bool => string("bool"),
+        RType::Char => string("char"),
+        RType::Unit => string("()"),
+        RType::Never => string("!"),
+        RType::Enum(name) => string_clone(name),
+        RType::Reference(inner, mutable) => {
+            let mut str: String = if *mutable { string("&mut ") } else { string("&") };
+            string_push_string(&mut str, &rType_to_string(box_deref::<RType>(inner)));
+            str
+        },
+        RType::RawPointerMut(inner) => {
+            let mut str: String = string("*mut ");
+            string_push_string(&mut str, &rType_to_string(box_deref::<RType>(inner)));
+            str
+        },
+    }
+}
+
 /// Convert an LLVM token into a string.
-fn llvmToken_to_string(token: &LToken) -> String {
+fn lToken_to_string(token: &LToken) -> String {
     match token {
         LToken::Define => string("define"),
         LToken::Declare => string("declare"),
