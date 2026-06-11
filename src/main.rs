@@ -1925,7 +1925,7 @@ fn semantic_check_function(semantic: &mut Semantic, function: &RAstFunction, glo
     }
 
     let block_type: RType = semantic_check_block(semantic, body, *is_unsafe, globals);
-    semantic_expect_coerced_type_match(&block_type, return_type);
+    semantic_expect_coerced_type_match(return_type, &block_type);
 
     semantic_leave_scope(semantic);
     semantic_set_current_fn_return_type(semantic, RType::Unit);
@@ -4055,8 +4055,12 @@ fn lLexer_scan_keyword_or_label(lexer: &mut LLexer) -> LToken {
     } else {
         match lLexer_peek_char(lexer) {
             Option::Some(c) => {
-                lLexer_consume_char(lexer);
-                LToken::LabelIdent(identifier)
+                if c == ':' {
+                    lLexer_consume_char(lexer);
+                    LToken::LabelIdent(identifier)
+                } else {
+                    panic("unexpected identifier")
+                }
             },
             _ => panic("unexpected identifier"),
         }
@@ -5251,7 +5255,7 @@ fn emu_store_bytes(emulator: &mut Emu, address: usize, value: &Value, mut byte_c
 }
 
 /// Load a little-endian integer value from `address` using `byte_count` bytes.
-fn emu_load_bytes(emulator: &Emu, address: usize, mut byte_count: usize) -> Value {
+fn emu_load_bytes(emulator: &Emu, address: usize, byte_count: usize) -> Value {
     let Emu::Emu(_, memory, _, _, _, _): &Emu = emulator;
 
     if byte_count <= 8 {
