@@ -2002,7 +2002,7 @@ fn semantic_check_expression(
 ) -> RType {
     match expression {
         RAstExpr::Return(returned) => semantic_check_return(semantic, returned, globals),
-        RAstExpr::Assign(left, right) => semantic_check_assignment(
+        RAstExpr::Assign(left, right) => semantic_check_assign(
             semantic,
             box_deref::<RAstExpr>(left),
             box_deref::<RAstExpr>(right),
@@ -2052,43 +2052,46 @@ fn semantic_check_return(
     RType::Never
 }
 
-fn semantic_check_assignment(
+fn semantic_check_assign(
     semantic: &mut Semantic,
     left: &RAstExpr,
     right: &RAstExpr,
     globals: &StringMap<Item>,
 ) -> RType {
     let right_type: RType = semantic_check_expression(semantic, right, globals);
-    let left_type: RType = semantic_check_assignment_lvalue_type(semantic, left, globals);
+    let left_type: RType = semantic_check_assign_lvalue(semantic, left, globals);
     semantic_expect_type_match(&left_type, &right_type);
     RType::Unit
 }
 
-fn semantic_check_assignment_lvalue_type(
+fn semantic_check_assign_lvalue(
     semantic: &mut Semantic,
     expression: &RAstExpr,
     globals: &StringMap<Item>,
 ) -> RType {
     match expression {
         RAstExpr::Variable(name) => semantic_check_variable_use(semantic, true, name),
-        RAstExpr::Unary(RAstUnaryOp::Dereference, value) => {
-            let pointer_type: RType =
-                semantic_check_expression(semantic, box_deref::<RAstExpr>(value), globals);
-            match pointer_type {
-                RType::Reference(inner, mutable) => {
-                    if not(mutable) {
-                        semantic_error(&string("invalid assignment using immutable reference"));
-                    }
-                    rType_clone(box_deref::<RType>(&inner))
-                },
-                RType::RawPointerMut(inner) => {
-                    if not(semantic_is_unsafe_context(semantic)) {
-                        semantic_error(&string("raw pointer dereference requires unsafe"));
-                    }
-                    rType_clone(box_deref::<RType>(&inner))
-                },
-                _ => semantic_error(&string("invalid assignment to an expression")),
-            }
+        RAstExpr::Unary(op, value) => match op {
+            RAstUnaryOp::Dereference => {
+                let pointer_type: RType =
+                    semantic_check_expression(semantic, box_deref::<RAstExpr>(value), globals);
+                match pointer_type {
+                    RType::Reference(inner, mutable) => {
+                        if not(mutable) {
+                            semantic_error(&string("invalid assignment using immutable reference"));
+                        }
+                        rType_clone(box_deref::<RType>(&inner))
+                    },
+                    RType::RawPointerMut(inner) => {
+                        if not(semantic_is_unsafe_context(semantic)) {
+                            semantic_error(&string("raw pointer dereference requires unsafe"));
+                        }
+                        rType_clone(box_deref::<RType>(&inner))
+                    },
+                    _ => semantic_error(&string("invalid assignment to an expression")),
+                }
+            },
+            _ => semantic_error(&string("invalid assignment target")),
         },
         _ => semantic_error(&string("invalid assignment target")),
     }
