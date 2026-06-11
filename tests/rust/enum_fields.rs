@@ -1,13 +1,22 @@
 // TODO: should contain another enum
+// TODO: test wildcards
 enum Structure {
     VariantA(usize, char, char, u8),
-    VariantB(u8, u8, usize),
+    VariantB(u8, u8, Inner),
     VariantC(*mut Structure, u8),
+}
+
+enum Inner {
+    Inner(u8, Deep, usize),
+}
+
+enum Deep {
+    Inner(usize),
 }
 
 fn test() -> usize {
     let s1: Structure = Structure::VariantA(134, 'A', '0', 4 as u8);
-    let s2: Structure = Structure::VariantB(233 as u8, 255 as u8, 10);
+    let s2: Structure = Structure::VariantB(233 as u8, 255 as u8, Inner::Inner(3 as u8, Deep::Inner(3), 4));
     let mut inner: Structure = Structure::VariantA(120, '5', '0', 7 as u8);
     let s3: Structure = Structure::VariantC(&mut inner as *mut Structure, 1 as u8);
 
@@ -27,7 +36,9 @@ fn match_test(s: Structure) -> usize {
             13
         },
         Structure::VariantA(n, c1, c2, u1) => n - c1 as usize - c2 as usize - u1 as usize,
-        Structure::VariantB(u1, u2, n) => (u2 - u1) as usize - n,
+        Structure::VariantB(u1, u2, Inner::Inner(u3, Deep::Inner(d), n)) => {
+            (u2 - u1) as usize - u3 as usize - d - n
+        },
     }
 }
 
