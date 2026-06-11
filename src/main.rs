@@ -1919,21 +1919,8 @@ fn semantic_check_function(semantic: &mut Semantic, function: &RAstFunction, glo
     while i < len {
         let RAstVariable::Variable(pattern, parameter_type): &RAstVariable =
             vec_at::<RAstVariable>(parameters, i);
-
-        match pattern {
-            RAstPattern::Identifier(is_mutable, name) => {
-                let already_used: bool = semantic_insert_variable(
-                    semantic,
-                    string_clone(name),
-                    rType_clone(parameter_type),
-                    *is_mutable,
-                );
-                if already_used {
-                    semantic_error(&string("duplicate parameter name"));
-                }
-            },
-            _ => {},
-        }
+        // TODO: error on duplicate names
+        semantic_check_pattern(semantic, pattern, parameter_type, false, globals);
         i = i + 1;
     }
 
@@ -2005,19 +1992,7 @@ fn semantic_check_binding(
     let RAstVariable::Variable(pattern, binding_type): &RAstVariable = variable;
     let actual_type: RType = semantic_check_expression(semantic, value, globals);
     semantic_expect_type_match(binding_type, &actual_type);
-
-    match pattern {
-        RAstPattern::Identifier(is_mutable, lvalue_name) => {
-            // allow shadowing of variables
-            let _ = semantic_insert_variable(
-                semantic,
-                string_clone(lvalue_name),
-                rType_clone(binding_type),
-                *is_mutable,
-            );
-        },
-        _ => {},
-    }
+    semantic_check_pattern(semantic, pattern, binding_type, false, globals);
 }
 
 fn semantic_check_expression(
