@@ -19,7 +19,7 @@ fn test_system() {
         let (emu_exit, llvm_path) = compile_emulate(&source_path);
 
         let source = std::fs::read_to_string(&source_path).expect("can read rust test source");
-        let rust_source = rustc_source(&source_path, &source);
+        let rust_source = rustc_source(&source);
         let rust_source_path = write_file(&format!("{}-source", label), "rs", rust_source.as_str());
         let rustc_exe_path = unique_path(&format!("{}-rustc", label), "bin");
         run_rustc(&rust_source_path, &rustc_exe_path);
@@ -108,7 +108,7 @@ fn write_file(label: &str, extension: &str, content: &str) -> PathBuf {
     path
 }
 
-fn rustc_source(path: &Path, source: &str) -> std::string::String {
+fn rustc_source(source: &str) -> std::string::String {
     format!(
         "#![allow(overflowing_literals, unused_parens, unused_assignments, unreachable_code, unused_variables)]\n{}",
         source
@@ -129,10 +129,9 @@ fn tool_available(tool: &str) -> bool {
 
 fn run_binary(path: &Path) -> i32 {
     let status = Command::new(path).status().expect("able to execute binary");
-    status.code().expect(&format!(
-        "binary {} terminates with exit code",
-        path.display()
-    ))
+    status
+        .code()
+        .expect(&format!("binary {} terminates with exit code", path.display()))
 }
 
 fn run_lli(path: &Path) -> i32 {
@@ -200,10 +199,7 @@ fn compile_emulate(source: &Path) -> (i32, PathBuf) {
         .status()
         .expect("able to run bootstrapped compiler/emulator");
 
-    let stem = source
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("code");
+    let stem = source.file_stem().and_then(|s| s.to_str()).unwrap_or("code");
     let output = PathBuf::from(format!("{}.ll", stem));
     (status.code().expect("returns an exit code"), output)
 }
