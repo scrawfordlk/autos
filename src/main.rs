@@ -3140,9 +3140,8 @@ fn codegen_arm(
     if not(is_last_arm) {
         codegen_emit_label(codegen, &arm_label);
     }
-    // assume the arm only has a single pattern and destructure for the arm
-    let pattern: &RAstPattern = vec_at::<RAstPattern>(patterns, 0);
-    codegen_arm_destructuring(codegen, pattern, expr_name, expr_type);
+    let pattern: &RAstPattern = vec_at::<RAstPattern>(patterns, 0); // assume the arm only has a single pattern
+    codegen_bind_or_destructure(codegen, pattern, expr_name, expr_type);
 
     let STPair::ST(arm_value, arm_type) = codegen_expression(codegen, arm_expr);
     if rType_has_value(&arm_type) {
@@ -3198,8 +3197,8 @@ fn codegen_arm_match(
     }
 }
 
-/// Generate code to destructure/bind pattern values to names.
-fn codegen_arm_destructuring(
+/// Generate code to bind/destructure matched values to names.
+fn codegen_bind_or_destructure(
     codegen: &mut Codegen,
     pattern: &RAstPattern,
     expr_name: &String,
@@ -3213,45 +3212,57 @@ fn codegen_arm_destructuring(
             let variable_type: RType = rType_clone(&expr_type);
             codegen_scope_insert(codegen, variable_name, variable_type, pointer_name);
         },
-        RAstPattern::EnumVariant(name, variant, patterns) => {
+        RAstPattern::EnumVariant(name, variant, inner_patterns) => {
             // assume all inner patterns are irrefutable
-            let fields: Vec<RType> = match codegen_search_global(codegen, name) {
-                Option::Some(item) => match item {
-                    Item::Enum(RAstEnum::Enum(_, variants)) => {
-                        match rAstEnum_get_variant_fields(variants, variant) {
-                            Option::Some(fields) => fields,
-                            _ => return, // assume case this does not occur
-                        }
-                    },
-                    _ => return, // assume case this does not occur
-                },
-                _ => return, // assume this case does not occur
-            };
-            let field_count: usize = vec_len::<RType>(&fields);
-            if field_count == 0 {
-                return;
-            }
-            let mut offset: String = codegen_emit_pointer_add(codegen, &expr_name, &RType::Usize, 1); // skip discriminant
-            let mut i: usize = 0;
-            while i < field_count {
-                let ty: &RType = vec_at::<RType>(&fields, i);
-                match vec_at::<RAstPattern>(patterns, i) {
-                    RAstPattern::Identifier(_, name) => {
-                        let pointer: String = codegen_emit_alloca(codegen, ty);
-                        let result: String = codegen_emit_load(codegen, ty, &offset);
-                        codegen_emit_store(codegen, ty, &result, &pointer);
-                        codegen_scope_insert(codegen, string_clone(name), rType_clone(ty), pointer);
-                    },
-                    RAstPattern::EnumVariant(_, _, _) => panic("not implemented (assume irrefutable)"),
-                    _ => {}, // assume case this does not occur
-                }
-                if i < field_count - 1 {
-                    offset = codegen_emit_pointer_add(codegen, &offset, &ty, 1);
-                } // only compute next offset if there is another field
-                i = i + 1;
+            if vec_len::<RAstPattern>(inner_patterns) > 0 {
+                codegen_enum_destructure(codegen, name, variant, expr_name, inner_patterns);
             }
         },
         _ => {}, // do not destructure or bind values
+    }
+}
+
+/// Generate code to destructure an enum with at least one field.
+fn codegen_enum_destructure(
+    codegen: &mut Codegen,
+    name: &String,
+    variant: &String,
+    initial_offset: &String,
+    patterns: &Vec<RAstPattern>,
+) {
+    let fields: Vec<RType> = match codegen_search_global(codegen, name) {
+        Option::Some(item) => match item {
+            Item::Enum(RAstEnum::Enum(_, variants)) => {
+                match rAstEnum_get_variant_fields(variants, variant) {
+                    Option::Some(fields) => fields,
+                    _ => return, // assume this does not occur
+                }
+            },
+            _ => return, // assume this does not occur
+        },
+        _ => return, // assume this case does not occur
+    };
+    let mut offset = codegen_emit_pointer_add(codegen, initial_offset, &RType::Usize, 1); // skip discriminant
+    let mut i: usize = 0;
+    while i < vec_len::<RType>(&fields) {
+        let ty: &RType = vec_at::<RType>(&fields, i);
+        let pattern: &RAstPattern = vec_at::<RAstPattern>(patterns, i);
+        match pattern {
+            RAstPattern::Identifier(_, name) => {
+                let pointer: String = codegen_emit_alloca(codegen, ty);
+                let field_value: String = codegen_emit_load(codegen, ty, &offset);
+                codegen_emit_store(codegen, ty, &field_value, &pointer);
+                codegen_scope_insert(codegen, string_clone(name), rType_clone(ty), pointer);
+            },
+            RAstPattern::EnumVariant(name, variant, inner_patterns) => {
+                if vec_len::<RAstPattern>(inner_patterns) > 0 {
+                    codegen_enum_destructure(codegen, name, variant, &offset, inner_patterns);
+                }
+            },
+            _ => {}, // assume otherwise it is wildcard (irrefutable pattern)
+        }
+        offset = codegen_emit_pointer_add(codegen, &offset, &ty, 1);
+        i = i + 1;
     }
 }
 
