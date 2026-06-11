@@ -934,36 +934,43 @@ fn rType_is_enum(ty: &RType) -> bool {
     }
 }
 
-/// Coerce two types into one type.
-/// Assumes that only the following cases can occur:
-/// 1. left == right
-/// 2. left == Never
-/// 3. right == Never
-///
-/// The type returned is only Never if left == right == Never.
-fn rType_coerce(left: RType, right: RType) -> RType {
-    if rType_eq(&left, &RType::Never) {
+/// Least Upper Bound coerce two types into one type.
+/// If `left` cannot be coerced into `right`, `left` is returned.
+fn rType_lub_coerce(left: RType, right: RType) -> RType {
+    if rType_coerced_match(&left, &right) {
         right
     } else {
         left
     }
 }
 
-/// Checks for equality between two types.
-/// If one of the arguments is Never, return true, since Never matches every type.
-fn type_matches(left: &RType, right: &RType) -> bool {
+/// Return true if the given types, coerced from `left` to `right`, match.
+/// Coercions:
+///   - &mut T -> &T
+///   - !      -> T (any type)
+/// That is, two types a, b can match after coercion, if
+/// a == b || a == ! || a == &mut T && b == &T
+fn rType_coerced_match(left: &RType, right: &RType) -> bool {
     or(
-        // Never is a special type that indicates the value is unreachable, so it matches every
-        // type
-        or(rType_eq(left, &RType::Never), rType_eq(right, &RType::Never)),
-        rType_eq(left, right),
+        or(rType_eq(left, right), rType_eq(left, &RType::Never)),
+        match left {
+            RType::Reference(inner_left, mutable_a) => match right {
+                RType::Reference(inner_right, mutable_b) => and(
+                    rType_eq(box_deref::<RType>(inner_left), box_deref::<RType>(inner_right)),
+                    // left can coerce to right iff `b => a`, where `a`, `b` := 1 if mutable else 0
+                    or(not(*mutable_b), *mutable_a),
+                ),
+                _ => false,
+            },
+            _ => false,
+        },
     )
 }
 
 /// Return true if the type has a value.
 /// This is true for all types, other than Unit and Never.
 fn rType_has_value(ty: &RType) -> bool {
-    not(type_matches(ty, &RType::Unit))
+    not(rType_coerced_match(ty, &RType::Unit))
 }
 
 /// Require and consume the given token.
@@ -1735,19 +1742,21 @@ fn semantic_expect_type_match(left: &RType, right: &RType) {
     }
 }
 
-/// Return true if the given types match.
-///
-/// Two types a, b match if:
-/// 1. a == b
-/// 2. a == Never
-/// 3. b == Never
+/// Check if the given types, coerced from `left` to `right`, match.
 fn semantic_expect_coerced_type_match(left: &RType, right: &RType) {
-    if not(type_matches(left, right)) {
+    if not(rType_coerced_match(left, right)) {
         let mut message: String = string("coerced type mismatch: expected ");
         string_push_string(&mut message, &rType_to_string(left));
         string_push_str(&mut message, ", but got ");
         string_push_string(&mut message, &rType_to_string(right));
         semantic_error(&message);
+    }
+}
+
+/// Check if the given types, using Least Upper Bound Coercion, match.
+fn semantic_expect_lub_coerced_type_match(left: &RType, right: &RType) {
+    if not(rType_coerced_match(right, left)) {
+        semantic_expect_coerced_type_match(left, right);
     }
 }
 
@@ -1925,7 +1934,7 @@ fn semantic_check_function(semantic: &mut Semantic, function: &RAstFunction, glo
     }
 
     let block_type: RType = semantic_check_block(semantic, body, *is_unsafe, globals);
-    semantic_expect_coerced_type_match(return_type, &block_type);
+    semantic_expect_coerced_type_match(&block_type, return_type);
 
     semantic_leave_scope(semantic);
     semantic_set_current_fn_return_type(semantic, RType::Unit);
@@ -1991,7 +2000,7 @@ fn semantic_check_binding(
 ) {
     let RAstVariable::Variable(pattern, binding_type): &RAstVariable = variable;
     let actual_type: RType = semantic_check_expression(semantic, value, globals);
-    semantic_expect_type_match(binding_type, &actual_type);
+    semantic_expect_coerced_type_match(&actual_type, binding_type);
     semantic_check_pattern(semantic, pattern, binding_type, false, globals);
 }
 
@@ -2043,10 +2052,10 @@ fn semantic_check_return(
     match returned {
         Option::Some(expression) => {
             let ty: RType = semantic_check_expression(semantic, box_deref::<RAstExpr>(expression), globals);
-            semantic_expect_type_match(&ty, semantic_current_fn_return_type(semantic));
+            semantic_expect_coerced_type_match(&ty, semantic_current_fn_return_type(semantic));
         },
         Option::None => {
-            semantic_expect_type_match(&RType::Unit, semantic_current_fn_return_type(semantic));
+            semantic_expect_type_match(semantic_current_fn_return_type(semantic), &RType::Unit);
         },
     }
     RType::Never
@@ -2060,7 +2069,7 @@ fn semantic_check_assign(
 ) -> RType {
     let right_type: RType = semantic_check_expression(semantic, right, globals);
     let left_type: RType = semantic_check_assign_lvalue(semantic, left, globals);
-    semantic_expect_type_match(&left_type, &right_type);
+    semantic_expect_coerced_type_match(&right_type, &left_type);
     RType::Unit
 }
 
@@ -2225,7 +2234,7 @@ fn semantic_check_call(
         let param_type: &RType = vec_at::<RType>(parameter_types, i);
         let arg: &RAstExpr = vec_at::<RAstExpr>(values, i);
         let arg_type: RType = semantic_check_expression(semantic, arg, globals);
-        semantic_expect_type_match(param_type, &arg_type);
+        semantic_expect_coerced_type_match(&arg_type, param_type);
         i = i + 1;
     }
     rType_clone(return_type)
@@ -2247,10 +2256,10 @@ fn semantic_check_enum(
     }
     let mut i: usize = 0;
     while i < vec_len::<RType>(&fields) {
-        let ty: &RType = vec_at::<RType>(&fields, i);
+        let field_type: &RType = vec_at::<RType>(&fields, i);
         let expr: &RAstExpr = vec_at::<RAstExpr>(values, i);
         let expr_type: RType = semantic_check_expression(semantic, expr, globals);
-        semantic_expect_type_match(ty, &expr_type);
+        semantic_expect_coerced_type_match(&expr_type, field_type);
         i = i + 1;
     }
     RType::Enum(string_clone(name))
@@ -2258,9 +2267,8 @@ fn semantic_check_enum(
 
 fn semantic_check_if(semantic: &mut Semantic, if_expression: &RAstIf, globals: &StringMap<Item>) -> RType {
     let RAstIf::If(condition, then_block, else_branch): &RAstIf = if_expression;
-    let condition_type: RType =
-        semantic_check_expression(semantic, box_deref::<RAstExpr>(condition), globals);
-    semantic_expect_bool_type(&condition_type);
+    let cond_type: RType = semantic_check_expression(semantic, box_deref::<RAstExpr>(condition), globals);
+    semantic_expect_bool_type(&cond_type);
 
     let then_type: RType = semantic_check_block(semantic, then_block, false, globals);
     match else_branch {
@@ -2271,11 +2279,14 @@ fn semantic_check_if(semantic: &mut Semantic, if_expression: &RAstIf, globals: &
                 },
                 RAstElse::Block(block) => semantic_check_block(semantic, block, false, globals),
             };
-            semantic_expect_coerced_type_match(&then_type, &else_type);
-
-            rType_coerce(then_type, else_type)
+            semantic_expect_lub_coerced_type_match(&then_type, &else_type);
+            rType_lub_coerce(then_type, else_type)
         },
-        Option::None => RType::Unit,
+        Option::None => {
+            let return_type: RType = RType::Unit;
+            semantic_expect_coerced_type_match(&then_type, &return_type);
+            return_type
+        },
     }
 }
 
@@ -2288,7 +2299,7 @@ fn semantic_check_while(
     let condition_type: RType = semantic_check_expression(semantic, condition, globals);
     semantic_expect_bool_type(&condition_type);
     let body_type: RType = semantic_check_block(semantic, body, false, globals);
-    semantic_expect_coerced_type_match(&RType::Unit, &body_type);
+    semantic_expect_coerced_type_match(&body_type, &RType::Unit);
     RType::Unit
 }
 
@@ -2343,9 +2354,8 @@ fn semantic_check_match(
         }
 
         let arm_type: RType = semantic_check_expression(semantic, expression, globals);
-        semantic_expect_coerced_type_match(&return_type, &arm_type);
-
-        return_type = rType_coerce(return_type, arm_type);
+        semantic_expect_lub_coerced_type_match(&return_type, &arm_type);
+        return_type = rType_lub_coerce(return_type, arm_type);
         semantic_leave_scope(semantic);
         i = i + 1;
     }
@@ -2878,7 +2888,9 @@ fn codegen_path(codegen: &mut Codegen, path: &Vec<String>, values: &Vec<RAstExpr
                 let expression: &RAstExpr = vec_at::<RAstExpr>(values, i);
                 let STPair::ST(mut register, ty): STPair = codegen_expression(codegen, expression);
                 register = codegen_emit_load_if_enum(codegen, register, &ty);
-                codegen_emit_store(codegen, &ty, &register, &offset_ptr);
+                if rType_has_value(&ty) {
+                    codegen_emit_store(codegen, &ty, &register, &offset_ptr);
+                }
                 if i < vec_len::<RAstExpr>(values) - 1 {
                     offset_ptr = codegen_emit_pointer_add(codegen, &offset_ptr, &ty, 1);
                 } // only compute next address if there is another field
@@ -2969,7 +2981,7 @@ fn codegen_if(codegen: &mut Codegen, if_expression: &RAstIf) -> STPair {
                 codegen_emit_store(codegen, &else_type, &else_value, &result_pointer);
             }
 
-            if_type = rType_coerce(if_type, else_type);
+            if_type = rType_lub_coerce(if_type, else_type);
         },
         _ => if_type = RType::Unit, // else is implicitly unit, so type of if must be unit
     }
@@ -3054,7 +3066,7 @@ fn codegen_match(codegen: &mut Codegen, value: &RAstExpr, arms: &Vec<RAstArm>) -
             &end_label,
         );
 
-        return_type = rType_coerce(return_type, arm_type);
+        return_type = rType_lub_coerce(return_type, arm_type);
         codegen_pop_scope(codegen);
         i = i + 1;
     }
