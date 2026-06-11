@@ -20,7 +20,11 @@ fn test() -> usize {
     let mut inner: Structure = Structure::VariantA(120, '5', '0', 7 as u8);
     let s3: Structure = Structure::VariantC(&mut inner as *mut Structure, 1 as u8);
 
-    (match_test(s1) == 17) as usize + (match_test(s2) == 12) as usize + (match_test(s3) == 13) as usize + 39
+    let deep: Deep = Deep::Inner(13);
+    let Inner::Inner(u1, Deep::Inner(d), n): Inner = Inner::Inner(4 as u8, deep, 12);
+    let sum: usize = u1 as usize + d + n + param(Inner::Inner(6, Deep::Inner(100), 4));
+
+    (match_test(s1) == 17) as usize + (match_test(s2) == 12) as usize + (match_test(s3) == 13) as usize + sum
 }
 
 fn match_test(s: Structure) -> usize {
@@ -40,6 +44,10 @@ fn match_test(s: Structure) -> usize {
             (u2 - u1) as usize - u3 as usize - d - n
         },
     }
+}
+
+fn param(Inner::Inner(u1, _, n): Inner) -> usize {
+    u1 as usize + n
 }
 
 fn main() {
