@@ -2908,9 +2908,9 @@ fn codegen_call(codegen: &mut Codegen, function: &String, values: &Vec<RAstExpr>
     };
 
     let mut result_name: String = if rType_has_value(&return_type) {
-        codegen_emit_call_value(codegen, &function, &return_type, &value_types, &value_names)
+        codegen_emit_call_assign(codegen, &function, &return_type, &value_types, &value_names)
     } else {
-        codegen_emit_call_void(codegen, &function, &value_types, &value_names);
+        codegen_emit_call_void(codegen, &function, &return_type, &value_types, &value_names);
         string_new()
     };
 
@@ -3556,73 +3556,68 @@ fn codegen_emit_load_if_enum(codegen: &mut Codegen, value: String, ty: &RType) -
     }
 }
 
-/// Emit a call instruction that returns a value.
+/// Emit a call instruction that assigns the return value to a register.
 /// ```llvm
-/// %<name> = call <return_type> @<function_name>(<arg_type> <arg_value>, ...)
+/// %<register> = call <ty> @<name>(<type> <arg>, ...)
 /// ```
-/// Returns `%<name>`.
-fn codegen_emit_call_value(
+/// Returns `%<register>`.
+fn codegen_emit_call_assign(
     codegen: &mut Codegen,
-    function_name: &String,
+    name: &String,
     return_type: &RType,
-    argument_types: &Vec<RType>,
-    argument_values: &Vec<String>,
+    arg_types: &Vec<RType>,
+    args: &Vec<String>,
 ) -> String {
-    let name: String = codegen_next_register(codegen);
-
+    let register: String = codegen_next_register(codegen);
     let mut line: String = string_new();
     string_push_str(&mut line, "  ");
-    string_push_string(&mut line, &name);
-    string_push_str(&mut line, " = call ");
-    string_push_string(&mut line, &rType_to_llvm_name(codegen, return_type));
-    string_push_str(&mut line, " @");
-    string_push_string(&mut line, function_name);
-    string_push(&mut line, '(');
-
-    let mut i: usize = 0;
-    let len: usize = vec_len::<RType>(argument_types);
-    while i < len {
-        let argument_type: &RType = vec_at::<RType>(argument_types, i);
-        let argument_value: &String = vec_at::<String>(argument_values, i);
-        if rType_is_enum(argument_type) {
-            string_push_str(&mut line, "ptr"); // pass enums by reference
-        } else {
-            string_push_string(&mut line, &rType_to_llvm_name(codegen, argument_type));
-        }
-        string_push(&mut line, ' ');
-        string_push_string(&mut line, argument_value);
-
-        i = i + 1;
-        if i < len {
-            string_push_str(&mut line, ", ");
-        }
-    }
-    string_push_str(&mut line, ")");
-
+    string_push_string(&mut line, &register);
+    string_push_str(&mut line, " = ");
+    let call: String = codegen_construct_call(codegen, name, return_type, arg_types, args);
+    string_push_string(&mut line, &call);
     codegen_emit_line(codegen, line);
-    name
+    register
 }
 
-/// Emit a call instruction that returns `void`.
+/// Emit a call instruction without assigning its (potential) return value.
 /// ```llvm
-/// call void @<function_name>(<arg_type> <arg_value>, ...)
+/// call <ty> @<name>(<type> <arg>, ...)
 /// ```
 fn codegen_emit_call_void(
     codegen: &mut Codegen,
-    function_name: &String,
-    argument_types: &Vec<RType>,
-    argument_values: &Vec<String>,
+    name: &String,
+    return_type: &RType,
+    arg_types: &Vec<RType>,
+    args: &Vec<String>,
 ) {
-    let mut line: String = string_new();
-    string_push_str(&mut line, "  call void @");
-    string_push_string(&mut line, function_name);
+    let mut line: String = string("  ");
+    let call: String = codegen_construct_call(codegen, name, return_type, arg_types, args);
+    string_push_string(&mut line, &call);
+    codegen_emit_line(codegen, line);
+}
+
+/// Construct a call instruction and return it.
+/// ```llvm
+/// call <ty> @<name>(<type> <arg>, ...)
+/// ```
+fn codegen_construct_call(
+    codegen: &mut Codegen,
+    name: &String,
+    return_type: &RType,
+    arg_types: &Vec<RType>,
+    args: &Vec<String>,
+) -> String {
+    let mut line: String = string("call ");
+    string_push_string(&mut line, &rType_to_llvm_name(codegen, return_type));
+    string_push_str(&mut line, " @");
+    string_push_string(&mut line, name);
     string_push(&mut line, '(');
 
     let mut i: usize = 0;
-    let len: usize = vec_len::<RType>(argument_types);
+    let len: usize = vec_len::<RType>(arg_types);
     while i < len {
-        let argument_type: &RType = vec_at::<RType>(argument_types, i);
-        let argument_value: &String = vec_at::<String>(argument_values, i);
+        let argument_type: &RType = vec_at::<RType>(arg_types, i);
+        let argument_value: &String = vec_at::<String>(args, i);
         if rType_is_enum(argument_type) {
             string_push_str(&mut line, "ptr"); // pass enums by reference
         } else {
@@ -3637,8 +3632,7 @@ fn codegen_emit_call_void(
         }
     }
     string_push_str(&mut line, ")");
-
-    codegen_emit_line(codegen, line);
+    line
 }
 
 /// Emit a function header with an entry label.
