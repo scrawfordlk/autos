@@ -1,4 +1,3 @@
-// TODO: should contain another enum
 // TODO: test wildcards
 enum Structure {
     VariantA(usize, char, char, u8),
@@ -22,7 +21,7 @@ fn test() -> usize {
 
     let deep: Deep = Deep::Inner(13);
     let Inner::Inner(u1, Deep::Inner(d), n): Inner = Inner::Inner(4 as u8, deep, 12);
-    let sum: usize = u1 as usize + d + n + param(Inner::Inner(6, Deep::Inner(100), 4));
+    let sum: usize = u1 as usize + d + n + param(Inner::Inner(6 as u8, Deep::Inner(100), 4));
 
     (match_test(s1) == 17) as usize + (match_test(s2) == 12) as usize + (match_test(s3) == 13) as usize + sum
 }
