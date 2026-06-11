@@ -2578,20 +2578,10 @@ fn codegen_function(codegen: &mut Codegen, function: &RAstFunction) {
     while i < vec_len::<RAstVariable>(parameters) {
         let RAstVariable::Variable(pattern, param_type): &RAstVariable =
             vec_at::<RAstVariable>(parameters, i);
+        let mut parameter: String = string("%");
+        string_push_string(&mut parameter, &integer_to_string(i)); // TODO: need correct param name
 
-        match pattern {
-            RAstPattern::Identifier(_, name) => {
-                // SSA: all variables (including parameters) are stored on the stack
-                let param_ptr: String = codegen_emit_alloca(codegen, param_type);
-                let mut param_register: String = string("%");
-                string_push_string(&mut param_register, name);
-                codegen_emit_store(codegen, param_type, &param_register, &param_ptr);
-
-                let name: String = string_clone(name);
-                codegen_scope_insert(codegen, name, rType_clone(param_type), param_ptr);
-            },
-            _ => {},
-        }
+        codegen_bind_or_destructure(codegen, pattern, &parameter, param_type);
         i = i + 1;
     }
 
@@ -2669,22 +2659,8 @@ fn codegen_block(codegen: &mut Codegen, block: &RAstBlock) -> STPair {
 /// Emit LLVM-IR for one let binding.
 fn codegen_binding(codegen: &mut Codegen, variable: &RAstVariable, value: &RAstExpr) {
     let RAstVariable::Variable(pattern, binding_type): &RAstVariable = variable;
-
     let STPair::ST(mut rvalue_name, _): STPair = codegen_expression(codegen, value);
-    rvalue_name = codegen_emit_load_if_enum(codegen, rvalue_name, &binding_type);
-
-    match pattern {
-        RAstPattern::Identifier(_, lvalue_name) => {
-            if rType_has_value(binding_type) {
-                let lvalue_pointer: String = codegen_emit_alloca(codegen, binding_type);
-                codegen_emit_store(codegen, binding_type, &rvalue_name, &lvalue_pointer);
-
-                let name: String = string_clone(lvalue_name);
-                codegen_scope_insert(codegen, name, rType_clone(binding_type), lvalue_pointer);
-            }
-        },
-        _ => {},
-    }
+    codegen_bind_or_destructure(codegen, pattern, &rvalue_name, binding_type);
 }
 
 /// Emit LLVM-IR for one expression and return the resulting value/type pair.
@@ -2920,10 +2896,7 @@ fn codegen_call(codegen: &mut Codegen, function: &String, values: &Vec<RAstExpr>
     let mut i: usize = 0;
     while i < vec_len::<RAstExpr>(values) {
         let value: &RAstExpr = vec_at::<RAstExpr>(values, i);
-
-        let STPair::ST(mut value_name, value_type): STPair = codegen_expression(codegen, value);
-        value_name = codegen_emit_load_if_enum(codegen, value_name, &value_type);
-
+        let STPair::ST(value_name, value_type): STPair = codegen_expression(codegen, value);
         vec_push::<RType>(&mut value_types, value_type);
         vec_push::<String>(&mut value_names, value_name);
         i = i + 1;
@@ -3206,11 +3179,12 @@ fn codegen_bind_or_destructure(
 ) {
     match pattern {
         RAstPattern::Identifier(_, identifier) => {
-            let pointer_name: String = codegen_emit_alloca(codegen, &expr_type);
-            codegen_emit_store(codegen, &expr_type, &expr_name, &pointer_name);
-            let variable_name: String = string_clone(identifier);
-            let variable_type: RType = rType_clone(&expr_type);
-            codegen_scope_insert(codegen, variable_name, variable_type, pointer_name);
+            if rType_has_value(expr_type) {
+                let ptr: String = codegen_emit_alloca(codegen, &expr_type);
+                let name: String = codegen_emit_load_if_enum(codegen, string_clone(expr_name), &expr_type);
+                codegen_emit_store(codegen, &expr_type, &name, &ptr);
+                codegen_scope_insert(codegen, string_clone(identifier), rType_clone(&expr_type), ptr);
+            }
         },
         RAstPattern::EnumVariant(name, variant, inner_patterns) => {
             // assume all inner patterns are irrefutable
@@ -3610,7 +3584,11 @@ fn codegen_emit_call_value(
     while i < len {
         let argument_type: &RType = vec_at::<RType>(argument_types, i);
         let argument_value: &String = vec_at::<String>(argument_values, i);
-        string_push_string(&mut line, &rType_to_llvm_name(codegen, argument_type));
+        if rType_is_enum(argument_type) {
+            string_push_str(&mut line, "ptr"); // pass enums by reference
+        } else {
+            string_push_string(&mut line, &rType_to_llvm_name(codegen, argument_type));
+        }
         string_push(&mut line, ' ');
         string_push_string(&mut line, argument_value);
 
@@ -3645,7 +3623,11 @@ fn codegen_emit_call_void(
     while i < len {
         let argument_type: &RType = vec_at::<RType>(argument_types, i);
         let argument_value: &String = vec_at::<String>(argument_values, i);
-        string_push_string(&mut line, &rType_to_llvm_name(codegen, argument_type));
+        if rType_is_enum(argument_type) {
+            string_push_str(&mut line, "ptr"); // pass enums by reference
+        } else {
+            string_push_string(&mut line, &rType_to_llvm_name(codegen, argument_type));
+        }
         string_push(&mut line, ' ');
         string_push_string(&mut line, argument_value);
 
@@ -3680,18 +3662,14 @@ fn codegen_emit_fn_signature(
     let mut i: usize = 0;
     let len: usize = vec_len::<RAstVariable>(parameters);
     while i < len {
-        let RAstVariable::Variable(pattern, parameter_type): &RAstVariable =
-            vec_at::<RAstVariable>(parameters, i);
-
-        // TODO: what if wildcards are used? Duplicate register names?
-        let parameter_name: String = match pattern {
-            RAstPattern::Identifier(_, name) => string_clone(name),
-            _ => string("arg"),
-        };
-
-        string_push_string(&mut line, &rType_to_llvm_name(codegen, parameter_type));
+        let RAstVariable::Variable(_, parameter_type): &RAstVariable = vec_at::<RAstVariable>(parameters, i);
+        if rType_is_enum(parameter_type) {
+            string_push_str(&mut line, "ptr"); // pass enums by reference
+        } else {
+            string_push_string(&mut line, &rType_to_llvm_name(codegen, parameter_type));
+        }
         string_push_str(&mut line, " %");
-        string_push_string(&mut line, &parameter_name);
+        string_push_string(&mut line, &integer_to_string(i));
 
         i = i + 1;
         if i < len {
