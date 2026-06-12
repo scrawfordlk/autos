@@ -1016,6 +1016,14 @@ fn scrutinee_binding_type(scrutinee: &Scrutinee) -> RType {
     }
 }
 
+/// Return true if the type of the scrutinee is a reference.
+fn scrutinee_is_reference(scrutinee: &Scrutinee) -> bool {
+    match scrutinee {
+        Scrutinee::Reference(_, _) => true,
+        _ => false,
+    }
+}
+
 /// Require and consume the given token.
 fn expect_token(lexer: &mut RLexer, token: &RToken) {
     if not(rLexer_try_consume(lexer, token)) {
@@ -3202,10 +3210,19 @@ fn codegen_arm_match(
     fail_label: &String,
 ) {
     let eq: RAstComparisonOp = RAstComparisonOp::Eq;
+    let scrutinee: Scrutinee = scrutinee_from_type(expr_type);
+    let is_enum_reference: bool = rType_is_enum(scrutinee_match_type(&scrutinee));
+    let expr_name: String = if and(scrutinee_is_reference(&scrutinee), not(is_enum_reference)) {
+        codegen_emit_load(codegen, scrutinee_match_type(&scrutinee), expr_name)
+    } else {
+        string_clone(expr_name)
+    };
+    let expr_type: &RType = scrutinee_match_type(&scrutinee);
+
     match pattern {
         RAstPattern::Literal(literal) => {
             let value: String = integer_to_string(rAstPatternLiteral_value(literal));
-            let cond: String = codegen_emit_icmp(codegen, &eq, expr_type, expr_name, &value);
+            let cond: String = codegen_emit_icmp(codegen, &eq, expr_type, &expr_name, &value);
             codegen_emit_br_conditional(codegen, &cond, arm_label, &fail_label);
         },
         RAstPattern::EnumVariant(name, variant, _) => {
@@ -3216,7 +3233,7 @@ fn codegen_arm_match(
                 _ => 0, // assume this case does not occur
             };
             let tag: String = integer_to_string(tag);
-            let expr_tag: String = codegen_emit_load(codegen, &RType::Usize, expr_name);
+            let expr_tag: String = codegen_emit_load(codegen, &RType::Usize, &expr_name);
             let cond: String = codegen_emit_icmp(codegen, &eq, &RType::Usize, &tag, &expr_tag);
             codegen_emit_br_conditional(codegen, &cond, &arm_label, &fail_label);
         },
@@ -3237,22 +3254,29 @@ fn codegen_bind_or_destructure(
     expr_name: &String,
     expr_type: &RType,
 ) {
+    let scrutinee: Scrutinee = scrutinee_from_type(expr_type);
+
     match pattern {
         RAstPattern::Identifier(_, identifier) => {
-            if rType_has_value(expr_type) {
-                let ptr: String = codegen_emit_alloca(codegen, &expr_type);
-                let name: String = codegen_emit_load_if_enum(codegen, string_clone(expr_name), &expr_type);
-                codegen_emit_store(codegen, &expr_type, &name, &ptr);
-                codegen_scope_insert(codegen, string_clone(identifier), rType_clone(&expr_type), ptr);
-            }
+            let expr_type: RType = scrutinee_binding_type(&scrutinee);
+            let ptr: String = codegen_emit_alloca(codegen, &expr_type);
+            let name: String = codegen_emit_load_if_enum(codegen, string_clone(expr_name), &expr_type);
+            codegen_emit_store(codegen, &expr_type, &name, &ptr);
+            codegen_scope_insert(codegen, string_clone(identifier), expr_type, ptr);
         },
         RAstPattern::EnumVariant(name, variant, inner_patterns) => {
             // assume all inner patterns are irrefutable
             if vec_len::<RAstPattern>(inner_patterns) > 0 {
-                codegen_enum_destructure(codegen, name, variant, expr_name, inner_patterns);
+                let is_enum_reference: bool = rType_is_enum(scrutinee_match_type(&scrutinee));
+                let expr_name: String = if and(scrutinee_is_reference(&scrutinee), not(is_enum_reference)) {
+                    codegen_emit_load(codegen, scrutinee_match_type(&scrutinee), expr_name)
+                } else {
+                    string_clone(expr_name)
+                };
+                codegen_enum_destructure(codegen, name, variant, &expr_name, inner_patterns, &scrutinee);
             }
         },
-        _ => {}, // do not destructure or bind values
+        _ => {}, // do not destructure or bind values for literal or wildcard
     }
 }
 
@@ -3263,6 +3287,7 @@ fn codegen_enum_destructure(
     variant: &String,
     initial_offset: &String,
     patterns: &Vec<RAstPattern>,
+    scrutinee: &Scrutinee,
 ) {
     let fields: Vec<RType> = match codegen_search_global(codegen, name) {
         Option::Some(item) => match item {
@@ -3283,19 +3308,26 @@ fn codegen_enum_destructure(
         let pattern: &RAstPattern = vec_at::<RAstPattern>(patterns, i);
         match pattern {
             RAstPattern::Identifier(_, name) => {
-                let pointer: String = codegen_emit_alloca(codegen, ty);
-                let field_value: String = codegen_emit_load(codegen, ty, &offset);
-                codegen_emit_store(codegen, ty, &field_value, &pointer);
-                codegen_scope_insert(codegen, string_clone(name), rType_clone(ty), pointer);
+                let variable_type: RType = scrutinee_inherit_borrow(scrutinee, ty);
+                let pointer: String = codegen_emit_alloca(codegen, &variable_type);
+                if scrutinee_is_reference(scrutinee) {
+                    codegen_emit_store(codegen, &variable_type, &offset, &pointer);
+                } else {
+                    let field_value: String = codegen_emit_load(codegen, &variable_type, &offset);
+                    codegen_emit_store(codegen, &variable_type, &field_value, &pointer);
+                }
+                codegen_scope_insert(codegen, string_clone(name), variable_type, pointer);
             },
             RAstPattern::EnumVariant(name, variant, inner_patterns) => {
                 if vec_len::<RAstPattern>(inner_patterns) > 0 {
-                    codegen_enum_destructure(codegen, name, variant, &offset, inner_patterns);
+                    codegen_enum_destructure(codegen, name, variant, &offset, inner_patterns, scrutinee);
                 }
             },
             _ => {}, // assume otherwise it is wildcard (irrefutable pattern)
         }
-        offset = codegen_emit_pointer_add(codegen, &offset, &ty, 1);
+        if i < vec_len::<RAstPattern>(patterns) - 1 {
+            offset = codegen_emit_pointer_add(codegen, &offset, &ty, 1);
+        }
         i = i + 1;
     }
 }
