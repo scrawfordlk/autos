@@ -20,7 +20,7 @@ enum Option {
 
 fn g() {
     return;
-    let opt: Option = Option::Some(unsafe { exit(4) });
+    let opt: Option = Option::Some(4);
 }
 
 fn main() {

@@ -2909,12 +2909,11 @@ fn codegen_literal(literal: &RLiteral) -> STPair {
 /// Emit LLVM-IR for a variable-use expression.
 fn codegen_variable_use(codegen: &mut Codegen, variable_name: &String) -> STPair {
     let STPair::ST(pointer_name, ty): STPair = codegen_scope_lookup(codegen, variable_name);
-    if and(rType_has_value(&ty), not(rType_is_enum(&ty))) {
+    if not(rType_is_enum(&ty)) {
         let value_name: String = codegen_emit_load(codegen, &ty, &pointer_name);
         STPair::ST(value_name, ty)
     } else {
-        // Unit and Never have no value, so don't load
-        STPair::ST(pointer_name, ty)
+        STPair::ST(pointer_name, ty) // Do not load enums yet
     }
 }
 
@@ -2936,9 +2935,7 @@ fn codegen_path(codegen: &mut Codegen, path: &Vec<String>, values: &Vec<RAstExpr
                 let expression: &RAstExpr = vec_at::<RAstExpr>(values, i);
                 let STPair::ST(mut register, ty): STPair = codegen_expression(codegen, expression);
                 register = codegen_emit_load_if_enum(codegen, register, &ty);
-                if rType_has_value(&ty) {
-                    codegen_emit_store(codegen, &ty, &register, &offset_ptr);
-                }
+                codegen_emit_store(codegen, &ty, &register, &offset_ptr);
                 if i < vec_len::<RAstExpr>(values) - 1 {
                     offset_ptr = codegen_emit_pointer_add(codegen, &offset_ptr, &ty, 1);
                 } // only compute next address if there is another field
