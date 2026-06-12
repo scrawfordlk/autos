@@ -2166,7 +2166,11 @@ fn semantic_check_unary_op(
                     }
                     rType_clone(box_deref::<RType>(&pointed))
                 },
-                _ => semantic_error(&string("cannot dereference this expression")),
+                _ => {
+                    let mut message: String = string("cannot dereference an expression of type ");
+                    string_push_string(&mut message, &rType_to_string(&ty));
+                    semantic_error(&message);
+                },
             }
         },
     }
