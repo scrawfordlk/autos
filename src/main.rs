@@ -973,6 +973,49 @@ fn rType_has_value(ty: &RType) -> bool {
     not(rType_coerced_match(ty, &RType::Unit))
 }
 
+/// Possible types of a scrutinee in a match expression. The contained type is the type the Scrutinee is matched
+/// against, while the variant encodes whether bindings are (mutable) references.
+#[derive(Debug)]
+enum Scrutinee {
+    Value(RType),
+    /// inner type, mutable
+    Reference(RType, bool),
+}
+
+/// Construct Scrutinee from a given Rust type.
+fn scrutinee_from_type(ty: &RType) -> Scrutinee {
+    match ty {
+        RType::Reference(inner, mutable) => {
+            Scrutinee::Reference(rType_clone(box_deref::<RType>(inner)), *mutable)
+        },
+        _ => Scrutinee::Value(rType_clone(ty)),
+    }
+}
+
+/// Return the type that the scrutinee is matched on.
+fn scrutinee_match_type(scrutinee: &Scrutinee) -> &RType {
+    match scrutinee {
+        Scrutinee::Value(ty) => ty,
+        Scrutinee::Reference(ty, _) => ty,
+    }
+}
+
+/// If the scrutinee is a reference, the returned type is a reference to `ty`, otherwise, return `ty`.
+fn scrutinee_inherit_borrow(scrutinee: &Scrutinee, ty: &RType) -> RType {
+    match scrutinee {
+        Scrutinee::Value(_) => rType_clone(ty),
+        Scrutinee::Reference(_, mutable) => RType::Reference(box_new::<RType>(rType_clone(ty)), *mutable),
+    }
+}
+
+/// Return the type of the binding, which binds the given scrutinee.
+fn scrutinee_binding_type(scrutinee: &Scrutinee) -> RType {
+    match scrutinee {
+        Scrutinee::Value(ty) => rType_clone(ty),
+        Scrutinee::Reference(ty, mutable) => RType::Reference(box_new::<RType>(rType_clone(ty)), *mutable),
+    }
+}
+
 /// Require and consume the given token.
 fn expect_token(lexer: &mut RLexer, token: &RToken) {
     if not(rLexer_try_consume(lexer, token)) {
@@ -2378,12 +2421,13 @@ fn semantic_check_pattern(
     refutable_ok: bool,
     globals: &StringMap<Item>,
 ) {
+    let scrutinee: Scrutinee = scrutinee_from_type(expression_type);
     let pattern_type: RType = match pattern {
         RAstPattern::Literal(literal) => {
             if refutable_ok {
                 match literal {
                     RAstPatternLiteral::Int(_) => {
-                        if rType_is_numeric(expression_type) {
+                        if rType_is_numeric(scrutinee_match_type(&scrutinee)) {
                             return; // numeric expression matches on numeric pattern
                         } else {
                             RType::Usize
@@ -2397,7 +2441,7 @@ fn semantic_check_pattern(
             }
         },
         RAstPattern::Identifier(mutable, name) => {
-            let variable_type: RType = rType_clone(expression_type);
+            let variable_type: RType = scrutinee_binding_type(&scrutinee);
             semantic_insert_variable(semantic, string_clone(name), variable_type, *mutable);
             return; // type agnostic
         },
@@ -2424,13 +2468,13 @@ fn semantic_check_pattern(
             let mut i: usize = 0;
             while i < vec_len::<RAstPattern>(inner_patterns) {
                 let pattern: &RAstPattern = vec_at::<RAstPattern>(inner_patterns, i);
-                let ty: &RType = vec_at::<RType>(&fields, i);
+                let ty: RType = scrutinee_inherit_borrow(&scrutinee, vec_at::<RType>(&fields, i));
                 match pattern {
                     RAstPattern::Identifier(mutable, name) => {
-                        semantic_insert_variable(semantic, string_clone(name), rType_clone(ty), *mutable);
+                        semantic_insert_variable(semantic, string_clone(name), ty, *mutable);
                     },
                     RAstPattern::EnumVariant(_, _, _) => {
-                        semantic_check_pattern(semantic, pattern, ty, false, globals);
+                        semantic_check_pattern(semantic, pattern, &ty, false, globals);
                     },
                     RAstPattern::Wildcard => {},
                     _ => semantic_error(&string("An enum's inner patterns must all be irrefutable!")),
@@ -2440,7 +2484,7 @@ fn semantic_check_pattern(
             RType::Enum(string_clone(enum_name))
         },
     };
-    semantic_expect_type_match(&pattern_type, &expression_type);
+    semantic_expect_type_match(&pattern_type, scrutinee_match_type(&scrutinee));
 }
 
 // -----------------------------------------------------------------
