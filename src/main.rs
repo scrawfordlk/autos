@@ -2112,7 +2112,7 @@ fn semantic_check_assign(
 ) -> RType {
     let right_type: RType = semantic_check_expression(semantic, right, globals);
     let left_type: RType = semantic_check_assign_lvalue(semantic, left, globals);
-    semantic_expect_coerced_type_match(&right_type, &left_type);
+    semantic_expect_coerced_type_match(&left_type, &right_type);
     RType::Unit
 }
 
