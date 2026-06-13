@@ -1,4 +1,3 @@
-// TODO: test wildcards
 enum Structure {
     VariantA(usize, char, char, u8),
     VariantB(u8, u8, Inner),
