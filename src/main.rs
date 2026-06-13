@@ -1811,21 +1811,21 @@ fn semantic_expect_type_match(left: &RType, right: &RType) {
     }
 }
 
-/// Check if the given types, coerced from `left` to `right`, match.
-fn semantic_expect_coerced_type_match(left: &RType, right: &RType) {
-    if not(rType_coerced_match(left, right)) {
+/// Check if the given types, coerced from `actual` to `expected`, match.
+fn semantic_expect_coerced_type_match(actual: &RType, expected: &RType) {
+    if not(rType_coerced_match(actual, expected)) {
         let mut message: String = string("coerced type mismatch: expected ");
-        string_push_string(&mut message, &rType_to_string(left));
+        string_push_string(&mut message, &rType_to_string(expected));
         string_push_str(&mut message, ", but got ");
-        string_push_string(&mut message, &rType_to_string(right));
+        string_push_string(&mut message, &rType_to_string(actual));
         semantic_error(&message);
     }
 }
 
 /// Check if the given types, using Least Upper Bound Coercion, match.
 fn semantic_expect_lub_coerced_type_match(left: &RType, right: &RType) {
-    if not(rType_coerced_match(right, left)) {
-        semantic_expect_coerced_type_match(left, right);
+    if not(rType_coerced_match(left, right)) {
+        semantic_expect_coerced_type_match(right, left);
     }
 }
 
@@ -2138,7 +2138,7 @@ fn semantic_check_assign(
 ) -> RType {
     let right_type: RType = semantic_check_expression(semantic, right, globals);
     let left_type: RType = semantic_check_assign_lvalue(semantic, left, globals);
-    semantic_expect_coerced_type_match(&left_type, &right_type);
+    semantic_expect_coerced_type_match(&right_type, &left_type);
     RType::Unit
 }
 
