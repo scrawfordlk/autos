@@ -5,7 +5,7 @@ enum Shape {
 
 fn main() {
     let mut shape: Shape = Shape::Circle('a', 5 as u8, 42);
-    shape = extractLastValue(Shape::Rect(Coords::Triple(5, 4, 3), Coords::Pair(7, 9)));
+    shape = pass(Shape::Rect(Coords::Triple(5, 4, 3), Coords::Pair(7, 9)));
 
     shape = shape;
     let shape: Shape = shape;
@@ -14,7 +14,7 @@ fn main() {
         let p: *mut Shape = malloc(8 + 4 * 8 * 2) as *mut Shape;
         *p = shape;
         &*&*p;
-    }
+    };
 
     unsafe { exit(42) }
 }
@@ -26,7 +26,7 @@ enum Coords {
     Triple(usize, usize, usize),
 }
 
-fn extractLastValue(shape: Shape) -> Shape {
+fn pass(shape: Shape) -> Shape {
     return shape;
 }
 

@@ -110,7 +110,7 @@ fn write_file(label: &str, extension: &str, content: &str) -> PathBuf {
 
 fn rustc_source(source: &str) -> std::string::String {
     format!(
-        "#![allow(overflowing_literals, unused_parens, unused_assignments, unreachable_code, unused_variables)]\n{}",
+        "#![allow(overflowing_literals, unused_parens, unused_assignments, unreachable_code, unused_variables, dead_code, unused_must_use)]\n{}",
         source
     )
 }
