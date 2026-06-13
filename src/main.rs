@@ -6069,13 +6069,12 @@ fn vec_accomodate_extra_space<T>(vec: &mut Vec<T>, space: usize) {
     let capacity: usize = vec_capacity::<T>(vec);
     if capacity < len + space {
         let Vec::Vec(ptr, len_ref, capacity_ref): &mut Vec<T> = vec;
-        *capacity_ref = *capacity_ref * 2;
-
+        while len + space > *capacity_ref {
+            *capacity_ref = *capacity_ref * 2;
+        }
         let new_ptr: *mut T = unsafe { alloc::<T>(*capacity_ref) };
         unsafe { memcopy::<T>(new_ptr, *ptr, *len_ref) };
         *ptr = new_ptr;
-        // TODO: change this
-        vec_accomodate_extra_space::<T>(vec, space); // if doubling was not enough, double again,
     }
 }
 
