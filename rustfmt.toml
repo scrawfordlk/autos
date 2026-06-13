@@ -1,11 +1,11 @@
 max_width = 110
-comment_width = 100 # max width of comments before forcing wrap
+comment_width = 110  # max width of comments before forcing wrap
 wrap_comments = true
 
 match_block_trailing_comma = true # always use , to end a match arm
-match_arm_blocks = false # do not force block for long single expression arms
+match_arm_blocks = false          # do not force block for long single expression arms
 
 # Consider configuring trailing_comma to simplify the parser
 
 unstable_features = true # requires nightly rustfmt
-fn_single_line = true # single line function if it only contains expression
+fn_single_line = true    # single line function if it only contains expression
