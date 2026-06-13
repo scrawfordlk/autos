@@ -1979,7 +1979,7 @@ fn semantic_check_language(semantic: &mut Semantic, ast: &RAst, globals: &String
         let item: &RAstItem = vec_at::<RAstItem>(items, i);
         match item {
             RAstItem::Function(function) => semantic_check_function(semantic, function, globals),
-            _ => {}, // enums definitions and extern function declarations do not generate code
+            _ => {}, // TODO: check enums and extern functions
         }
         i = i + 1;
     }
