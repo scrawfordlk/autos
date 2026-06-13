@@ -2666,7 +2666,7 @@ fn codegen_builtin_functions(codegen: &mut Codegen) {
     codegen_emit_line(codegen, string("  ret ptr %p"));
     codegen_emit_function_end(codegen);
 
-    codegen_emit_line(codegen, string("define i64 @str..as_len(ptr %str) {\nentry:"));
+    codegen_emit_line(codegen, string("define i64 @str..len(ptr %str) {\nentry:"));
     let len_ptr: String = codegen_emit_pointer_add(codegen, &string("%str"), &RType::Usize, 1);
     let len: String = codegen_emit_load(codegen, &RType::Usize, &len_ptr);
     codegen_emit_ret_value(codegen, &RType::Usize, &len);
