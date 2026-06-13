@@ -16,7 +16,7 @@ enum Deep {
 fn test() -> usize {
     let s1: Structure = Structure::VariantA(134, 'A', '0', 4 as u8);
     let s2: Structure = Structure::VariantB(233 as u8, 255 as u8, Inner::Inner(3 as u8, Deep::Inner(3), 4));
-    let mut inner: Structure = Structure::VariantA(120, '5', '0', 7 as u8);
+    let mut inner: Structure = Structure::VariantA(107, '5', '0', 7 as u8);
     let s3: Structure = Structure::VariantC(&mut inner as *mut Structure, 1 as u8);
 
     let deep: Deep = Deep::Inner(13);
@@ -29,14 +29,12 @@ fn test() -> usize {
 fn match_test(s: Structure) -> usize {
     match s {
         Structure::VariantC(ptr, u1) => unsafe {
-            // TODO: handle matching on references
-            // let s: &Structure = &*ptr;
-            // match &s {
-            //     Structure::VariantB(u1, u2, _) => (*u1 + *u2) as usize,
-            //     Structure::VariantA(m, c1, c2, u1) => *m - *c1 as usize - *c2 as usize + *u1 as usize,
-            //     Structure::VariantC(_, u) => *u as usize,
-            // };
-            13
+            let s: &Structure = &*ptr;
+            match s {
+                Structure::VariantB(_, u2, _) => 7,
+                Structure::VariantA(m, c1, c2, u1) => *m - *c1 as usize - *c2 as usize + *u1 as usize,
+                Structure::VariantC(_, a) => 8,
+            }
         },
         Structure::VariantA(n, c1, c2, u1) => n - c1 as usize - c2 as usize - u1 as usize,
         Structure::VariantB(u1, u2, Inner::Inner(u3, Deep::Inner(d), n)) => {
