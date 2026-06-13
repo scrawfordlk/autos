@@ -796,7 +796,7 @@ fn rAstLiteral_type(literal: &RLiteral) -> RType {
         RLiteral::Int(_) => RType::Usize,
         RLiteral::Char(_) => RType::Char,
         RLiteral::Bool(_) => RType::Bool,
-        RLiteral::String(_) => RType::Reference(box_new::<RType>(RType::Enum(string("str"))), false),
+        RLiteral::String(_) => RType::Enum(string("&str")),
     }
 }
 
@@ -839,7 +839,7 @@ fn rType_size(codegen: &Codegen, ty: &RType) -> usize {
         RType::Unit | RType::Never => 0,
         RType::Enum(name) => match codegen_search_global(codegen, name) {
             Option::Some(Item::Enum(rast_enum)) => rAstEnum_size(codegen, rast_enum),
-            _ => 0,
+            _ => 16, // assume that it is the built-in &str (8 bytes for pointer, 8 bytes for length)
         },
     }
 }
@@ -1294,11 +1294,9 @@ fn parse_type(lexer: &mut RLexer) -> RType {
         },
         RToken::Ampersand => {
             rLexer_next_token(lexer);
-
             if rLexer_try_consume(lexer, &RToken::Str) {
                 return RType::Enum(string("&str"));
             }
-
             let mutable: bool = rLexer_try_consume(lexer, &RToken::Mut);
             let inner: RType = parse_type(lexer);
             RType::Reference(box_new::<RType>(inner), mutable)
@@ -2502,11 +2500,17 @@ fn semantic_check_pattern(
 /// Type that encapsulates the state during LLVM-IR code generation from an AST.
 enum Codegen {
     /// llvm code, is main function, SSA numbering counter, local variable slots, global items
-    Codegen(Code, bool, usize, StringMapStack<STPair>, StringMap<Item>),
+    Codegen(Code, bool, Counter, StringMapStack<STPair>, StringMap<Item>),
+}
+
+enum Counter {
+    /// Local variable counter, global string counter
+    Counter(usize, usize),
 }
 
 fn codegen_new(items: StringMap<Item>) -> Codegen {
-    Codegen::Codegen(code_new(), false, 0, stringMapStack_new::<STPair>(), items)
+    let local_variables: StringMapStack<STPair> = stringMapStack_new::<STPair>();
+    Codegen::Codegen(code_new(), false, Counter::Counter(0, 0), local_variables, items)
 }
 
 /// Get a shared reference to the code.
@@ -2565,13 +2569,18 @@ fn codegen_search_global<'a>(codegen: &'a Codegen, name: &'a String) -> Option<&
 }
 
 /// Get the current value of the SSA numbering scheme.
-fn codegen_ssa_counter(Codegen::Codegen(_, _, counter, _, _): &Codegen) -> usize {
+fn codegen_ssa_counter(Codegen::Codegen(_, _, Counter::Counter(counter, _), _, _): &Codegen) -> usize {
     *counter
 }
 
 /// Increment the SSA numbering value by one.
-fn codegen_increment_ssa_counter(Codegen::Codegen(_, _, counter, _, _): &mut Codegen) {
+fn codegen_increment_ssa_counter(Codegen::Codegen(_, _, Counter::Counter(counter, _), _, _): &mut Codegen) {
     *counter = *counter + 1;
+}
+
+/// Reset the SSA numbering value to 0.
+fn codegen_reset_ssa_counter(Codegen::Codegen(_, _, Counter::Counter(counter, _), _, _): &mut Codegen) {
+    *counter = 0;
 }
 
 /// Get a unique virtual register name.
@@ -2680,7 +2689,7 @@ fn codegen_function(codegen: &mut Codegen, function: &RAstFunction) {
             codegen_emit_ret_value(codegen, &return_type, &value_name);
         },
     }
-    codegen_emit_line(codegen, string("}"));
+    codegen_emit_function_end(codegen);
 
     codegen_mark_as_main(codegen, false);
     codegen_pop_scope(codegen);
@@ -2731,7 +2740,7 @@ fn codegen_block(codegen: &mut Codegen, block: &RAstBlock) -> STPair {
 /// Emit LLVM-IR for one let binding.
 fn codegen_binding(codegen: &mut Codegen, variable: &RAstVariable, value: &RAstExpr) {
     let RAstVariable::Variable(pattern, binding_type): &RAstVariable = variable;
-    let STPair::ST(mut rvalue_name, _): STPair = codegen_expression(codegen, value);
+    let STPair::ST(rvalue_name, _): STPair = codegen_expression(codegen, value);
     codegen_bind_or_destructure(codegen, pattern, &rvalue_name, binding_type);
 }
 
@@ -2750,7 +2759,7 @@ fn codegen_expression(codegen: &mut Codegen, expression: &RAstExpr) -> STPair {
         ),
         RAstExpr::Cast(value, to_type) => codegen_cast(codegen, box_deref::<RAstExpr>(value), to_type),
         RAstExpr::Unary(operator, value) => codegen_unary_op(codegen, operator, box_deref::<RAstExpr>(value)),
-        RAstExpr::Literal(literal) => codegen_literal(literal),
+        RAstExpr::Literal(literal) => codegen_literal(codegen, literal),
         RAstExpr::Variable(name) => codegen_variable_use(codegen, name),
         RAstExpr::Path(path, arguments) => codegen_path(codegen, path, arguments),
         RAstExpr::Block(_, block) => codegen_block(codegen, block),
@@ -2905,15 +2914,22 @@ fn codegen_unary_op(codegen: &mut Codegen, operator: &RAstUnaryOp, value: &RAstE
 }
 
 /// Emit LLVM-IR for a literal expression.
-fn codegen_literal(literal: &RLiteral) -> STPair {
+fn codegen_literal(codegen: &mut Codegen, literal: &RLiteral) -> STPair {
     match literal {
         RLiteral::Int(value) => STPair::ST(integer_to_string(*value), RType::Usize),
         RLiteral::Char(value) => STPair::ST(integer_to_string(*value as usize), RType::Char),
         RLiteral::Bool(value) => STPair::ST(integer_to_string(*value as usize), RType::Bool),
-        RLiteral::String(_) => STPair::ST(
-            string_new(),
-            RType::Reference(box_new::<RType>(RType::Enum(string("str"))), false),
-        ),
+        RLiteral::String(value) => {
+            let struct_type: RType = RType::Enum(string("&str"));
+            let string_ptr: String = codegen_emit_string(codegen, value);
+            let struct_ptr: String = codegen_emit_alloca(codegen, &struct_type);
+            let string_ptr_type: RType = RType::RawPointerMut(box_new::<RType>(RType::U8));
+            codegen_emit_store(codegen, &string_ptr_type, &string_ptr, &struct_ptr);
+            let len_ptr: String = codegen_emit_pointer_add(codegen, &struct_ptr, &string_ptr_type, 1);
+            let length: String = integer_to_string(string_len(value));
+            codegen_emit_store(codegen, &RType::Usize, &length, &len_ptr);
+            STPair::ST(struct_ptr, struct_type)
+        },
     }
 }
 
@@ -3339,33 +3355,42 @@ fn codegen_enum_destructure(
 
 /// The emitted LLVM-IR code.
 enum Code {
-    /// code lines
-    Code(Vec<String>),
+    /// code lines, global strings
+    Code(Vec<String>, Vec<String>),
 }
 
 fn code_new() -> Code {
-    Code::Code(vec_new::<String>())
+    Code::Code(vec_new::<String>(), vec_new::<String>())
 }
 
 /// Get the line index of the last emitted line.
 fn codegen_code_last_index(codegen: &Codegen) -> usize {
-    let Code::Code(lines): &Code = codegen_code(codegen);
+    let Code::Code(lines, _): &Code = codegen_code(codegen);
     vec_len::<String>(lines) - 1
 }
 
 /// Fixup the emitted line at index `i` by replacing it with `line`.
 fn codegen_fixup(codegen: &mut Codegen, i: usize, line: String) {
-    let Code::Code(lines): &mut Code = codegen_code_mut(codegen);
+    let Code::Code(lines, _): &mut Code = codegen_code_mut(codegen);
     vec_set(lines, i, line);
 }
 
 /// Get the emitted LLVM-IR from Codegen.
-fn codegen_into_llvm(Codegen::Codegen(Code::Code(lines), _, _, _, _): Codegen) -> String {
+fn codegen_into_llvm(Codegen::Codegen(Code::Code(lines, strings), _, _, _, _): Codegen) -> String {
     let mut code: String = string_new();
     let mut i: usize = 0;
-    let len: usize = vec_len::<String>(&lines);
-    while i < len {
+    while i < vec_len::<String>(&lines) {
         let line: &String = vec_at::<String>(&lines, i);
+        if string_len(line) > 0 {
+            string_push_string(&mut code, line);
+            string_push(&mut code, '\n');
+        }
+        i = i + 1;
+    }
+    string_push(&mut code, '\n');
+    i = 0;
+    while i < vec_len::<String>(&strings) {
+        let line: &String = vec_at::<String>(&strings, i);
         if string_len(line) > 0 {
             string_push_string(&mut code, line);
             string_push(&mut code, '\n');
@@ -3377,7 +3402,7 @@ fn codegen_into_llvm(Codegen::Codegen(Code::Code(lines), _, _, _, _): Codegen) -
 
 /// Emit the given string as a new line of LLVM-IR code.
 fn codegen_emit_line(codegen: &mut Codegen, line: String) {
-    let Code::Code(lines): &mut Code = codegen_code_mut(codegen);
+    let Code::Code(lines, _): &mut Code = codegen_code_mut(codegen);
     vec_push::<String>(lines, line);
 }
 
@@ -3770,6 +3795,12 @@ fn codegen_emit_fn_signature(
     codegen_emit_line(codegen, line);
 }
 
+/// Emit the end of a function and reset the numbering scheme.
+fn codegen_emit_function_end(codegen: &mut Codegen) {
+    codegen_emit_line(codegen, string("}"));
+    codegen_reset_ssa_counter(codegen);
+}
+
 /// Emit an LLVM `declare` for an extern function.
 /// ```llvm
 /// declare <return_type> @<fn_name>(<param_type>, ...)
@@ -3805,10 +3836,32 @@ fn codegen_emit_declare(
     codegen_emit_line(codegen, line);
 }
 
+/// Emit a string allocated in global data.
+/// ```llvm
+/// @<name> = constant [<length> x i8] c"<value>"
+/// ```
+/// Returns `%<name>`.
+fn codegen_emit_string(
+    Codegen::Codegen(Code::Code(_, strings), _, Counter::Counter(_, counter), _, _): &mut Codegen,
+    value: &String,
+) -> String {
+    let mut name: String = string("@str");
+    string_push_string(&mut name, &integer_to_string(*counter));
+    *counter = *counter + 1;
+    let mut line: String = string_clone(&name);
+    string_push_str(&mut line, " = constant [");
+    string_push_string(&mut line, &integer_to_string(string_len(value)));
+    string_push_str(&mut line, " x i8] c\"");
+    string_push_string(&mut line, value); // TODO: insert byte characters where applicable
+    string_push(&mut line, '"');
+    vec_push::<String>(strings, line);
+    name
+}
+
 /// Fixup a previously emitted alloca instruction without changing the destination register.
 // TODO: assumes a lot about the emitted LLVM-IR, make this more robust.
 fn codegen_fixup_alloca(codegen: &mut Codegen, index: usize, new_type: &RType) {
-    let Code::Code(lines): &mut Code = codegen_code_mut(codegen);
+    let Code::Code(lines, _): &mut Code = codegen_code_mut(codegen);
 
     let old_alloca: &String = vec_at::<String>(lines, index);
     let mut new_alloca: String = string_new();
