@@ -2575,6 +2575,7 @@ fn codegen_increment_ssa_counter(Codegen::Codegen(_, _, counter, _, _): &mut Cod
 }
 
 /// Get a unique virtual register name.
+/// Returns `%<prefix><internal counter>`.
 fn codegen_next_register(codegen: &mut Codegen, prefix: &str) -> String {
     let id: usize = codegen_ssa_counter(codegen);
     codegen_increment_ssa_counter(codegen);
@@ -2585,6 +2586,7 @@ fn codegen_next_register(codegen: &mut Codegen, prefix: &str) -> String {
 }
 
 /// Get a unique basic block label with a given suffix.
+/// Returns `l<internal counter><suffix>`.
 fn codegen_next_label(codegen: &mut Codegen, suffix: &str) -> String {
     let id: usize = codegen_ssa_counter(codegen);
     codegen_increment_ssa_counter(codegen);
