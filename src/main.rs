@@ -7473,7 +7473,7 @@ unsafe fn io_write_report_error(path: &str, buffer_ptr: *mut u8, len: usize) {
 /// Write the given `buffer` to `path` and return an IOResult.
 /// `path` must be a NULL-terminated string.
 unsafe fn io_write(path: *mut u8, buffer: *mut u8, len: usize) -> IOResult {
-    let fd: usize = unsafe { open(path, 1) };
+    let fd: usize = unsafe { open(path, 1, 0) };
     if is_negative(fd) {
         return IOResult::OpenFailure;
     }
@@ -7536,7 +7536,7 @@ fn exit_process(code: usize) -> ! {
 unsafe extern "C" {
     fn malloc(size: usize) -> *mut u8;
     fn exit(code: usize) -> !;
-    fn open(path: *mut u8, flags: usize) -> usize;
+    fn open(path: *mut u8, flags: usize, mode: usize) -> usize;
     fn write(fd: usize, buf: *mut u8, count: usize) -> usize;
 }
 
