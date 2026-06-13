@@ -155,7 +155,6 @@ enum RToken {
     U8,                 // "u8"
     Bool,               // "bool"
     Char,               // "char"
-    Str,                // "str"
     Arrow,              // "->"
     Literal(RLiteral),
     Identifier(String),
@@ -385,8 +384,6 @@ fn rust_identifier_to_token(ident: String) -> RToken {
         RToken::Bool
     } else if string_eq(&ident, &string("char")) {
         RToken::Char
-    } else if string_eq(&ident, &string("str")) {
-        RToken::Str
     } else if string_eq(&ident, &string("true")) {
         RToken::Literal(RLiteral::Bool(true))
     } else if string_eq(&ident, &string("false")) {
@@ -1294,8 +1291,14 @@ fn parse_type(lexer: &mut RLexer) -> RType {
         },
         RToken::Ampersand => {
             rLexer_next_token(lexer);
-            if rLexer_try_consume(lexer, &RToken::Str) {
-                return RType::Enum(string("&str"));
+            match rLexer_current_token(lexer) {
+                RToken::Identifier(name) => {
+                    if string_eq(name, &string("str")) {
+                        rLexer_next_token(lexer);
+                        return RType::Enum(string("&str"));
+                    }
+                },
+                _ => {},
             }
             let mutable: bool = rLexer_try_consume(lexer, &RToken::Mut);
             let inner: RType = parse_type(lexer);
@@ -1656,6 +1659,7 @@ fn collect_items(ast: &RAst) -> StringMap<Item> {
         insert_item_into_global_table(&mut items, item);
         i = i + 1;
     }
+    insert_builtin_functions(&mut items);
     items
 }
 
@@ -1711,6 +1715,22 @@ fn insert_item_into_global_table(table: &mut StringMap<Item>, item: &RAstItem) {
             }
         },
     }
+}
+
+/// Insert all built-in functions into the global table
+fn insert_builtin_functions(table: &mut StringMap<Item>) {
+    let as_ptr: String = string("str::as_ptr");
+    let mut parameters: Vec<RType> = vec_new::<RType>();
+    vec_push::<RType>(&mut parameters, RType::Enum(string("&str")));
+    let return_type: RType = RType::RawPointerMut(box_new::<RType>(RType::U8));
+    let item: Item = Item::Function(return_type, parameters, false);
+    stringMap_insert::<Item>(table, as_ptr, item);
+
+    let len: String = string("str::len");
+    let mut parameters: Vec<RType> = vec_new::<RType>();
+    vec_push::<RType>(&mut parameters, RType::Enum(string("&str")));
+    let item: Item = Item::Function(RType::Usize, parameters, false);
+    stringMap_insert::<Item>(table, len, item);
 }
 
 /// Semantic analysis state.
@@ -2254,18 +2274,28 @@ fn semantic_check_path(
         Option::Some(item) => match item {
             Item::Enum(e) => {
                 let variant: &String = vec_at::<String>(path, 1);
-                semantic_check_enum(semantic, e, variant, values, globals)
+                return semantic_check_enum(semantic, e, variant, values, globals);
             },
             Item::Function(return_type, param_types, is_unsafe) => {
-                semantic_check_call(semantic, return_type, param_types, *is_unsafe, values, globals)
+                return semantic_check_call(semantic, return_type, param_types, *is_unsafe, values, globals);
             },
         },
         _ => {
-            let mut message: String = string("use of undefined function or enum: ");
-            string_push_string(&mut message, &rAstPath_to_string(path));
-            semantic_error(&message);
+            let function_name: String = rAstPath_to_string(path);
+            match stringMap_get::<Item>(globals, &function_name) {
+                Option::Some(item) => match item {
+                    Item::Function(return_ty, params, is_unsafe) => {
+                        return semantic_check_call(semantic, return_ty, params, *is_unsafe, values, globals);
+                    },
+                    _ => {},
+                },
+                _ => {},
+            }
         },
     }
+    let mut message: String = string("undefined function or enum: ");
+    string_push_string(&mut message, &rAstPath_to_string(path));
+    semantic_error(&message);
 }
 
 fn semantic_check_call(
@@ -2625,6 +2655,22 @@ fn codegen_language(codegen: &mut Codegen, ast: &RAst) {
         }
         i = i + 1;
     }
+    codegen_builtin_functions(codegen);
+}
+
+fn codegen_builtin_functions(codegen: &mut Codegen) {
+    codegen_emit_line(codegen, string("\n; --- Built-in Functions --- \n"));
+
+    codegen_emit_line(codegen, string("define ptr @str..as_ptr(ptr %str) {\nentry:"));
+    codegen_emit_line(codegen, string("  %p = load ptr, ptr %str"));
+    codegen_emit_line(codegen, string("  ret ptr %p"));
+    codegen_emit_function_end(codegen);
+
+    codegen_emit_line(codegen, string("define i64 @str..as_len(ptr %str) {\nentry:"));
+    let len_ptr: String = codegen_emit_pointer_add(codegen, &string("%str"), &RType::Usize, 1);
+    let len: String = codegen_emit_load(codegen, &RType::Usize, &len_ptr);
+    codegen_emit_ret_value(codegen, &RType::Usize, &len);
+    codegen_emit_function_end(codegen);
 }
 
 /// Emit LLVM-IR for one extern block.
@@ -3730,7 +3776,7 @@ fn codegen_construct_call(
     let mut line: String = string("call ");
     string_push_string(&mut line, &rType_to_llvm_name(codegen, return_type));
     string_push_str(&mut line, " @");
-    string_push_string(&mut line, name);
+    string_push_string(&mut line, &string_replace_all(name, ':', '.'));
     string_push(&mut line, '(');
 
     let mut i: usize = 0;
@@ -3762,7 +3808,7 @@ fn codegen_construct_call(
 /// ```
 fn codegen_emit_fn_signature(
     codegen: &mut Codegen,
-    fn_name: &String,
+    name: &String,
     return_type_name: &String,
     parameters: &Vec<RAstVariable>,
 ) {
@@ -3770,7 +3816,7 @@ fn codegen_emit_fn_signature(
     string_push_str(&mut line, "define ");
     string_push_string(&mut line, return_type_name);
     string_push_str(&mut line, " @");
-    string_push_string(&mut line, fn_name);
+    string_push_string(&mut line, &string_replace_all(name, ':', '.'));
     string_push_str(&mut line, "(");
 
     let mut i: usize = 0;
@@ -3797,7 +3843,7 @@ fn codegen_emit_fn_signature(
 
 /// Emit the end of a function and reset the numbering scheme.
 fn codegen_emit_function_end(codegen: &mut Codegen) {
-    codegen_emit_line(codegen, string("}"));
+    codegen_emit_line(codegen, string("}\n"));
     codegen_reset_ssa_counter(codegen);
 }
 
@@ -6489,10 +6535,6 @@ fn token_eq(a: &RToken, b: &RToken) -> bool {
             RToken::Char => true,
             _ => false,
         },
-        RToken::Str => match b {
-            RToken::Str => true,
-            _ => false,
-        },
         RToken::Arrow => match b {
             RToken::Arrow => true,
             _ => false,
@@ -6866,7 +6908,6 @@ fn token_clone(token: &RToken) -> RToken {
         RToken::U8 => RToken::U8,
         RToken::Bool => RToken::Bool,
         RToken::Char => RToken::Char,
-        RToken::Str => RToken::Str,
         RToken::Arrow => RToken::Arrow,
         RToken::Literal(literal) => RToken::Literal(rLiteral_clone(literal)),
         RToken::Identifier(value) => RToken::Identifier(string_clone(value)),
@@ -7101,6 +7142,18 @@ fn string_push_string(String::Inner(bytes): &mut String, String::Inner(other_byt
     vec_extend::<u8>(bytes, other_bytes);
 }
 
+fn string_replace_all(string: &String, to_replace: char, replacement: char) -> String {
+    let mut new_string: String = string_with_capacity(string_len(string));
+    let mut i: usize = 0;
+    while i < string_len(string) {
+        let mut c: char = string_at(string, i);
+        c = if c == to_replace { replacement } else { c };
+        string_push(&mut new_string, c);
+        i = i + 1;
+    }
+    new_string
+}
+
 /// Converts a string into an integer given the base.
 /// Returns None if the integer contained in the string is invalid for 64-bit integers.
 fn string_to_integer(string: &String, base: usize) -> Option<usize> {
@@ -7218,7 +7271,6 @@ fn rToken_to_string(token: &RToken) -> String {
         RToken::U8 => string("u8"),
         RToken::Bool => string("bool"),
         RToken::Char => string("char"),
-        RToken::Str => string("str"),
         RToken::Arrow => string("->"),
         RToken::Literal(literal) => rLiteral_to_string(literal),
         RToken::Identifier(name) => string_clone(name),
