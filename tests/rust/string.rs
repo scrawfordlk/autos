@@ -1,7 +1,7 @@
 fn test() -> usize {
     let s: &str = "Hello";
     let mut s: String = string(s);
-    string_push_str(&mut s, " World!");
+    string_push_str(&mut s, " World!\n");
 
     let mut sum: usize = 0;
     let mut i: usize = 0;

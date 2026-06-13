@@ -3898,7 +3898,18 @@ fn codegen_emit_string(
     string_push_str(&mut line, " = constant [");
     string_push_string(&mut line, &integer_to_string(string_len(value)));
     string_push_str(&mut line, " x i8] c\"");
-    string_push_string(&mut line, value); // TODO: insert byte characters where applicable
+    let mut i: usize = 0;
+    while i < string_len(value) {
+        let c: char = string_at(value, i);
+        if or(c < ' ', or(c as usize >= 128, or(c == '"', c == '\\'))) {
+            string_push(&mut line, '\\');
+            let byte: String = string_integer_extend(&integer_to_string_base(c as usize, 16), 2);
+            string_push_string(&mut line, &byte);
+        } else {
+            string_push(&mut line, c);
+        }
+        i = i + 1;
+    }
     string_push(&mut line, '"');
     vec_push::<String>(strings, line);
     name
@@ -7182,6 +7193,23 @@ fn string_to_integer(string: &String, base: usize) -> Option<usize> {
     Option::Some(value)
 }
 
+/// Add as many leading zeros as are needed to reach `digits` digits.
+fn string_integer_extend(integer: &String, digits: usize) -> String {
+    if string_len(integer) >= digits {
+        return string_clone(integer);
+    }
+    let mut s: String = string("0");
+    while string_len(&s) + string_len(integer) < digits {
+        string_push(&mut s, '0');
+    }
+    let mut i: usize = 0;
+    while i < string_len(integer) {
+        string_push(&mut s, string_at(integer, i));
+        i = i + 1;
+    }
+    s
+}
+
 /// Reverse a String in place.
 fn string_reverse(string: &mut String) {
     let len: usize = string_len(string);
@@ -7213,8 +7241,13 @@ fn string_hash(string: &String, bucket_count: usize) -> usize {
 
 // -------------------- Display (to_string()) ----------------------
 
+/// Convert a decimal integer into a string.
+fn integer_to_string(integer: usize) -> String {
+    integer_to_string_base(integer, 10)
+}
+
 /// Convert an integer into a string.
-fn integer_to_string(mut integer: usize) -> String {
+fn integer_to_string_base(mut integer: usize, base: usize) -> String {
     let mut string: String = string_new();
 
     if integer == 0 {
@@ -7223,10 +7256,14 @@ fn integer_to_string(mut integer: usize) -> String {
     }
 
     while integer > 0 {
-        let digit: u8 = (integer % 10) as u8;
-        let character: char = ('0' as u8 + digit) as char;
+        let digit: u8 = (integer % base) as u8;
+        let character: char = if digit < 10 {
+            ('0' as u8 + digit) as char
+        } else {
+            ('A' as u8 + (digit - 10)) as char
+        };
         string_push(&mut string, character);
-        integer = integer / 10;
+        integer = integer / base;
     }
 
     string_reverse(&mut string);
