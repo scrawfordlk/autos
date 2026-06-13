@@ -2445,7 +2445,7 @@ fn semantic_check_pattern(
                     RAstPatternLiteral::Bool(_) => RType::Bool,
                 }
             } else {
-                semantic_error(&string("nested patterns must all be irrefutable"))
+                semantic_error(&string("pattern must be irrefutable"))
             }
         },
         RAstPattern::Identifier(mutable, name) => {
