@@ -6128,7 +6128,7 @@ fn vec_accomodate_extra_space<T>(vec: &mut Vec<T>, space: usize) {
 fn vec_push<T>(vec: &mut Vec<T>, value: T) {
     vec_accomodate_extra_space::<T>(vec, 1);
     let Vec::Vec(ptr, len, _): &mut Vec<T> = vec;
-    unsafe { *ptr_add::<T>(*ptr, *len) = value }
+    unsafe { *ptr_add::<T>(*ptr, *len) = value };
     *len = *len + 1;
 }
 
@@ -6244,8 +6244,8 @@ fn stringMap_insert<T>(StringMap::Map(buckets): &mut StringMap<T>, key: String, 
             &mut old_bucket as *mut List<StringMapEntry<T>>,
             bucket as *mut List<StringMapEntry<T>>,
             1,
-        );
-    }
+        )
+    };
 
     *bucket = List::Cons(
         StringMapEntry::Entry(key, value),
@@ -7133,7 +7133,7 @@ fn string_push_str(String::Inner(bytes): &mut String, str: &str) {
     let len: usize = vec_len::<u8>(bytes);
     let dest: *mut u8 = ptr_add::<u8>(vec_ptr::<u8>(bytes), len);
 
-    unsafe { memcopy::<u8>(dest, str_ptr, str_len) }
+    unsafe { memcopy::<u8>(dest, str_ptr, str_len) };
     vec_set_len::<u8>(bytes, len + str_len);
 }
 
@@ -7424,28 +7424,28 @@ enum IOResult {
 fn print_string(String::Inner(bytes): &String) {
     let len: usize = vec_len::<u8>(bytes);
     let ptr: *mut u8 = vec_ptr::<u8>(bytes);
-    unsafe { io_write_report_error("/dev/stdout\0", ptr, len) }
+    unsafe { io_write_report_error("/dev/stdout\0", ptr, len) };
 }
 
 /// Print a string to stderr.
 fn eprint_string(String::Inner(bytes): &String) {
     let len: usize = vec_len::<u8>(bytes);
     let ptr: *mut u8 = vec_ptr::<u8>(bytes);
-    unsafe { io_write_report_error("/dev/stderr\0", ptr, len) }
+    unsafe { io_write_report_error("/dev/stderr\0", ptr, len) };
 }
 
 /// Print a string slice to stdout.
 fn print_str(text: &str) {
     let len: usize = str::len(text);
     let ptr: *mut u8 = str::as_ptr(text) as *mut u8;
-    unsafe { io_write_report_error("/dev/stdout\0", ptr, len) }
+    unsafe { io_write_report_error("/dev/stdout\0", ptr, len) };
 }
 
 /// Print a string slice to stderr.
 fn eprint_str(text: &str) {
     let len: usize = str::len(text);
     let ptr: *mut u8 = str::as_ptr(text) as *mut u8;
-    unsafe { io_write_report_error("/dev/stderr\0", ptr, len) }
+    unsafe { io_write_report_error("/dev/stderr\0", ptr, len) };
 }
 
 fn println() {
