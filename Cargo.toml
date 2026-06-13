@@ -6,8 +6,5 @@ edition = "2024"
 [profile.dev]
 overflow-checks = false
 
-[rust-analyzer.diagnostics.disabled]
-unlinked-file = true
-
 [dependencies]
 walkdir = "2.5.0"
