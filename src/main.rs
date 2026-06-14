@@ -6149,7 +6149,7 @@ fn vec_set_len<T>(Vec::Vec(_, old_len, _): &mut Vec<T>, len: usize) {
 }
 
 /// Get an immutable reference to an element by index.
-fn vec_get<'a, T>(vec: &'a Vec<T>, index: usize) -> Option<&'a T> {
+fn vec_get<T>(vec: &Vec<T>, index: usize) -> Option<&T> {
     if index >= vec_len::<T>(vec) {
         Option::None
     } else {
@@ -6159,7 +6159,7 @@ fn vec_get<'a, T>(vec: &'a Vec<T>, index: usize) -> Option<&'a T> {
 }
 
 /// Get a mutable reference to an element by index.
-fn vec_get_mut<'a, T>(vec: &'a mut Vec<T>, index: usize) -> Option<&'a mut T> {
+fn vec_get_mut<T>(vec: &mut Vec<T>, index: usize) -> Option<&mut T> {
     if index >= vec_len::<T>(vec) {
         Option::None
     } else {
