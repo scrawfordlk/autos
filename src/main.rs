@@ -4595,6 +4595,9 @@ enum LFunction {
 enum BuiltIn {
     Exit,
     Malloc,
+    Open,
+    Read,
+    Write,
 }
 
 /// Represents a parameter of an LLVM function.
@@ -4840,10 +4843,16 @@ fn parser_parse_declare(parser: &mut Parser) {
     lLocalSymbolTable_clear(parser_local_mut(parser));
     let parameters: Vec<LParameter> = parser_parse_parameters(parser, false);
 
-    let builtin: BuiltIn = if string_eq(&function_name, &string("malloc")) {
-        BuiltIn::Malloc
-    } else if string_eq(&function_name, &string("exit")) {
+    let builtin: BuiltIn = if string_eq(&function_name, &string("exit")) {
         BuiltIn::Exit
+    } else if string_eq(&function_name, &string("malloc")) {
+        BuiltIn::Malloc
+    } else if string_eq(&function_name, &string("open")) {
+        BuiltIn::Open
+    } else if string_eq(&function_name, &string("read")) {
+        BuiltIn::Read
+    } else if string_eq(&function_name, &string("write")) {
+        BuiltIn::Write
     } else {
         parser_error(parser, &string("unknown declared function"));
     };
@@ -5406,6 +5415,14 @@ fn emu_deallocate_stack_frame(emulator: &mut Emu) {
     emu_set_frame_size(emulator, 0);
 }
 
+/// Get a raw pointer to the memory the given address points to.
+fn emu_get_memory_pointer(Emu::Emu(_, memory, _, _, _, _): &mut Emu, index: usize) -> Option<*mut u8> {
+    match vec_get_mut::<u8>(memory, index) {
+        Option::Some(address) => Option::Some(address as *mut u8),
+        Option::None => Option::None,
+    }
+}
+
 /// Store a little-endian integer value at `address` using `byte_count` bytes.
 fn emu_store_bytes(emulator: &mut Emu, address: usize, value: &Value, mut byte_count: usize) -> bool {
     let Emu::Emu(_, memory, _, _, _, _): &mut Emu = emulator;
@@ -5567,6 +5584,33 @@ fn emu_execute_builtin(emulator: &mut Emu, builtin: &BuiltIn, arguments: &Vec<Va
             let value: usize = value_get_int(vec_at::<Value>(arguments, 0));
             emu_set_exit_code(emulator, value);
             value
+        },
+        BuiltIn::Open => {
+            let path: usize = value_get_int(vec_at::<Value>(arguments, 0));
+            let flags: usize = value_get_int(vec_at::<Value>(arguments, 1));
+            let mode: usize = value_get_int(vec_at::<Value>(arguments, 2));
+            match emu_get_memory_pointer(emulator, path) {
+                Option::Some(ptr) => unsafe { open(ptr, flags, mode) },
+                _ => panic("trying to pass an out-of-bounds address to open()"),
+            }
+        },
+        BuiltIn::Read => {
+            let fd: usize = value_get_int(vec_at::<Value>(arguments, 0));
+            let buf: usize = value_get_int(vec_at::<Value>(arguments, 1));
+            let count: usize = value_get_int(vec_at::<Value>(arguments, 2));
+            match emu_get_memory_pointer(emulator, buf) {
+                Option::Some(ptr) => unsafe { read(fd, ptr, count) },
+                _ => panic("trying to read() at an out-of-bound address"),
+            }
+        },
+        BuiltIn::Write => {
+            let fd: usize = value_get_int(vec_at::<Value>(arguments, 0));
+            let buf: usize = value_get_int(vec_at::<Value>(arguments, 1));
+            let count: usize = value_get_int(vec_at::<Value>(arguments, 2));
+            match emu_get_memory_pointer(emulator, buf) {
+                Option::Some(ptr) => unsafe { write(fd, ptr, count) },
+                _ => panic("trying to write() at an out-of-bound address"),
+            }
         },
     }
 }
@@ -5814,7 +5858,7 @@ fn round_to_next_multiple(n: usize, multiple: usize) -> usize {
 fn panic(message: &str) -> ! {
     eprint_str("panic: ");
     eprint_str(message);
-    eprint_str("\n");
+    eprintln();
     exit_process(1);
 }
 
@@ -7569,6 +7613,7 @@ unsafe extern "C" {
     fn exit(code: usize) -> !;
     fn open(path: *mut u8, flags: usize, mode: usize) -> usize;
     fn write(fd: usize, buf: *mut u8, count: usize) -> usize;
+    fn read(fd: usize, buf: *mut u8, count: usize) -> usize;
 }
 
 // -----------------------------------------------------------------
