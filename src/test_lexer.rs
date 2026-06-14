@@ -42,14 +42,6 @@ fn char_lit(value: char) -> RToken {
     RToken::Literal(RLiteral::Char(value))
 }
 
-fn cmp_token(comparison: RComparisonOp) -> RToken {
-    RToken::Cmp(comparison)
-}
-
-fn tokens_match(a: &RToken, b: &RToken) -> bool {
-    token_eq(a, b)
-}
-
 fn assert_tokens(actual: std::vec::Vec<RToken>, expected: std::vec::Vec<RToken>) {
     assert_eq!(
         actual.len(),
@@ -59,7 +51,7 @@ fn assert_tokens(actual: std::vec::Vec<RToken>, expected: std::vec::Vec<RToken>)
         expected.len()
     );
     for (i, (a, e)) in actual.iter().zip(expected.iter()).enumerate() {
-        assert!(tokens_match(a, e), "token {} mismatch", i);
+        assert!(rToken_eq(a, e), "token {} mismatch", i);
     }
 }
 
@@ -236,28 +228,19 @@ fn test_scan_minus_direct() {
 #[test]
 fn test_scan_bang_direct() {
     let mut lexer = make_lexer("=");
-    assert!(matches!(
-        rLexer_scan_bang(&mut lexer),
-        RToken::Cmp(RComparisonOp::Ne)
-    ));
+    assert!(matches!(rLexer_scan_bang(&mut lexer), RToken::Ne));
 }
 
 #[test]
 fn test_scan_less_direct() {
     let mut lexer = make_lexer("=");
-    assert!(matches!(
-        rLexer_scan_less(&mut lexer),
-        RToken::Cmp(RComparisonOp::Leq)
-    ));
+    assert!(matches!(rLexer_scan_less(&mut lexer), RToken::Leq));
 }
 
 #[test]
 fn test_scan_greater_direct() {
     let mut lexer = make_lexer("=");
-    assert!(matches!(
-        rLexer_scan_greater(&mut lexer),
-        RToken::Cmp(RComparisonOp::Geq)
-    ));
+    assert!(matches!(rLexer_scan_greater(&mut lexer), RToken::Geq));
 }
 
 #[test]
@@ -595,55 +578,37 @@ fn test_operator_remainder() {
 #[test]
 fn test_comparison_eq() {
     let mut lexer = make_lexer("==");
-    assert_tokens(
-        collect_tokens(&mut lexer),
-        vec![cmp_token(RComparisonOp::Eq), RToken::Eof],
-    );
+    assert_tokens(collect_tokens(&mut lexer), vec![RToken::Eq, RToken::Eof]);
 }
 
 #[test]
 fn test_comparison_neq() {
     let mut lexer = make_lexer("!=");
-    assert_tokens(
-        collect_tokens(&mut lexer),
-        vec![cmp_token(RComparisonOp::Ne), RToken::Eof],
-    );
+    assert_tokens(collect_tokens(&mut lexer), vec![RToken::Ne, RToken::Eof]);
 }
 
 #[test]
 fn test_comparison_gt() {
     let mut lexer = make_lexer(">");
-    assert_tokens(
-        collect_tokens(&mut lexer),
-        vec![cmp_token(RComparisonOp::Gt), RToken::Eof],
-    );
+    assert_tokens(collect_tokens(&mut lexer), vec![RToken::Gt, RToken::Eof]);
 }
 
 #[test]
 fn test_comparison_lt() {
     let mut lexer = make_lexer("<");
-    assert_tokens(
-        collect_tokens(&mut lexer),
-        vec![cmp_token(RComparisonOp::Lt), RToken::Eof],
-    );
+    assert_tokens(collect_tokens(&mut lexer), vec![RToken::Lt, RToken::Eof]);
 }
 
 #[test]
 fn test_comparison_geq() {
     let mut lexer = make_lexer(">=");
-    assert_tokens(
-        collect_tokens(&mut lexer),
-        vec![cmp_token(RComparisonOp::Geq), RToken::Eof],
-    );
+    assert_tokens(collect_tokens(&mut lexer), vec![RToken::Geq, RToken::Eof]);
 }
 
 #[test]
 fn test_comparison_leq() {
     let mut lexer = make_lexer("<=");
-    assert_tokens(
-        collect_tokens(&mut lexer),
-        vec![cmp_token(RComparisonOp::Leq), RToken::Eof],
-    );
+    assert_tokens(collect_tokens(&mut lexer), vec![RToken::Leq, RToken::Eof]);
 }
 
 #[test]
@@ -740,17 +705,17 @@ fn test_comparison_expression() {
         collect_tokens(&mut lexer),
         vec![
             ident("a"),
-            cmp_token(RComparisonOp::Eq),
+            RToken::Eq,
             ident("b"),
-            cmp_token(RComparisonOp::Ne),
+            RToken::Ne,
             ident("c"),
-            cmp_token(RComparisonOp::Lt),
+            RToken::Lt,
             ident("d"),
-            cmp_token(RComparisonOp::Gt),
+            RToken::Gt,
             ident("e"),
-            cmp_token(RComparisonOp::Leq),
+            RToken::Leq,
             ident("f"),
-            cmp_token(RComparisonOp::Geq),
+            RToken::Geq,
             ident("g"),
             RToken::Eof,
         ],
@@ -946,7 +911,7 @@ fn factorial(n: usize) -> usize {
             // while i <= n {
             RToken::While,
             ident("i"),
-            cmp_token(RComparisonOp::Leq),
+            RToken::Leq,
             ident("n"),
             RToken::LBrace,
             // result = result * i;
@@ -1008,7 +973,7 @@ fn max(a: usize, b: usize) -> usize {
             // if a > b {
             RToken::If,
             ident("a"),
-            cmp_token(RComparisonOp::Gt),
+            RToken::Gt,
             ident("b"),
             RToken::LBrace,
             // return a;

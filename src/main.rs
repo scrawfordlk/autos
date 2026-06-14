@@ -120,56 +120,50 @@ fn compile(source: &str, do_semantic_analysis: bool) -> String {
 
 #[derive(Debug)]
 enum RToken {
-    Fn,                 // "fn"
-    Enum,               // "enum"
-    Extern,             // "extern"
-    Let,                // "let"
-    If,                 // "if"
-    Else,               // "else"
-    While,              // "while"
-    Return,             // "return"
-    Match,              // "match"
-    As,                 // "as"
-    Unsafe,             // "unsafe"
-    Mut,                // "mut"
-    Ampersand,          // "&"
-    LBrace,             // "{"
-    RBrace,             // "}"
-    LParen,             // "("
-    RParen,             // ")"
-    Colon,              // ":"
-    DoubleColon,        // "::"
-    SemiColon,          // ";"
-    Comma,              // ","
-    Pipe,               // "|"
-    Assign,             // "="
-    Bang,               // "!"
-    Cmp(RComparisonOp), // ==, !=, <, <=, >, >=
-    FatArrow,           // "=>"
-    Plus,               // "+"
-    Minus,              // "-"
-    Star,               // "*"
-    Slash,              // "/"
-    Remainder,          // "%"
-    Usize,              // "usize"
-    U8,                 // "u8"
-    Bool,               // "bool"
-    Char,               // "char"
-    Arrow,              // "->"
+    Fn,          // "fn"
+    Enum,        // "enum"
+    Extern,      // "extern"
+    Let,         // "let"
+    If,          // "if"
+    Else,        // "else"
+    While,       // "while"
+    Return,      // "return"
+    Match,       // "match"
+    As,          // "as"
+    Unsafe,      // "unsafe"
+    Mut,         // "mut"
+    Ampersand,   // "&"
+    LBrace,      // "{"
+    RBrace,      // "}"
+    LParen,      // "("
+    RParen,      // ")"
+    Colon,       // ":"
+    DoubleColon, // "::"
+    SemiColon,   // ";"
+    Comma,       // ","
+    Pipe,        // "|"
+    Assign,      // "="
+    Bang,        // "!"
+    Eq,          // ==
+    Ne,          // !=
+    Lt,          // <
+    Gt,          // >
+    Leq,         // <=
+    Geq,         // >=
+    FatArrow,    // "=>"
+    Plus,        // "+"
+    Minus,       // "-"
+    Star,        // "*"
+    Slash,       // "/"
+    Remainder,   // "%"
+    Usize,       // "usize"
+    U8,          // "u8"
+    Bool,        // "bool"
+    Char,        // "char"
+    Arrow,       // "->"
     Literal(RLiteral),
     Identifier(String),
     Eof,
-}
-
-/// Comparison tokens
-#[derive(Debug)]
-enum RComparisonOp {
-    Eq,
-    Ne,
-    Gt,
-    Lt,
-    Geq,
-    Leq,
 }
 
 /// Literal tokens.
@@ -246,7 +240,7 @@ fn rLexer_set_current_token(RLexer::Lexer(_, old_token): &mut RLexer, token: RTo
 
 /// Check whether the current token equals `token`.
 fn rLexer_current_token_eq(lexer: &RLexer, token: &RToken) -> bool {
-    token_eq(rLexer_current_token(lexer), token)
+    rToken_eq(rLexer_current_token(lexer), token)
 }
 
 /// Peek at the next character without consuming it.
@@ -327,7 +321,7 @@ fn rLexer_next_token(lexer: &mut RLexer) -> RToken {
         Option::None => RToken::Eof,
     };
 
-    rLexer_set_current_token(lexer, token_clone(&token));
+    rLexer_set_current_token(lexer, rToken_clone(&token));
     token
 }
 
@@ -511,7 +505,7 @@ fn rLexer_scan_equals(lexer: &mut RLexer) -> RToken {
     match rLexer_peek_char(lexer) {
         Option::Some('=') => {
             rLexer_consume_char(lexer);
-            RToken::Cmp(RComparisonOp::Eq)
+            RToken::Eq
         },
         Option::Some('>') => {
             rLexer_consume_char(lexer);
@@ -535,7 +529,7 @@ fn rLexer_scan_bang(lexer: &mut RLexer) -> RToken {
     match rLexer_peek_char(lexer) {
         Option::Some('=') => {
             rLexer_consume_char(lexer);
-            RToken::Cmp(RComparisonOp::Ne)
+            RToken::Ne
         },
         _ => RToken::Bang,
     }
@@ -545,9 +539,9 @@ fn rLexer_scan_less(lexer: &mut RLexer) -> RToken {
     match rLexer_peek_char(lexer) {
         Option::Some('=') => {
             rLexer_consume_char(lexer);
-            RToken::Cmp(RComparisonOp::Leq)
+            RToken::Leq
         },
-        _ => RToken::Cmp(RComparisonOp::Lt),
+        _ => RToken::Lt,
     }
 }
 
@@ -555,9 +549,9 @@ fn rLexer_scan_greater(lexer: &mut RLexer) -> RToken {
     match rLexer_peek_char(lexer) {
         Option::Some('=') => {
             rLexer_consume_char(lexer);
-            RToken::Cmp(RComparisonOp::Geq)
+            RToken::Geq
         },
-        _ => RToken::Cmp(RComparisonOp::Gt),
+        _ => RToken::Gt,
     }
 }
 
@@ -1352,21 +1346,21 @@ fn parse_comparison(lexer: &mut RLexer) -> RAstExpr {
     let left: RAstExpr = parse_arithmetic(lexer);
 
     match rLexer_current_token(lexer) {
-        RToken::Cmp(comparison) => {
-            let comparison: RComparisonOp = comparison_clone(comparison);
+        RToken::Eq | RToken::Ne | RToken::Lt | RToken::Gt | RToken::Leq | RToken::Geq => {
+            let comparison: RToken = rToken_clone(rLexer_current_token(lexer));
             rLexer_next_token(lexer);
 
             let right: RAstExpr = parse_arithmetic(lexer);
 
             let operator: RAstComparisonOp = match comparison {
-                RComparisonOp::Eq => RAstComparisonOp::Eq,
-                RComparisonOp::Ne => RAstComparisonOp::Ne,
-                RComparisonOp::Gt => RAstComparisonOp::Gt,
-                RComparisonOp::Lt => RAstComparisonOp::Lt,
-                RComparisonOp::Geq => RAstComparisonOp::Ge,
-                RComparisonOp::Leq => RAstComparisonOp::Le,
+                RToken::Eq => RAstComparisonOp::Eq,
+                RToken::Ne => RAstComparisonOp::Ne,
+                RToken::Gt => RAstComparisonOp::Gt,
+                RToken::Lt => RAstComparisonOp::Lt,
+                RToken::Geq => RAstComparisonOp::Ge,
+                RToken::Leq => RAstComparisonOp::Le,
+                _ => unreachable(),
             };
-
             RAstExpr::Binary(
                 RAstBinaryOp::Comparison(operator),
                 box_new::<RAstExpr>(left),
@@ -6442,7 +6436,7 @@ fn llvmType_eq(left: &LType, right: &LType) -> bool {
 }
 
 /// Check if two tokens are equal.
-fn token_eq(a: &RToken, b: &RToken) -> bool {
+fn rToken_eq(a: &RToken, b: &RToken) -> bool {
     match a {
         RToken::Unsafe => match b {
             RToken::Unsafe => true,
@@ -6540,8 +6534,28 @@ fn token_eq(a: &RToken, b: &RToken) -> bool {
             RToken::Bang => true,
             _ => false,
         },
-        RToken::Cmp(left_comparison) => match b {
-            RToken::Cmp(right_comparison) => comparison_eq(left_comparison, right_comparison),
+        RToken::Eq => match b {
+            RToken::Eq => true,
+            _ => false,
+        },
+        RToken::Ne => match b {
+            RToken::Ne => true,
+            _ => false,
+        },
+        RToken::Lt => match b {
+            RToken::Lt => true,
+            _ => false,
+        },
+        RToken::Gt => match b {
+            RToken::Gt => true,
+            _ => false,
+        },
+        RToken::Leq => match b {
+            RToken::Leq => true,
+            _ => false,
+        },
+        RToken::Geq => match b {
+            RToken::Geq => true,
             _ => false,
         },
         RToken::FatArrow => match b {
@@ -6598,36 +6612,6 @@ fn token_eq(a: &RToken, b: &RToken) -> bool {
         },
         RToken::Eof => match b {
             RToken::Eof => true,
-            _ => false,
-        },
-    }
-}
-
-/// Check if two comparison tokens are equal.
-fn comparison_eq(left: &RComparisonOp, right: &RComparisonOp) -> bool {
-    match left {
-        RComparisonOp::Eq => match right {
-            RComparisonOp::Eq => true,
-            _ => false,
-        },
-        RComparisonOp::Ne => match right {
-            RComparisonOp::Ne => true,
-            _ => false,
-        },
-        RComparisonOp::Gt => match right {
-            RComparisonOp::Gt => true,
-            _ => false,
-        },
-        RComparisonOp::Lt => match right {
-            RComparisonOp::Lt => true,
-            _ => false,
-        },
-        RComparisonOp::Geq => match right {
-            RComparisonOp::Geq => true,
-            _ => false,
-        },
-        RComparisonOp::Leq => match right {
-            RComparisonOp::Leq => true,
             _ => false,
         },
     }
@@ -6919,8 +6903,8 @@ fn string_eq(s1: &String, s2: &String) -> bool {
 // ------------------------- Clone --------------------------------
 // ----------------------------------------------------------------
 
-/// Clone a token value.
-fn token_clone(token: &RToken) -> RToken {
+/// Clone a Rust token.
+fn rToken_clone(token: &RToken) -> RToken {
     match token {
         RToken::Unsafe => RToken::Unsafe,
         RToken::Fn => RToken::Fn,
@@ -6946,7 +6930,12 @@ fn token_clone(token: &RToken) -> RToken {
         RToken::Pipe => RToken::Pipe,
         RToken::Assign => RToken::Assign,
         RToken::Bang => RToken::Bang,
-        RToken::Cmp(comparison) => RToken::Cmp(comparison_clone(comparison)),
+        RToken::Eq => RToken::Eq,
+        RToken::Ne => RToken::Ne,
+        RToken::Lt => RToken::Lt,
+        RToken::Gt => RToken::Gt,
+        RToken::Leq => RToken::Leq,
+        RToken::Geq => RToken::Geq,
         RToken::FatArrow => RToken::FatArrow,
         RToken::Plus => RToken::Plus,
         RToken::Minus => RToken::Minus,
@@ -6961,18 +6950,6 @@ fn token_clone(token: &RToken) -> RToken {
         RToken::Literal(literal) => RToken::Literal(rLiteral_clone(literal)),
         RToken::Identifier(value) => RToken::Identifier(string_clone(value)),
         RToken::Eof => RToken::Eof,
-    }
-}
-
-/// Clone a comparison operator.
-fn comparison_clone(comparison: &RComparisonOp) -> RComparisonOp {
-    match comparison {
-        RComparisonOp::Eq => RComparisonOp::Eq,
-        RComparisonOp::Ne => RComparisonOp::Ne,
-        RComparisonOp::Gt => RComparisonOp::Gt,
-        RComparisonOp::Lt => RComparisonOp::Lt,
-        RComparisonOp::Geq => RComparisonOp::Geq,
-        RComparisonOp::Leq => RComparisonOp::Leq,
     }
 }
 
@@ -7335,7 +7312,12 @@ fn rToken_to_string(token: &RToken) -> String {
         RToken::Pipe => string("|"),
         RToken::Assign => string("="),
         RToken::Bang => string("!"),
-        RToken::Cmp(comparison) => comparison_to_string(comparison),
+        RToken::Eq => string("=="),
+        RToken::Ne => string("!="),
+        RToken::Lt => string("<"),
+        RToken::Gt => string(">"),
+        RToken::Leq => string("<="),
+        RToken::Geq => string(">="),
         RToken::FatArrow => string("=>"),
         RToken::Plus => string("+"),
         RToken::Minus => string("-"),
@@ -7444,18 +7426,6 @@ fn lToken_to_string(token: &LToken) -> String {
         },
         LToken::Integer(value) => integer_to_string(*value),
         LToken::Eof => string("<eof>"),
-    }
-}
-
-/// Convert a comparison token into a string.
-fn comparison_to_string(comparison: &RComparisonOp) -> String {
-    match comparison {
-        RComparisonOp::Eq => string("=="),
-        RComparisonOp::Ne => string("!="),
-        RComparisonOp::Gt => string(">"),
-        RComparisonOp::Lt => string("<"),
-        RComparisonOp::Geq => string(">="),
-        RComparisonOp::Leq => string("<="),
     }
 }
 
