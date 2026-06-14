@@ -625,8 +625,8 @@ enum RAstItem {
 
 /// Function definition.
 enum RAstFunction {
-    /// unsafe, name, parameters, return type, body
-    Fn(bool, String, Vec<RAstVariable>, RType, RAstBlock),
+    /// generic, unsafe, name, parameters, return type, body
+    Fn(bool, bool, String, Vec<RAstVariable>, RType, RAstBlock),
 }
 
 /// Enum definition.
@@ -690,10 +690,10 @@ enum RType {
     Unit,
     Never,
     Enum(String),
-    /// inner, mutable
+    /// pointee, mutable
     Reference(Box<RType>, bool),
-    /// `*mut T`
     RawPointerMut(Box<RType>),
+    Generic,
 }
 
 /// A Rust expression.
@@ -832,6 +832,7 @@ fn rType_size(codegen: &Codegen, ty: &RType) -> usize {
             Option::Some(Item::Enum(rast_enum)) => rAstEnum_size(codegen, rast_enum),
             _ => 16, // assume that it is the built-in &str (8 bytes for pointer, 8 bytes for length)
         },
+        _ => panic("not implemented"),
     }
 }
 
@@ -1147,6 +1148,18 @@ fn parse_function(lexer: &mut RLexer, is_unsafe: bool) -> RAstFunction {
     expect_token(lexer, &RToken::Fn);
 
     let name: String = expect_identifier(lexer);
+
+    let mut is_generic: bool = false;
+    if rLexer_try_consume(lexer, &RToken::LAngle) {
+        let type_param: String = expect_identifier(lexer);
+        if not(string_eq(&type_param, &string("T"))) {
+            parse_error(lexer, &string("generic type parameter must be \"T\""));
+        } else if rLexer_current_token_eq(lexer, &RToken::Comma) {
+            parse_error(lexer, &string("only a single generic type is supported"))
+        }
+        is_generic = true;
+        expect_token(lexer, &RToken::RAngle);
+    }
     expect_token(lexer, &RToken::LParen);
 
     let mut parameters: Vec<RAstVariable> = vec_new::<RAstVariable>();
@@ -1172,7 +1185,7 @@ fn parse_function(lexer: &mut RLexer, is_unsafe: bool) -> RAstFunction {
 
     let body: RAstBlock = parse_block(lexer);
 
-    RAstFunction::Fn(is_unsafe, name, parameters, return_type, body)
+    RAstFunction::Fn(is_generic, is_unsafe, name, parameters, return_type, body)
 }
 
 fn parse_enum(lexer: &mut RLexer) -> RAstEnum {
@@ -1305,8 +1318,12 @@ fn parse_type(lexer: &mut RLexer) -> RType {
             RType::RawPointerMut(box_new::<RType>(inner))
         },
         RToken::Identifier(_) => {
-            let enum_name: String = expect_identifier(lexer);
-            RType::Enum(enum_name)
+            let name: String = expect_identifier(lexer);
+            if string_eq(&name, &string("T")) {
+                RType::Generic
+            } else {
+                RType::Enum(name)
+            }
         },
         token => {
             let mut message: String = string("expected a type, but got: ");
@@ -1661,7 +1678,7 @@ fn collect_items(ast: &RAst) -> StringMap<Item> {
 /// and inserts them into the table.
 fn insert_item_into_global_table(table: &mut StringMap<Item>, item: &RAstItem) {
     match item {
-        RAstItem::Function(RAstFunction::Fn(is_unsafe, name, params, return_type, _)) => {
+        RAstItem::Function(RAstFunction::Fn(is_generic, is_unsafe, name, params, return_type, _)) => {
             let mut param_types: Vec<RType> = vec_new::<RType>();
             let mut i: usize = 0;
             while i < vec_len::<RAstVariable>(params) {
@@ -1981,7 +1998,7 @@ fn semantic_check_language(semantic: &mut Semantic, ast: &RAst, globals: &String
 
 /// Analyze one function and validate body against its signature.
 fn semantic_check_function(semantic: &mut Semantic, function: &RAstFunction, globals: &StringMap<Item>) {
-    let RAstFunction::Fn(is_unsafe, _, parameters, return_type, body): &RAstFunction = function;
+    let RAstFunction::Fn(is_generic, is_unsafe, _, parameters, return_type, body): &RAstFunction = function;
 
     semantic_set_current_fn_return_type(semantic, rType_clone(return_type));
     semantic_enter_scope(semantic);
@@ -2680,9 +2697,9 @@ fn codegen_extern_block(codegen: &mut Codegen, functions: &Vec<RAstExternFn>) {
 
 /// Emit LLVM-IR for one function definition.
 fn codegen_function(codegen: &mut Codegen, function: &RAstFunction) {
-    let RAstFunction::Fn(_, function_name, parameters, return_type, body): &RAstFunction = function;
+    let RAstFunction::Fn(is_generic, _, name, parameters, return_type, body): &RAstFunction = function;
 
-    let llvm_return_type: String = if string_eq(function_name, &string("main")) {
+    let llvm_return_type: String = if string_eq(name, &string("main")) {
         codegen_mark_as_main(codegen, true);
         if rType_eq(&return_type, &RType::Unit) {
             string("i64")
@@ -2692,7 +2709,7 @@ fn codegen_function(codegen: &mut Codegen, function: &RAstFunction) {
     } else {
         rType_to_llvm_name(codegen, &return_type)
     };
-    codegen_emit_fn_signature(codegen, function_name, &llvm_return_type, parameters);
+    codegen_emit_fn_signature(codegen, name, &llvm_return_type, parameters);
 
     codegen_push_scope(codegen);
     let mut i: usize = 0;
@@ -6681,6 +6698,10 @@ fn rType_eq(a: &RType, b: &RType) -> bool {
             RType::RawPointerMut(right) => rType_eq(box_deref::<RType>(left), box_deref::<RType>(right)),
             _ => false,
         },
+        RType::Generic => match b {
+            RType::Generic => true,
+            _ => false,
+        },
     }
 }
 
@@ -6979,6 +7000,7 @@ fn rType_clone(t: &RType) -> RType {
         RType::RawPointerMut(inner) => {
             RType::RawPointerMut(box_new::<RType>(rType_clone(box_deref::<RType>(inner))))
         },
+        RType::Generic => RType::Generic,
     }
 }
 
@@ -7355,6 +7377,7 @@ fn rType_to_string(ty: &RType) -> String {
             string_push_string(&mut str, &rType_to_string(box_deref::<RType>(inner)));
             str
         },
+        RType::Generic => string("T"), // generics can only use parameter "T"
     }
 }
 
