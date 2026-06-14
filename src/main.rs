@@ -5268,14 +5268,9 @@ enum Emu {
 fn emu_new(memory_size: usize) -> Emu {
     let stack_pointer: usize = memory_size;
     let global_pointer: usize = 0;
-    Emu::Emu(
-        stringMap_new::<usize>(),
-        vec_with_len::<u8>(memory_size),
-        stack_pointer,
-        0,
-        global_pointer,
-        Option::None,
-    )
+    let memory: Vec<u8> = vec_with_len::<u8>(memory_size);
+    let globals: StringMap<usize> = stringMap_new::<usize>();
+    Emu::Emu(globals, memory, stack_pointer, 0, global_pointer, Option::None)
 }
 
 /// Get a shared reference to the global values.
@@ -5436,7 +5431,6 @@ fn emu_store_bytes(emulator: &mut Emu, address: usize, value: &Value, mut byte_c
                 byte_count = byte_count - size_of::<usize>();
                 i = i + 1;
             }
-            assert_eq!(byte_count, 0); // TODO: remove
         },
     }
     true
