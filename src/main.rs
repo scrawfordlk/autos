@@ -693,7 +693,8 @@ enum RType {
     /// pointee, mutable
     Reference(Box<RType>, bool),
     RawPointerMut(Box<RType>),
-    Generic,
+    /// optional field is the currently instantiated type
+    Generic(Option<Box<RType>>),
 }
 
 /// A Rust expression.
@@ -964,6 +965,17 @@ fn rType_coerced_match(left: &RType, right: &RType) -> bool {
 /// This is true for all types, other than Unit and Never.
 fn rType_has_value(ty: &RType) -> bool {
     not(rType_coerced_match(ty, &RType::Unit))
+}
+
+/// If the type is generic, instantiate it with the given instance type.
+fn rType_instantiate_generic(ty: &RType, instance: &RType) -> RType {
+    match ty {
+        RType::Generic(option) => match option {
+            Option::Some(_) => panic("instantiating an already instantiated generic type"),
+            _ => RType::Generic(Option::Some(box_new::<RType>(rType_clone(instance)))),
+        },
+        _ => rType_clone(ty),
+    }
 }
 
 /// Possible types of a scrutinee in a match expression. The contained type is the type the Scrutinee is matched
@@ -1321,7 +1333,7 @@ fn parse_type(lexer: &mut RLexer) -> RType {
         RToken::Identifier(_) => {
             let name: String = expect_identifier(lexer);
             if string_eq(&name, &string("T")) {
-                RType::Generic
+                RType::Generic(Option::None)
             } else {
                 RType::Enum(name)
             }
@@ -1754,43 +1766,43 @@ fn insert_builtin_functions(table: &mut StringMap<Item>) {
 
 /// Semantic analysis state.
 enum Semantic {
-    /// local symbol table, current function return type, unsafe context depth
-    Semantic(StringMapStack<Variable>, RType, usize),
+    /// local symbol table, current return type, unsafe context depth, current generic type instance
+    Semantic(StringMapStack<Variable>, RType, usize, Option<RType>),
 }
 
 fn semantic_new() -> Semantic {
-    Semantic::Semantic(stringMapStack_new::<Variable>(), RType::Unit, 0)
+    Semantic::Semantic(stringMapStack_new::<Variable>(), RType::Unit, 0, Option::None)
 }
 
 fn semantic_locals(semantic: &Semantic) -> &StringMapStack<Variable> {
-    let Semantic::Semantic(locals, _, _): &Semantic = semantic;
+    let Semantic::Semantic(locals, _, _, _): &Semantic = semantic;
     locals
 }
 
 fn semantic_locals_mut(semantic: &mut Semantic) -> &mut StringMapStack<Variable> {
-    let Semantic::Semantic(locals, _, _): &mut Semantic = semantic;
+    let Semantic::Semantic(locals, _, _, _): &mut Semantic = semantic;
     locals
 }
 
 fn semantic_current_fn_return_type(semantic: &Semantic) -> &RType {
-    let Semantic::Semantic(_, return_type, _): &Semantic = semantic;
+    let Semantic::Semantic(_, return_type, _, _): &Semantic = semantic;
     return_type
 }
 
 fn semantic_set_current_fn_return_type(semantic: &mut Semantic, ty: RType) {
-    let Semantic::Semantic(_, return_type, _): &mut Semantic = semantic;
+    let Semantic::Semantic(_, return_type, _, _): &mut Semantic = semantic;
     *return_type = ty;
 }
 
 /// Get the raw unsafe depth value.
 fn semantic_unsafe_depth(semantic: &Semantic) -> usize {
-    let Semantic::Semantic(_, _, unsafe_depth): &Semantic = semantic;
+    let Semantic::Semantic(_, _, unsafe_depth, _): &Semantic = semantic;
     *unsafe_depth
 }
 
 /// Set the raw unsafe depth value.
 fn semantic_set_unsafe_depth(semantic: &mut Semantic, unsafe_depth: usize) {
-    let Semantic::Semantic(_, _, current_unsafe_depth): &mut Semantic = semantic;
+    let Semantic::Semantic(_, _, current_unsafe_depth, _): &mut Semantic = semantic;
     *current_unsafe_depth = unsafe_depth;
 }
 
@@ -1813,6 +1825,24 @@ fn semantic_is_unsafe_context(semantic: &Semantic) -> bool {
     semantic_unsafe_depth(semantic) > 0
 }
 
+/// Set a generic type parameter instantiation.
+fn semantic_set_generic(Semantic::Semantic(_, _, _, generic): &mut Semantic, instance: &RType) {
+    *generic = Option::Some(rType_clone(instance));
+}
+
+/// Get the current generic type parameter instantiation.
+fn semantic_get_generic(Semantic::Semantic(_, _, _, generic): &Semantic) -> Option<&RType> {
+    match generic {
+        Option::Some(ty) => Option::Some(ty),
+        _ => Option::None,
+    }
+}
+
+/// Reset a generic type parameter instantiation.
+fn semantic_reset_generic(Semantic::Semantic(_, _, _, generic): &mut Semantic) {
+    *generic = Option::None;
+}
+
 /// Run semantic analysis and return collected items.
 fn semantic_check_run(ast: &RAst, items: &StringMap<Item>) {
     let mut semantic: Semantic = semantic_new();
@@ -1831,20 +1861,31 @@ fn semantic_expect_type_match(left: &RType, right: &RType) {
 }
 
 /// Check if the given types, coerced from `actual` to `expected`, match.
-fn semantic_expect_coerced_type_match(actual: &RType, expected: &RType) {
-    if not(rType_coerced_match(actual, expected)) {
-        let mut message: String = string("coerced type mismatch: expected ");
-        string_push_string(&mut message, &rType_to_string(expected));
-        string_push_str(&mut message, ", but got ");
-        string_push_string(&mut message, &rType_to_string(actual));
-        semantic_error(&message);
+fn semantic_expect_coerced_type_match(semantic: &Semantic, actual: &RType, expected: &RType) {
+    match semantic_get_generic(semantic) {
+        Option::Some(instance) => {
+            let actual: RType = rType_instantiate_generic(actual, instance);
+            let expected: RType = rType_instantiate_generic(expected, instance);
+            if rType_coerced_match(&actual, &expected) {
+                return;
+            }
+        },
+        _ => {},
     }
+    if rType_coerced_match(actual, expected) {
+        return;
+    }
+    let mut message: String = string("coerced type mismatch: expected ");
+    string_push_string(&mut message, &rType_to_string(expected));
+    string_push_str(&mut message, ", but got ");
+    string_push_string(&mut message, &rType_to_string(actual));
+    semantic_error(&message);
 }
 
 /// Check if the given types, using Least Upper Bound Coercion, match.
-fn semantic_expect_lub_coerced_type_match(left: &RType, right: &RType) {
+fn semantic_expect_lub_coerced_type_match(semantic: &Semantic, left: &RType, right: &RType) {
     if not(rType_coerced_match(left, right)) {
-        semantic_expect_coerced_type_match(right, left);
+        semantic_expect_coerced_type_match(semantic, right, left);
     }
 }
 
@@ -2022,7 +2063,7 @@ fn semantic_check_function(semantic: &mut Semantic, function: &RAstFunction, glo
     }
 
     let block_type: RType = semantic_check_block(semantic, body, *is_unsafe, globals);
-    semantic_expect_coerced_type_match(&block_type, return_type);
+    semantic_expect_coerced_type_match(semantic, &block_type, return_type);
 
     semantic_leave_scope(semantic);
     semantic_set_current_fn_return_type(semantic, RType::Unit);
@@ -2088,7 +2129,7 @@ fn semantic_check_binding(
 ) {
     let RAstVariable::Variable(pattern, binding_type): &RAstVariable = variable;
     let actual_type: RType = semantic_check_expression(semantic, value, globals);
-    semantic_expect_coerced_type_match(&actual_type, binding_type);
+    semantic_expect_coerced_type_match(semantic, &actual_type, binding_type);
     semantic_check_pattern(semantic, pattern, binding_type, false, globals);
 }
 
@@ -2120,7 +2161,15 @@ fn semantic_check_expression(
         },
         RAstExpr::Literal(literal) => rAstLiteral_type(literal),
         RAstExpr::Variable(name) => semantic_check_variable_use(semantic, false, name),
-        RAstExpr::Path(path, values, generic) => semantic_check_path(semantic, path, values, globals),
+        RAstExpr::Path(path, values, generic) => {
+            match generic {
+                Option::Some(instance) => semantic_set_generic(semantic, instance),
+                _ => {},
+            };
+            let ty: RType = semantic_check_path(semantic, path, values, globals);
+            semantic_reset_generic(semantic);
+            ty
+        },
         RAstExpr::Block(is_unsafe, block) => semantic_check_block(semantic, block, *is_unsafe, globals),
         RAstExpr::If(if_expression) => semantic_check_if(semantic, if_expression, globals),
         RAstExpr::While(condition, body) => {
@@ -2140,7 +2189,7 @@ fn semantic_check_return(
     match returned {
         Option::Some(expression) => {
             let ty: RType = semantic_check_expression(semantic, box_deref::<RAstExpr>(expression), globals);
-            semantic_expect_coerced_type_match(&ty, semantic_current_fn_return_type(semantic));
+            semantic_expect_coerced_type_match(semantic, &ty, semantic_current_fn_return_type(semantic));
         },
         Option::None => {
             semantic_expect_type_match(semantic_current_fn_return_type(semantic), &RType::Unit);
@@ -2157,7 +2206,7 @@ fn semantic_check_assign(
 ) -> RType {
     let right_type: RType = semantic_check_expression(semantic, right, globals);
     let left_type: RType = semantic_check_assign_lvalue(semantic, left, globals);
-    semantic_expect_coerced_type_match(&right_type, &left_type);
+    semantic_expect_coerced_type_match(semantic, &right_type, &left_type);
     RType::Unit
 }
 
@@ -2336,7 +2385,7 @@ fn semantic_check_call(
         let param_type: &RType = vec_at::<RType>(parameter_types, i);
         let arg: &RAstExpr = vec_at::<RAstExpr>(values, i);
         let arg_type: RType = semantic_check_expression(semantic, arg, globals);
-        semantic_expect_coerced_type_match(&arg_type, param_type);
+        semantic_expect_coerced_type_match(semantic, &arg_type, param_type);
         i = i + 1;
     }
     rType_clone(return_type)
@@ -2361,7 +2410,7 @@ fn semantic_check_enum(
         let field_type: &RType = vec_at::<RType>(&fields, i);
         let expr: &RAstExpr = vec_at::<RAstExpr>(values, i);
         let expr_type: RType = semantic_check_expression(semantic, expr, globals);
-        semantic_expect_coerced_type_match(&expr_type, field_type);
+        semantic_expect_coerced_type_match(semantic, &expr_type, field_type);
         i = i + 1;
     }
     RType::Enum(string_clone(name))
@@ -2381,12 +2430,12 @@ fn semantic_check_if(semantic: &mut Semantic, if_expression: &RAstIf, globals: &
                 },
                 RAstElse::Block(block) => semantic_check_block(semantic, block, false, globals),
             };
-            semantic_expect_lub_coerced_type_match(&then_type, &else_type);
+            semantic_expect_lub_coerced_type_match(semantic, &then_type, &else_type);
             rType_lub_coerce(then_type, else_type)
         },
         Option::None => {
             let return_type: RType = RType::Unit;
-            semantic_expect_coerced_type_match(&then_type, &return_type);
+            semantic_expect_coerced_type_match(semantic, &then_type, &return_type);
             return_type
         },
     }
@@ -2401,7 +2450,7 @@ fn semantic_check_while(
     let condition_type: RType = semantic_check_expression(semantic, condition, globals);
     semantic_expect_bool_type(&condition_type);
     let body_type: RType = semantic_check_block(semantic, body, false, globals);
-    semantic_expect_coerced_type_match(&body_type, &RType::Unit);
+    semantic_expect_coerced_type_match(semantic, &body_type, &RType::Unit);
     RType::Unit
 }
 
@@ -2456,7 +2505,7 @@ fn semantic_check_match(
         }
 
         let arm_type: RType = semantic_check_expression(semantic, expression, globals);
-        semantic_expect_lub_coerced_type_match(&return_type, &arm_type);
+        semantic_expect_lub_coerced_type_match(semantic, &return_type, &arm_type);
         return_type = rType_lub_coerce(return_type, arm_type);
         semantic_leave_scope(semantic);
         i = i + 1;
@@ -6078,6 +6127,7 @@ fn to_uppercase(c: char) -> char {
 // -----------------------------------------------------------------
 
 /// Optional type that can contain some value with type T or no value.
+#[derive(Debug)]
 enum Option<T> {
     Some(T),
     None,
@@ -6635,6 +6685,33 @@ fn rLiteral_eq(left: &RLiteral, right: &RLiteral) -> bool {
 
 /// Check two Rust AST types for equality.
 fn rType_eq(a: &RType, b: &RType) -> bool {
+    let generic_match: bool = match a {
+        RType::Generic(left) => match b {
+            RType::Generic(right) => match left {
+                Option::Some(instance_a) => match right {
+                    Option::Some(instance_b) => {
+                        rType_eq(box_deref::<RType>(instance_a), box_deref::<RType>(instance_b))
+                    },
+                    _ => false,
+                },
+                _ => option_is_none::<Box<RType>>(right),
+            },
+            other => match left {
+                Option::Some(instance) => rType_eq(box_deref::<RType>(instance), other),
+                Option::None => false,
+            },
+        },
+        other => match b {
+            RType::Generic(right) => match right {
+                Option::Some(instance) => rType_eq(box_deref::<RType>(instance), other),
+                _ => false,
+            },
+            _ => false,
+        },
+    };
+    if generic_match {
+        return true;
+    }
     match a {
         RType::U8 => match b {
             RType::U8 => true,
@@ -6675,10 +6752,7 @@ fn rType_eq(a: &RType, b: &RType) -> bool {
             RType::RawPointerMut(right) => rType_eq(box_deref::<RType>(left), box_deref::<RType>(right)),
             _ => false,
         },
-        RType::Generic => match b {
-            RType::Generic => true,
-            _ => false,
-        },
+        _ => false,
     }
 }
 
@@ -6977,7 +7051,12 @@ fn rType_clone(t: &RType) -> RType {
         RType::RawPointerMut(inner) => {
             RType::RawPointerMut(box_new::<RType>(rType_clone(box_deref::<RType>(inner))))
         },
-        RType::Generic => RType::Generic,
+        RType::Generic(option) => match option {
+            Option::Some(instance) => RType::Generic(Option::Some(box_new::<RType>(rType_clone(
+                box_deref::<RType>(instance),
+            )))),
+            _ => RType::Generic(Option::None),
+        },
     }
 }
 
@@ -7354,7 +7433,7 @@ fn rType_to_string(ty: &RType) -> String {
             string_push_string(&mut str, &rType_to_string(box_deref::<RType>(inner)));
             str
         },
-        RType::Generic => string("T"), // generics can only use parameter "T"
+        RType::Generic(_) => string("T"), // generics can only use parameter "T"
     }
 }
 
