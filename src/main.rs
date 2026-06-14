@@ -705,7 +705,8 @@ enum RAstExpr {
     Unary(RAstUnaryOp, Box<RAstExpr>),
     Literal(RLiteral),
     Variable(String),
-    Path(Vec<String>, Vec<RAstExpr>), // either function call or enum instantiaton
+    /// path segments, arguments, optional generic type instance
+    Path(Vec<String>, Vec<RAstExpr>, Option<RType>), // either function call or enum instantiaton
     /// unsafe, block
     Block(bool, RAstBlock),
     If(RAstIf),
@@ -1504,17 +1505,24 @@ fn parse_identifier_expression(lexer: &mut RLexer) -> RAstExpr {
     let first_identifier: String = expect_identifier(lexer);
 
     if rLexer_try_consume(lexer, &RToken::DoubleColon) {
-        let second_identifier: String = expect_identifier(lexer);
-
+        let generic: Option<RType> = if rLexer_try_consume(lexer, &RToken::LAngle) {
+            let ty: RType = parse_type(lexer);
+            expect_token(lexer, &RToken::RAngle);
+            Option::Some(ty)
+        } else {
+            Option::None
+        };
         let mut segments: Vec<String> = vec_new::<String>();
         vec_push::<String>(&mut segments, first_identifier);
-        vec_push::<String>(&mut segments, second_identifier);
-
-        parse_path_values(lexer, segments)
+        match rLexer_current_token(lexer) {
+            RToken::Identifier(_) => vec_push::<String>(&mut segments, expect_identifier(lexer)),
+            _ => {},
+        };
+        parse_path_values(lexer, segments, generic)
     } else if rLexer_current_token_eq(lexer, &RToken::LParen) {
         let mut segments: Vec<String> = vec_new::<String>();
         vec_push::<String>(&mut segments, first_identifier);
-        parse_path_values(lexer, segments)
+        parse_path_values(lexer, segments, Option::None)
     } else {
         RAstExpr::Variable(first_identifier)
     }
@@ -1636,9 +1644,9 @@ fn parse_pattern(lexer: &mut RLexer) -> RAstPattern {
     }
 }
 
-fn parse_path_values(lexer: &mut RLexer, path: Vec<String>) -> RAstExpr {
+fn parse_path_values(lexer: &mut RLexer, path: Vec<String>, generic: Option<RType>) -> RAstExpr {
     if not(rLexer_try_consume(lexer, &RToken::LParen)) {
-        return RAstExpr::Path(path, vec_new::<RAstExpr>()); // enum without fields
+        return RAstExpr::Path(path, vec_new::<RAstExpr>(), generic); // enum without fields
     }
 
     let mut values: Vec<RAstExpr> = vec_new::<RAstExpr>();
@@ -1656,7 +1664,7 @@ fn parse_path_values(lexer: &mut RLexer, path: Vec<String>) -> RAstExpr {
     }
     expect_token(lexer, &RToken::RParen);
 
-    RAstExpr::Path(path, values)
+    RAstExpr::Path(path, values, generic)
 }
 
 /// Collect all global items (functions and enums) into a map and return it.
@@ -2112,7 +2120,7 @@ fn semantic_check_expression(
         },
         RAstExpr::Literal(literal) => rAstLiteral_type(literal),
         RAstExpr::Variable(name) => semantic_check_variable_use(semantic, false, name),
-        RAstExpr::Path(path, values) => semantic_check_path(semantic, path, values, globals),
+        RAstExpr::Path(path, values, generic) => semantic_check_path(semantic, path, values, globals),
         RAstExpr::Block(is_unsafe, block) => semantic_check_block(semantic, block, *is_unsafe, globals),
         RAstExpr::If(if_expression) => semantic_check_if(semantic, if_expression, globals),
         RAstExpr::While(condition, body) => {
@@ -2818,7 +2826,7 @@ fn codegen_expression(codegen: &mut Codegen, expression: &RAstExpr) -> STPair {
         RAstExpr::Unary(operator, value) => codegen_unary_op(codegen, operator, box_deref::<RAstExpr>(value)),
         RAstExpr::Literal(literal) => codegen_literal(codegen, literal),
         RAstExpr::Variable(name) => codegen_variable_use(codegen, name),
-        RAstExpr::Path(path, arguments) => codegen_path(codegen, path, arguments),
+        RAstExpr::Path(path, arguments, generic) => codegen_path(codegen, path, arguments),
         RAstExpr::Block(_, block) => codegen_block(codegen, block),
         RAstExpr::If(if_expression) => codegen_if(codegen, if_expression),
         RAstExpr::While(condition, body) => codegen_while(codegen, box_deref::<RAstExpr>(condition), body),
