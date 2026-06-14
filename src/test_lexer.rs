@@ -228,7 +228,7 @@ fn test_scan_minus_direct() {
 #[test]
 fn test_scan_bang_direct() {
     let mut lexer = make_lexer("=");
-    assert!(matches!(rLexer_scan_bang(&mut lexer), RToken::Ne));
+    assert!(matches!(rLexer_scan_bang(&mut lexer), RToken::Neq));
 }
 
 #[test]
@@ -584,19 +584,19 @@ fn test_comparison_eq() {
 #[test]
 fn test_comparison_neq() {
     let mut lexer = make_lexer("!=");
-    assert_tokens(collect_tokens(&mut lexer), vec![RToken::Ne, RToken::Eof]);
+    assert_tokens(collect_tokens(&mut lexer), vec![RToken::Neq, RToken::Eof]);
 }
 
 #[test]
 fn test_comparison_gt() {
     let mut lexer = make_lexer(">");
-    assert_tokens(collect_tokens(&mut lexer), vec![RToken::Gt, RToken::Eof]);
+    assert_tokens(collect_tokens(&mut lexer), vec![RToken::RAngle, RToken::Eof]);
 }
 
 #[test]
 fn test_comparison_lt() {
     let mut lexer = make_lexer("<");
-    assert_tokens(collect_tokens(&mut lexer), vec![RToken::Lt, RToken::Eof]);
+    assert_tokens(collect_tokens(&mut lexer), vec![RToken::LAngle, RToken::Eof]);
 }
 
 #[test]
@@ -707,11 +707,11 @@ fn test_comparison_expression() {
             ident("a"),
             RToken::Eq,
             ident("b"),
-            RToken::Ne,
+            RToken::Neq,
             ident("c"),
-            RToken::Lt,
+            RToken::LAngle,
             ident("d"),
-            RToken::Gt,
+            RToken::RAngle,
             ident("e"),
             RToken::Leq,
             ident("f"),
@@ -973,7 +973,7 @@ fn max(a: usize, b: usize) -> usize {
             // if a > b {
             RToken::If,
             ident("a"),
-            RToken::Gt,
+            RToken::RAngle,
             ident("b"),
             RToken::LBrace,
             // return a;

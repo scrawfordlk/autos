@@ -144,12 +144,12 @@ enum RToken {
     Pipe,        // "|"
     Assign,      // "="
     Bang,        // "!"
-    Eq,          // ==
-    Ne,          // !=
-    Lt,          // <
-    Gt,          // >
-    Leq,         // <=
-    Geq,         // >=
+    Eq,          // "=="
+    Neq,         // "!="
+    LAngle,      // "<"
+    RAngle,      // ">"
+    Leq,         // "<="
+    Geq,         // ">="
     FatArrow,    // "=>"
     Plus,        // "+"
     Minus,       // "-"
@@ -529,7 +529,7 @@ fn rLexer_scan_bang(lexer: &mut RLexer) -> RToken {
     match rLexer_peek_char(lexer) {
         Option::Some('=') => {
             rLexer_consume_char(lexer);
-            RToken::Ne
+            RToken::Neq
         },
         _ => RToken::Bang,
     }
@@ -541,7 +541,7 @@ fn rLexer_scan_less(lexer: &mut RLexer) -> RToken {
             rLexer_consume_char(lexer);
             RToken::Leq
         },
-        _ => RToken::Lt,
+        _ => RToken::LAngle,
     }
 }
 
@@ -551,7 +551,7 @@ fn rLexer_scan_greater(lexer: &mut RLexer) -> RToken {
             rLexer_consume_char(lexer);
             RToken::Geq
         },
-        _ => RToken::Gt,
+        _ => RToken::RAngle,
     }
 }
 
@@ -1346,7 +1346,7 @@ fn parse_comparison(lexer: &mut RLexer) -> RAstExpr {
     let left: RAstExpr = parse_arithmetic(lexer);
 
     match rLexer_current_token(lexer) {
-        RToken::Eq | RToken::Ne | RToken::Lt | RToken::Gt | RToken::Leq | RToken::Geq => {
+        RToken::Eq | RToken::Neq | RToken::LAngle | RToken::RAngle | RToken::Leq | RToken::Geq => {
             let comparison: RToken = rToken_clone(rLexer_current_token(lexer));
             rLexer_next_token(lexer);
 
@@ -1354,9 +1354,9 @@ fn parse_comparison(lexer: &mut RLexer) -> RAstExpr {
 
             let operator: RAstComparisonOp = match comparison {
                 RToken::Eq => RAstComparisonOp::Eq,
-                RToken::Ne => RAstComparisonOp::Ne,
-                RToken::Gt => RAstComparisonOp::Gt,
-                RToken::Lt => RAstComparisonOp::Lt,
+                RToken::Neq => RAstComparisonOp::Ne,
+                RToken::RAngle => RAstComparisonOp::Gt,
+                RToken::LAngle => RAstComparisonOp::Lt,
                 RToken::Geq => RAstComparisonOp::Ge,
                 RToken::Leq => RAstComparisonOp::Le,
                 _ => unreachable(),
@@ -6538,16 +6538,16 @@ fn rToken_eq(a: &RToken, b: &RToken) -> bool {
             RToken::Eq => true,
             _ => false,
         },
-        RToken::Ne => match b {
-            RToken::Ne => true,
+        RToken::Neq => match b {
+            RToken::Neq => true,
             _ => false,
         },
-        RToken::Lt => match b {
-            RToken::Lt => true,
+        RToken::LAngle => match b {
+            RToken::LAngle => true,
             _ => false,
         },
-        RToken::Gt => match b {
-            RToken::Gt => true,
+        RToken::RAngle => match b {
+            RToken::RAngle => true,
             _ => false,
         },
         RToken::Leq => match b {
@@ -6931,9 +6931,9 @@ fn rToken_clone(token: &RToken) -> RToken {
         RToken::Assign => RToken::Assign,
         RToken::Bang => RToken::Bang,
         RToken::Eq => RToken::Eq,
-        RToken::Ne => RToken::Ne,
-        RToken::Lt => RToken::Lt,
-        RToken::Gt => RToken::Gt,
+        RToken::Neq => RToken::Neq,
+        RToken::LAngle => RToken::LAngle,
+        RToken::RAngle => RToken::RAngle,
         RToken::Leq => RToken::Leq,
         RToken::Geq => RToken::Geq,
         RToken::FatArrow => RToken::FatArrow,
@@ -7313,9 +7313,9 @@ fn rToken_to_string(token: &RToken) -> String {
         RToken::Assign => string("="),
         RToken::Bang => string("!"),
         RToken::Eq => string("=="),
-        RToken::Ne => string("!="),
-        RToken::Lt => string("<"),
-        RToken::Gt => string(">"),
+        RToken::Neq => string("!="),
+        RToken::LAngle => string("<"),
+        RToken::RAngle => string(">"),
         RToken::Leq => string("<="),
         RToken::Geq => string(">="),
         RToken::FatArrow => string("=>"),
