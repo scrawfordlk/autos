@@ -768,6 +768,11 @@ enum RAstArm {
     Arm(Vec<RAstPattern>, RAstExpr),
 }
 
+/// Return true if the given function is generic.
+fn rAstFunction_name(RAstFunction::Fn(_, _, name, _, _, _): &RAstFunction) -> &String {
+    name
+}
+
 /// Convert a parsed AST path to a single string.
 fn rAstPath_to_string(segments: &Vec<String>) -> String {
     let mut result: String = string_new();
@@ -2704,25 +2709,33 @@ fn codegen_reset_ssa_counter(Codegen::Gen(_, _, Counter::Counter(counter, _), _,
 }
 
 /// Instantiate the generic with the given type.
-fn codegen_instantiate_generic(Codegen::Gen(_, _, _, _, instance): &mut Codegen, ty: &RType) {
-    *instance = Option::Some(rType_clone(ty))
+fn codegen_instantiate_generic(Codegen::Gen(_, _, _, _, instance): &mut Codegen, ty: RType) {
+    eprint_str("Instantiate generic parameter with: ");
+    eprint_string(&rType_to_string(&ty));
+    eprintln();
+    *instance = Option::Some(ty)
 }
 
 /// Undo the instantiation of the generic.
 fn codegen_uninstantiate_generic(Codegen::Gen(_, _, _, _, instance): &mut Codegen) {
+    eprint_str("Uninstantiating generic parameter that was holding: ");
+    match instance {
+        Option::Some(instance) => {
+            eprint_string(&rType_to_string(instance));
+        },
+        _ => eprint_str("Surprising missing instance definition"),
+    }
+    eprintln();
     *instance = Option::None
 }
 
 /// Get the instantiation of the generic if there is one.
-fn codegen_generic_instance(Codegen::Gen(_, _, _, _, instance): &Codegen) -> Option<&RType> {
-    match instance {
-        Option::Some(instance) => Option::Some(instance),
-        _ => Option::None,
-    }
+fn codegen_generic_instance(Codegen::Gen(_, _, _, _, instance): &Codegen) -> &Option<RType> {
+    instance
 }
 
 fn codegen_generic_is_instantiated(codegen: &Codegen) -> bool {
-    not(option_is_none::<&RType>(&codegen_generic_instance(codegen)))
+    not(option_is_none::<RType>(codegen_generic_instance(codegen)))
 }
 
 /// Get a unique virtual register name.
@@ -2926,15 +2939,7 @@ fn codegen_expression(codegen: &mut Codegen, icg: &ICodegen, expression: &RAstEx
         },
         RAstExpr::Literal(literal) => codegen_literal(codegen, icg, literal),
         RAstExpr::Variable(name) => codegen_variable_use(codegen, icg, name),
-        RAstExpr::Path(path, arguments, generic) => {
-            match generic {
-                Option::Some(instance) => codegen_instantiate_generic(codegen, instance),
-                _ => {},
-            }
-            let pair: STPair = codegen_path(codegen, icg, path, arguments, generic);
-            codegen_uninstantiate_generic(codegen);
-            pair
-        },
+        RAstExpr::Path(path, arguments, generic) => codegen_path(codegen, icg, path, arguments, generic),
         RAstExpr::Block(_, block) => codegen_block(codegen, icg, block),
         RAstExpr::If(if_expression) => codegen_if(codegen, icg, if_expression),
         RAstExpr::While(condition, body) => {
@@ -3136,7 +3141,7 @@ fn codegen_path(
     let enum_type: &String = vec_at::<String>(path, 0);
     match iCodegen_search_global(icg, &enum_type) {
         Option::Some(item) => match item {
-            Item::Enum(RAstEnum::Enum(enum_name, variants)) => {
+            Item::Enum(RAstEnum::Enum(_, variants)) => {
                 return codegen_enum(codegen, icg, path, variants, values);
             },
             _ => {},
@@ -3144,7 +3149,7 @@ fn codegen_path(
         _ => {},
     }
     let function: String = rAstPath_to_string(path);
-    codegen_call(codegen, icg, &function, values)
+    codegen_call(codegen, icg, &function, values, generic)
 }
 
 fn codegen_enum(
@@ -3177,7 +3182,36 @@ fn codegen_enum(
     STPair::ST(enum_ptr, enum_type)
 }
 
-fn codegen_call(codegen: &mut Codegen, icg: &ICodegen, function: &String, values: &Vec<RAstExpr>) -> STPair {
+fn codegen_call(
+    codegen: &mut Codegen,
+    icg: &ICodegen,
+    name: &String,
+    values: &Vec<RAstExpr>,
+    generic: &Option<RType>,
+) -> STPair {
+    // TODO: we might be overwriting the current instance
+    // Maybe I should differentiate two different instances:
+    //  - 1. The instance for the current function (None, if not generic, Some if generic)
+    //  - 2. The instance to resolve types when performing a function call.
+    // Challenge: I somehow have to deal with these overlapping in some weird ways.
+    // That is these have to work
+    // ```
+    // fn main() {
+    // f::<usize>(10);
+    // }
+    // fn f<T>(param: T) {
+    //   g::<u8>(10 as u8); // T is currently instantiated to usize but also we know that we
+    //   instantiate g with T, i.e. u8. So g's parameter of type T, is actually type u8, while f's
+    //   parameter is still type usize when generating code.
+    // }
+    // ```
+    match generic {
+        Option::Some(instance) => {
+            codegen_instantiate_generic(codegen, rType_clone(instance));
+        },
+        _ => {},
+    }
+
     let mut value_types: Vec<RType> = vec_new::<RType>();
     let mut value_names: Vec<String> = vec_new::<String>();
     let mut i: usize = 0;
@@ -3189,15 +3223,18 @@ fn codegen_call(codegen: &mut Codegen, icg: &ICodegen, function: &String, values
         i = i + 1;
     }
 
-    let return_type: RType = match iCodegen_search_global(icg, &function) {
-        Option::Some(Item::Function(return_type, _, _, is_generic)) => rType_clone(return_type),
-        _ => RType::Unit, // we assume this case never occurs
+    let return_type: RType = match iCodegen_search_global(icg, &name) {
+        Option::Some(item) => match item {
+            Item::Function(return_type, _, _, _) => rType_clone(return_type),
+            _ => RType::Unit, // assume this case never occurs
+        },
+        _ => RType::Unit, // assume this case never occurs
     };
 
     let mut result_name: String = if rType_has_value(&return_type) {
-        codegen_emit_call_assign(codegen, icg, &function, &return_type, &value_types, &value_names)
+        codegen_emit_call_assign(codegen, icg, &name, &return_type, &value_types, &value_names)
     } else {
-        codegen_emit_call_void(codegen, icg, &function, &return_type, &value_types, &value_names);
+        codegen_emit_call_void(codegen, icg, &name, &return_type, &value_types, &value_names);
         string_new()
     };
 
@@ -3205,6 +3242,37 @@ fn codegen_call(codegen: &mut Codegen, icg: &ICodegen, function: &String, values
         let pointer: String = codegen_emit_alloca(codegen, icg, &return_type);
         codegen_emit_store(codegen, icg, &return_type, &result_name, &pointer);
         result_name = pointer;
+    }
+
+    let items: &Vec<RAstItem> = iCodegen_ast_items(icg);
+    match generic {
+        Option::Some(instance) => {
+            let mut i: usize = 0;
+            while i < vec_len::<RAstItem>(items) {
+                match vec_at::<RAstItem>(items, i) {
+                    RAstItem::Function(function) => {
+                        if string_eq(name, rAstFunction_name(function)) {
+                            let saved: Option<RType> = match codegen_generic_instance(codegen) {
+                                Option::Some(ty) => Option::Some(rType_clone(ty)),
+                                _ => Option::None,
+                            };
+                            eprint_str("Generating code for generic function: ");
+                            eprint_string(name);
+                            // TODO: handle generating code for another function while
+                            // generating code for current function
+                            codegen_function(codegen, icg, function);
+                            match saved {
+                                Option::Some(ty) => codegen_instantiate_generic(codegen, ty), // restore saved instance
+                                _ => codegen_uninstantiate_generic(codegen),
+                            }
+                        }
+                    },
+                    _ => {},
+                }
+                i = i + 1;
+            }
+        },
+        _ => {},
     }
 
     STPair::ST(result_name, return_type)
@@ -3986,7 +4054,15 @@ fn codegen_construct_call(
     let mut line: String = string("call ");
     string_push_string(&mut line, &rType_to_llvm_name(codegen, icg, return_type));
     string_push_str(&mut line, " @");
-    string_push_string(&mut line, &string_replace_all(name, ':', '.'));
+    let mut name: String = string_replace_all(name, ':', '.');
+    match codegen_generic_instance(codegen) {
+        Option::Some(ty) => {
+            string_push(&mut name, '.'); // mangle name to avoid name collisions
+            string_push_string(&mut name, &rType_to_string(ty));
+        },
+        _ => {},
+    }
+    string_push_string(&mut line, &name);
     string_push(&mut line, '(');
 
     let mut i: usize = 0;
@@ -4027,7 +4103,15 @@ fn codegen_emit_fn_signature(
     string_push_str(&mut line, "define ");
     string_push_string(&mut line, return_type_name);
     string_push_str(&mut line, " @");
-    string_push_string(&mut line, &string_replace_all(name, ':', '.'));
+    let mut name: String = string_replace_all(name, ':', '.');
+    match codegen_generic_instance(codegen) {
+        Option::Some(ty) => {
+            string_push(&mut name, '.'); // mangle name to avoid name collisions
+            string_push_string(&mut name, &rType_to_string(ty));
+        },
+        _ => {},
+    }
+    string_push_string(&mut line, &name);
     string_push_str(&mut line, "(");
 
     let mut i: usize = 0;
