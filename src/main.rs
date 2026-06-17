@@ -6525,6 +6525,21 @@ fn vec_extend<T>(vec: &mut Vec<T>, other: &Vec<T>) {
     vec_set_len::<T>(vec, len + other_len);
 }
 
+/// Remove the element at index `index` and return true if it was removed.
+fn vec_remove<T>(Vec::Vec(ptr, len, _): &mut Vec<T>, index: usize) -> bool {
+    if index >= *len {
+        return false;
+    }
+    unsafe {
+        let start: *mut T = ptr_add::<T>(*ptr, index);
+        let after_index: *mut T = ptr_add::<T>(*ptr, index + 1);
+        memcopy::<T>(start, after_index, *len - index - 1);
+
+        *len = *len - 1;
+    }
+    true
+}
+
 // ----------------------------------------------------------------
 // ------------------------ StringMap -----------------------------
 // ----------------------------------------------------------------
