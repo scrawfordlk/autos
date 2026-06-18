@@ -2052,10 +2052,24 @@ fn semantic_check_language(semantic: &mut Semantic, ast: &RAst, globals: &String
         let item: &RAstItem = vec_at::<RAstItem>(items, i);
         match item {
             RAstItem::Function(function) => semantic_check_function(semantic, function, globals),
-            _ => {}, // TODO: check enums and extern functions
+            RAstItem::Enum(e) => semantic_check_enum_def(semantic, e),
+            RAstItem::ExternBlock(declarations) => semantic_check_extern(semantic, declarations),
         }
         i = i + 1;
     }
+}
+
+fn semantic_check_enum_def(semantic: &mut Semantic, e: &RAstEnum) {
+    // TODO: Check:
+    //  - no recursion (check with recursion)
+    //  - generic usage
+    //  - no duplicate variants
+}
+
+fn semantic_check_extern(semantic: &mut Semantic, declarations: &Vec<RAstExternFn>) {
+    // TODO: Check:
+    //  - only: exit, open, read, write, malloc
+    //  - (somewhat) correct signature (exit returns !, open has 3 parameters...)
 }
 
 /// Analyze one function and validate body against its signature.
