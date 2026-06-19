@@ -11,16 +11,49 @@ env:
 
 jobs:
   build:
+    strategy:
+      matrix:
+        arch:
+          - amd64
+          - arm64
+          - riscv64
 
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
-      - name: Install LLVM and Clang
+
+      - name: Set up QEMU
+        if: matrix.arch != 'amd64'
+        uses: docker/setup-qemu-action@v3
+
+      - name: Build and test (native amd64)
+        if: matrix.arch == 'amd64'
         run: |
           sudo apt-get update
-          sudo apt-get install -y llvm clang # installs lli and clang to interpret and compile .ll
-      - name: Build
-        run: cargo build --verbose
-      - name: Run tests
-        run: cargo test --verbose
+          sudo apt-get install -y llvm clang
+          cargo build --verbose
+          cargo test --verbose
+
+      - name: Build and test (ARM64/RISC-V via QEMU)
+        if: matrix.arch != 'amd64'
+        run: |
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            IMAGE="arm64v8/ubuntu:24.04"
+          else
+            IMAGE="riscv64/ubuntu:24.04"
+          fi
+
+          docker run --rm \
+            --platform linux/${{ matrix.arch }} \
+            -v "$PWD:/workspace" \
+            -w /workspace \
+            $IMAGE \
+            bash -c "
+              apt-get update &&
+              apt-get install -y curl build-essential llvm clang &&
+              curl https://sh.rustup.rs -sSf | sh -s -- -y &&
+              source \$HOME/.cargo/env &&
+              cargo build --verbose &&
+              cargo test --verbose
+            "
