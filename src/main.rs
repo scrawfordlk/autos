@@ -694,8 +694,7 @@ enum RType {
     /// pointee, mutable
     Reference(Box<RType>, bool),
     RawPointerMut(Box<RType>),
-    /// optional field is the currently instantiated type
-    Generic(Option<Box<RType>>),
+    Generic,
 }
 
 /// A Rust expression.
@@ -843,7 +842,7 @@ fn rType_size(codegen: &Codegen, icg: &ICodegen, ty: &RType) -> usize {
             },
             _ => 16, // assume that it is the built-in &str (8 bytes for pointer, 8 bytes for length)
         },
-        RType::Generic(_) => match codegen_generic_instance(codegen, codegen_current_function(codegen)) {
+        RType::Generic => match codegen_generic_instance(codegen, codegen_current_function(codegen)) {
             Option::Some(instance) => rType_size(codegen, icg, &instance),
             _ => panic("cannot identify size of uninstantiated generic type"),
         },
@@ -909,7 +908,7 @@ fn rType_to_llvm_name(codegen: &Codegen, icg: &ICodegen, ty: &RType) -> String {
         RType::Never => string("void"),
         RType::Reference(_, _) => string("ptr"),
         RType::RawPointerMut(_) => string("ptr"),
-        RType::Generic(_) => match codegen_generic_instance(codegen, codegen_current_function(codegen)) {
+        RType::Generic => match codegen_generic_instance(codegen, codegen_current_function(codegen)) {
             Option::Some(instance) => rType_to_llvm_name(codegen, icg, &instance),
             _ => panic("can't determine a LLVM type for an uninstantiated generic type"),
         },
@@ -940,7 +939,7 @@ fn rType_is_numeric(ty: &RType) -> bool {
 fn rType_is_enum(codegen: &Codegen, ty: &RType) -> bool {
     match ty {
         RType::Enum(_) => true,
-        RType::Generic(_) => match codegen_generic_instance(codegen, codegen_current_function(codegen)) {
+        RType::Generic => match codegen_generic_instance(codegen, codegen_current_function(codegen)) {
             Option::Some(instance) => rType_is_enum(codegen, &instance),
             _ => panic("unexpected missing instantiation for generic type in generic function"),
         },
@@ -985,17 +984,6 @@ fn rType_coerced_match(left: &RType, right: &RType) -> bool {
 /// This is true for all types, other than Unit and Never.
 fn rType_has_value(ty: &RType) -> bool {
     not(rType_coerced_match(ty, &RType::Unit))
-}
-
-/// If the type is generic, instantiate it with the given instance type.
-fn rType_instantiate(ty: &RType, instance: &RType) -> RType {
-    match ty {
-        RType::Generic(option) => match option {
-            Option::None => RType::Generic(Option::Some(box_new::<RType>(rType_clone(instance)))),
-            _ => panic("instantiating an already instantiated generic type"),
-        },
-        _ => rType_clone(ty),
-    }
 }
 
 /// Possible types of a scrutinee in a match expression. The contained type is the type the Scrutinee is matched
@@ -1353,7 +1341,7 @@ fn parse_type(lexer: &mut RLexer) -> RType {
         RToken::Identifier(_) => {
             let name: String = expect_identifier(lexer);
             if string_eq(&name, &string("T")) {
-                RType::Generic(Option::None)
+                RType::Generic // T is always a generic parameter
             } else {
                 RType::Enum(name)
             }
@@ -1850,7 +1838,6 @@ fn semantic_set_generic(Semantic::Semantic(_, _, _, generic): &mut Semantic, ins
     *generic = Option::Some(rType_clone(instance));
 }
 
-/// Get the current generic type parameter instantiation.
 fn semantic_get_generic(Semantic::Semantic(_, _, _, generic): &Semantic) -> Option<&RType> {
     match generic {
         Option::Some(ty) => Option::Some(ty),
@@ -1882,16 +1869,6 @@ fn semantic_expect_type_match(left: &RType, right: &RType) {
 
 /// Check if the given types, coerced from `actual` to `expected`, match.
 fn semantic_expect_coerced_type_match(semantic: &Semantic, actual: &RType, expected: &RType) {
-    match semantic_get_generic(semantic) {
-        Option::Some(instance) => {
-            let actual: RType = rType_instantiate(actual, instance);
-            let expected: RType = rType_instantiate(expected, instance);
-            if rType_coerced_match(&actual, &expected) {
-                return;
-            }
-        },
-        _ => {},
-    }
     if rType_coerced_match(actual, expected) {
         return;
     }
@@ -2740,7 +2717,7 @@ fn codegen_set_ssa_counter(
 /// Returns false if the code for the given type has already been generated.
 fn codegen_instantiate_generic(codegen: &mut Codegen, name: &String, ty: &RType) -> bool {
     let instance: RType = match ty {
-        RType::Generic(_) => match codegen_generic_instance(codegen, codegen_current_function(codegen)) {
+        RType::Generic => match codegen_generic_instance(codegen, codegen_current_function(codegen)) {
             Option::Some(instance) => instance,
             _ => rType_clone(ty), // assume this does not occur
         },
@@ -3249,7 +3226,7 @@ fn codegen_call(
             }
 
             match &return_type {
-                RType::Generic(_) => return_type = rType_clone(instance),
+                RType::Generic => return_type = rType_clone(instance),
                 _ => {},
             }
             do_generate
@@ -7138,33 +7115,6 @@ fn rLiteral_eq(left: &RLiteral, right: &RLiteral) -> bool {
 
 /// Check two Rust AST types for equality.
 fn rType_eq(a: &RType, b: &RType) -> bool {
-    let generic_match: bool = match a {
-        RType::Generic(left) => match b {
-            RType::Generic(right) => match left {
-                Option::Some(instance_a) => match right {
-                    Option::Some(instance_b) => {
-                        rType_eq(box_deref::<RType>(instance_a), box_deref::<RType>(instance_b))
-                    },
-                    _ => false,
-                },
-                _ => option_is_none::<Box<RType>>(right),
-            },
-            other => match left {
-                Option::Some(instance) => rType_eq(box_deref::<RType>(instance), other),
-                Option::None => false,
-            },
-        },
-        other => match b {
-            RType::Generic(right) => match right {
-                Option::Some(instance) => rType_eq(box_deref::<RType>(instance), other),
-                _ => false,
-            },
-            _ => false,
-        },
-    };
-    if generic_match {
-        return true;
-    }
     match a {
         RType::U8 => match b {
             RType::U8 => true,
@@ -7203,6 +7153,10 @@ fn rType_eq(a: &RType, b: &RType) -> bool {
         },
         RType::RawPointerMut(left) => match b {
             RType::RawPointerMut(right) => rType_eq(box_deref::<RType>(left), box_deref::<RType>(right)),
+            _ => false,
+        },
+        RType::Generic => match b {
+            RType::Generic => true,
             _ => false,
         },
         _ => false,
@@ -7504,12 +7458,7 @@ fn rType_clone(t: &RType) -> RType {
         RType::RawPointerMut(inner) => {
             RType::RawPointerMut(box_new::<RType>(rType_clone(box_deref::<RType>(inner))))
         },
-        RType::Generic(option) => match option {
-            Option::Some(instance) => RType::Generic(Option::Some(box_new::<RType>(rType_clone(
-                box_deref::<RType>(instance),
-            )))),
-            _ => RType::Generic(Option::None),
-        },
+        RType::Generic => RType::Generic,
     }
 }
 
@@ -7874,7 +7823,7 @@ fn rType_to_string(ty: &RType) -> String {
             string_push_string(&mut str, &rType_to_string(box_deref::<RType>(inner)));
             str
         },
-        RType::Generic(_) => string("T"), // generics can only use parameter "T"
+        RType::Generic => string("T"), // generics can only use parameter "T"
     }
 }
 
