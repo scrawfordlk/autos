@@ -3162,7 +3162,7 @@ fn codegen_match(codegen: &mut Codegen, value: &RAstExpr, arms: &Vec<RAstArm>) -
 
     // Allocate memory for potential result value, though size is still unknown.
     // In the event that the result type is unit, this instruction will be removed later.
-    let result_pointer: String = codegen_emit_alloca(codegen, &RType::Unit);
+    let result: String = codegen_emit_alloca(codegen, &RType::Unit);
     let alloca_idx: usize = codegen_code_last_index(codegen);
 
     let mut return_type: RType = RType::Never; // still unknown, coercing arm types yields correct type
@@ -3180,7 +3180,7 @@ fn codegen_match(codegen: &mut Codegen, value: &RAstExpr, arms: &Vec<RAstArm>) -
             is_last_arm,
             &expr_name,
             &expr_type,
-            &result_pointer,
+            &result,
             &end_label,
         );
 
@@ -3196,7 +3196,11 @@ fn codegen_match(codegen: &mut Codegen, value: &RAstExpr, arms: &Vec<RAstArm>) -
         // now we know the type and thus the size to allocate on the stack
         codegen_fixup_alloca(codegen, alloca_idx, &return_type);
 
-        codegen_emit_load(codegen, &return_type, &result_pointer)
+        if not(rType_is_enum(&return_type)) {
+            codegen_emit_load(codegen, &return_type, &result)
+        } else {
+            result
+        }
     } else {
         codegen_fixup(codegen, alloca_idx, string_new()); // alloca was not needed
         string_new() // no value is returned, so some placeholder
@@ -3249,8 +3253,9 @@ fn codegen_arm(
     let pattern: &RAstPattern = vec_at::<RAstPattern>(patterns, 0); // assume the arm only has a single pattern
     codegen_bind_or_destructure(codegen, pattern, expr_name, expr_type);
 
-    let STPair::ST(arm_value, arm_type) = codegen_expression(codegen, arm_expr);
+    let STPair::ST(mut arm_value, arm_type) = codegen_expression(codegen, arm_expr);
     if rType_has_value(&arm_type) {
+        arm_value = codegen_emit_load_if_enum(codegen, arm_value, &arm_type);
         codegen_emit_store(codegen, &arm_type, &arm_value, &result_pointer);
     }
 
