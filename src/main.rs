@@ -3062,7 +3062,7 @@ fn codegen_if(codegen: &mut Codegen, if_expression: &RAstIf) -> STPair {
 
     // Allocate memory for potential result value, though size is still unknown.
     // In the event that the result type is unit, this instruction will be removed later.
-    let result_pointer: String = codegen_emit_alloca(codegen, &RType::Unit);
+    let result: String = codegen_emit_alloca(codegen, &RType::Unit);
     let alloca_idx: usize = codegen_code_last_index(codegen);
 
     codegen_emit_br_conditional(codegen, &cond, &then_label, &else_label);
@@ -3070,10 +3070,11 @@ fn codegen_if(codegen: &mut Codegen, if_expression: &RAstIf) -> STPair {
     // start of the then block
     codegen_emit_label(codegen, &then_label);
 
-    let STPair::ST(then_value, mut if_type): STPair = codegen_block(codegen, then_block);
+    let STPair::ST(mut then_value, mut if_type): STPair = codegen_block(codegen, then_block);
 
     if rType_has_value(&if_type) {
-        codegen_emit_store(codegen, &if_type, &then_value, &result_pointer);
+        then_value = codegen_emit_load_if_enum(codegen, then_value, &if_type);
+        codegen_emit_store(codegen, &if_type, &then_value, &result);
     }
 
     // end of then block, so jump to the end
@@ -3084,13 +3085,14 @@ fn codegen_if(codegen: &mut Codegen, if_expression: &RAstIf) -> STPair {
 
     match else_branch {
         Option::Some(else_branch) => {
-            let STPair::ST(else_value, else_type): STPair = match else_branch {
+            let STPair::ST(mut else_value, else_type): STPair = match else_branch {
                 RAstElse::If(nested_if) => codegen_if(codegen, box_deref::<RAstIf>(nested_if)),
                 RAstElse::Block(block) => codegen_block(codegen, block),
             };
 
             if rType_has_value(&else_type) {
-                codegen_emit_store(codegen, &else_type, &else_value, &result_pointer);
+                else_value = codegen_emit_load_if_enum(codegen, else_value, &else_type);
+                codegen_emit_store(codegen, &else_type, &else_value, &result);
             }
 
             if_type = rType_lub_coerce(if_type, else_type);
@@ -3109,7 +3111,11 @@ fn codegen_if(codegen: &mut Codegen, if_expression: &RAstIf) -> STPair {
         // now we know the type and thus the size to allocate on the stack
         codegen_fixup_alloca(codegen, alloca_idx, &if_type);
 
-        codegen_emit_load(codegen, &if_type, &result_pointer)
+        if not(rType_is_enum(&if_type)) {
+            codegen_emit_load(codegen, &if_type, &result)
+        } else {
+            result
+        }
     } else {
         codegen_fixup(codegen, alloca_idx, string_new()); // alloca was not needed
         string_new() // no value is returned, so some placeholder
