@@ -2888,8 +2888,8 @@ fn codegen_function(codegen: &mut Codegen, icg: &ICodegen, function: &RAstFuncti
             codegen_emit_ret_value(codegen, icg, &return_type, &value_name);
         },
     }
-    codegen_emit_function_end(codegen);
     codegen_pop_scope(codegen);
+    codegen_emit_function_end(codegen);
 }
 
 /// Emit LLVM-IR for one block expression.
@@ -3225,7 +3225,7 @@ fn codegen_call(
         i = i + 1;
     }
 
-    let return_type: RType = match iCodegen_search_global(icg, string_clone(name)) {
+    let mut return_type: RType = match iCodegen_search_global(icg, string_clone(name)) {
         Option::Some(item) => match item {
             Item::Function(return_type, _, _, _) => rType_clone(return_type),
             _ => RType::Unit, // assume this case never occurs
@@ -3235,16 +3235,26 @@ fn codegen_call(
 
     let generate_function: bool = match generic {
         Option::Some(instance) => {
-            let generated: bool = codegen_instantiate_generic(codegen, name, instance);
+            let do_generate: bool = codegen_instantiate_generic(codegen, name, instance);
+
+            // size_of<T>() is inlined instead of generating a function
             if string_eq(name, &string("size_of")) {
                 let size: usize = rType_size(codegen, icg, instance);
                 codegen_remove_generic_instance(codegen, name);
                 return STPair::ST(integer_to_string(size), RType::Usize);
             }
-            generated
+
+            if rType_is_generic(&return_type) {
+                return_type = rType_clone(instance);
+            }
+            do_generate
         },
         _ => false,
     };
+
+    // necessary before generating call so that generic return values can be resolved correctly
+    let caller: String = string_clone(codegen_current_function(codegen));
+    codegen_set_current_function(codegen, string_clone(name));
 
     let mut result_name: String = if rType_has_value(&return_type) {
         codegen_emit_call_assign(codegen, icg, name, &return_type, &value_types, &value_names)
@@ -3293,6 +3303,7 @@ fn codegen_call(
         _ => {},
     }
 
+    codegen_set_current_function(codegen, caller);
     STPair::ST(result_name, return_type)
 }
 
