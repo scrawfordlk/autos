@@ -6517,6 +6517,15 @@ fn vec_at<T>(vec: &Vec<T>, index: usize) -> &T {
     unwrap::<&T>(vec_get::<T>(vec, index))
 }
 
+/// Get a mutable reference to an element by index.
+/// Panics, if the index is out of bounds.
+fn vec_at_mut<T>(vec: &mut Vec<T>, index: usize) -> &mut T {
+    if index >= vec_len::<T>(vec) {
+        panic("Out-of-bounds vector access!");
+    }
+    unwrap::<&mut T>(vec_get_mut::<T>(vec, index))
+}
+
 /// Set a value at the given index. Return false if the index is out of bounds.
 fn vec_set<T>(vec: &mut Vec<T>, index: usize, value: T) -> bool {
     if index >= vec_len::<T>(vec) {
@@ -6570,8 +6579,13 @@ fn stringMapEntry_get_key<T>(StringMapEntry::Entry(key, _): &StringMapEntry<T>) 
     key
 }
 
-/// Get the value stored in one StringMapEntry.
+/// Get the value stored in one StringMapEntry via a shared reference.
 fn stringMapEntry_get_value<T>(StringMapEntry::Entry(_, value): &StringMapEntry<T>) -> &T {
+    value
+}
+
+/// Get the value stored in one StringMapEntry via a mutable reference.
+fn stringMapEntry_get_value_mut<T>(StringMapEntry::Entry(_, value): &mut StringMapEntry<T>) -> &mut T {
     value
 }
 
@@ -6624,6 +6638,29 @@ fn stringMap_get<T>(map: &StringMap<T>, key: String) -> Option<&T> {
         nth = nth - 1;
     }
     Option::<&T>::None
+}
+
+/// Get a mutable reference to the value for a key.
+fn stringMap_get_mut<T>(map: &mut StringMap<T>, key: String) -> Option<&mut T> {
+    let bucket: &mut Vec<StringMapEntry<T>> = stringMap_bucket_mut::<T>(map, string_clone(&key));
+
+    let length: usize = vec_len::<StringMapEntry<T>>(bucket);
+    if length == 0 {
+        return Option::<&mut T>::None;
+    }
+
+    let mut nth: usize = length; // traverse backwards due to construction of the collision list
+    while nth > 0 {
+        let other_key: &String =
+            stringMapEntry_get_key::<T>(vec_at_mut::<StringMapEntry<T>>(bucket, nth - 1));
+        if string_eq(other_key, &key) {
+            return Option::Some(stringMapEntry_get_value_mut::<T>(
+                vec_at_mut::<StringMapEntry<T>>(bucket, nth - 1),
+            ));
+        }
+        nth = nth - 1;
+    }
+    Option::<&mut T>::None
 }
 
 /// Check whether a key exists.
