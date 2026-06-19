@@ -3697,22 +3697,6 @@ fn generic_get_type(Generic::Manager(mappings, _): &Generic, name: &String) -> O
     }
 }
 
-/// Returns true if the code for the given type has already been generated.
-fn generic_is_generated(Generic::Manager(_, generated): &Generic, name: &String, ty: &RType) -> bool {
-    let instances: &Vec<RType> = match stringMap_get(generated, string_clone(name)) {
-        Option::Some(instances) => instances,
-        _ => return false,
-    };
-    let mut i: usize = 0;
-    while i < vec_len::<RType>(instances) {
-        if rType_eq(ty, vec_at::<RType>(instances, i)) {
-            return true;
-        }
-        i = i + 1;
-    }
-    return false;
-}
-
 fn generic_uninstantiate(Generic::Manager(mappings, _): &mut Generic, name: &String) {
     if not(stringMap_remove::<RType>(mappings, name)) {
         panic("unexpected removal of non-existent generic type parameter mapping")
