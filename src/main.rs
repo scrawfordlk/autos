@@ -2722,8 +2722,11 @@ fn codegen_increment_ssa_counter(Codegen::Gen(_, _, Counter::Counter(locals, _),
 }
 
 /// Reset the SSA numbering value to 0.
-fn codegen_reset_ssa_counter(Codegen::Gen(_, _, Counter::Counter(counter, _), _, _): &mut Codegen) {
-    *counter = 0;
+fn codegen_set_ssa_counter(
+    Codegen::Gen(_, _, Counter::Counter(counter, _), _, _): &mut Codegen,
+    value: usize,
+) {
+    *counter = value;
 }
 
 /// Instantiate the generic type parameter with the given type.
@@ -3256,9 +3259,16 @@ fn codegen_call(
                         RAstItem::Function(function) => {
                             let other: &String = rAstFunction_name(function);
                             if string_eq(name, other) {
-                                // TODO: handle generating code for another function while
-                                // generating code for current function
+                                // save the current function code generation index and SSA counter value
+                                let fn_index: usize = code_current_function_index(codegen_code(codegen));
+                                let ssa_counter: usize = codegen_ssa_counter(codegen);
+
+                                // recursively generate code for the generic function.
                                 codegen_function(codegen, icg, function);
+
+                                // restore the saved values
+                                code_set_current_function_index(codegen_code_mut(codegen), fn_index);
+                                codegen_set_ssa_counter(codegen, ssa_counter);
                                 i = vec_len::<RAstItem>(items); // break
                             }
                         },
@@ -3702,40 +3712,67 @@ fn generic_uninstantiate(Generic::Manager(mappings, _): &mut Generic, name: &Str
 
 /// The emitted LLVM-IR code.
 enum Code {
-    /// TODO: refactor so that functions can be generated mid other functions
-    /// code lines, global strings
-    Code(Vec<String>, Vec<String>),
+    Code(Vec<Vec<String>>, Vec<String>, usize),
 }
 
 fn code_new() -> Code {
-    Code::Code(vec_new::<String>(), vec_new::<String>())
+    Code::Code(vec_new::<Vec<String>>(), vec_new::<String>(), 0)
+}
+
+/// Get a shared reference to the code generated for the current function.
+fn code_current_function(Code::Code(functions, _, idx): &Code) -> &Vec<String> {
+    vec_at::<Vec<String>>(functions, *idx)
+}
+/// Get a mutable reference to the code generated for the current function.
+fn code_current_function_mut(Code::Code(functions, _, idx): &mut Code) -> &mut Vec<String> {
+    vec_at_mut::<Vec<String>>(functions, *idx)
+}
+
+/// Start code generation for a new function.
+fn code_start_new_function(Code::Code(functions, _, idx): &mut Code) {
+    vec_push::<Vec<String>>(functions, vec_new::<String>());
+    *idx = vec_len::<Vec<String>>(functions) - 1;
+}
+
+/// Get the currently generated function's index.
+fn code_current_function_index(Code::Code(_, _, idx): &Code) -> usize {
+    *idx
+}
+
+/// Set the index of the function to generate code for.
+fn code_set_current_function_index(Code::Code(_, _, old_idx): &mut Code, idx: usize) {
+    *old_idx = idx;
 }
 
 /// Get the line index of the last emitted line.
 fn codegen_code_last_index(codegen: &Codegen) -> usize {
-    let Code::Code(lines, _): &Code = codegen_code(codegen);
-    vec_len::<String>(lines) - 1
+    vec_len::<String>(code_current_function(codegen_code(codegen))) - 1
 }
 
 /// Fixup the emitted line at index `i` by replacing it with `line`.
 fn codegen_fixup(codegen: &mut Codegen, i: usize, line: String) {
-    let Code::Code(lines, _): &mut Code = codegen_code_mut(codegen);
-    vec_set(lines, i, line);
+    vec_set::<String>(code_current_function_mut(codegen_code_mut(codegen)), i, line);
 }
 
 /// Get the emitted LLVM-IR from Codegen.
-fn codegen_into_llvm(Codegen::Gen(Code::Code(lines, strings), _, _, _, _): Codegen) -> String {
+fn codegen_into_llvm(Codegen::Gen(Code::Code(functions, strings, _), _, _, _, _): Codegen) -> String {
     let mut code: String = string_new();
+
     let mut i: usize = 0;
-    while i < vec_len::<String>(&lines) {
-        let line: &String = vec_at::<String>(&lines, i);
-        if string_len(line) > 0 {
-            string_push_string(&mut code, line);
-            string_push(&mut code, '\n');
+    while i < vec_len::<Vec<String>>(&functions) {
+        let function: &Vec<String> = vec_at::<Vec<String>>(&functions, i);
+        let mut j: usize = 0;
+        while j < vec_len::<String>(function) {
+            let line: &String = vec_at::<String>(function, j);
+            if string_len(line) > 0 {
+                string_push_string(&mut code, line);
+                string_push(&mut code, '\n');
+            }
+            j = j + 1;
         }
+        string_push(&mut code, '\n');
         i = i + 1;
     }
-    string_push(&mut code, '\n');
     i = 0;
     while i < vec_len::<String>(&strings) {
         let line: &String = vec_at::<String>(&strings, i);
@@ -3750,8 +3787,7 @@ fn codegen_into_llvm(Codegen::Gen(Code::Code(lines, strings), _, _, _, _): Codeg
 
 /// Emit the given string as a new line of LLVM-IR code.
 fn codegen_emit_line(codegen: &mut Codegen, line: String) {
-    let Code::Code(lines, _): &mut Code = codegen_code_mut(codegen);
-    vec_push::<String>(lines, line);
+    vec_push::<String>(code_current_function_mut(codegen_code_mut(codegen)), line);
 }
 
 /// Emit a binary arithmetic instruction.
@@ -4165,6 +4201,8 @@ fn codegen_emit_fn_signature(
     return_type_name: &String,
     parameters: &Vec<RAstVariable>,
 ) {
+    code_start_new_function(codegen_code_mut(codegen)); // Start code generation for new function
+
     let mut line: String = string_new();
     string_push_str(&mut line, "define ");
     string_push_string(&mut line, return_type_name);
@@ -4204,8 +4242,8 @@ fn codegen_emit_fn_signature(
 
 /// Emit the end of a function and reset the numbering scheme.
 fn codegen_emit_function_end(codegen: &mut Codegen) {
-    codegen_emit_line(codegen, string("}\n"));
-    codegen_reset_ssa_counter(codegen);
+    codegen_emit_line(codegen, string("}"));
+    codegen_set_ssa_counter(codegen, 0);
 }
 
 /// Emit an LLVM `declare` for an extern function.
@@ -4250,7 +4288,7 @@ fn codegen_emit_declare(
 /// ```
 /// Returns `%<name>`.
 fn codegen_emit_string(
-    Codegen::Gen(Code::Code(_, strings), _, Counter::Counter(_, counter), _, _): &mut Codegen,
+    Codegen::Gen(Code::Code(_, strings, _), _, Counter::Counter(_, counter), _, _): &mut Codegen,
     value: &String,
 ) -> String {
     let mut name: String = string("@str");
@@ -4280,7 +4318,7 @@ fn codegen_emit_string(
 /// Fixup a previously emitted alloca instruction without changing the destination register.
 // TODO: assumes a lot about the emitted LLVM-IR, make this more robust.
 fn codegen_fixup_alloca(codegen: &mut Codegen, icg: &ICodegen, index: usize, new_type: &RType) {
-    let Code::Code(lines, _): &mut Code = codegen_code_mut(codegen);
+    let lines: &mut Vec<String> = code_current_function_mut(codegen_code_mut(codegen));
 
     let old_alloca: &String = vec_at::<String>(lines, index);
     let mut new_alloca: String = string_new();
