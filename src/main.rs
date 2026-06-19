@@ -843,7 +843,10 @@ fn rType_size(codegen: &Codegen, icg: &ICodegen, ty: &RType) -> usize {
             },
             _ => 16, // assume that it is the built-in &str (8 bytes for pointer, 8 bytes for length)
         },
-        RType::Generic(_) => panic("cannot identify size of uninstantiated generic type"),
+        RType::Generic(_) => match codegen_generic_instance(codegen, codegen_current_function(codegen)) {
+            Option::Some(instance) => rType_size(codegen, icg, &instance),
+            _ => panic("cannot identify size of uninstantiated generic type"),
+        },
     }
 }
 
@@ -3231,7 +3234,15 @@ fn codegen_call(
     };
 
     let generate_function: bool = match generic {
-        Option::Some(instance) => codegen_instantiate_generic(codegen, name, instance),
+        Option::Some(instance) => {
+            let generated: bool = codegen_instantiate_generic(codegen, name, instance);
+            if string_eq(name, &string("size_of")) {
+                let size: usize = rType_size(codegen, icg, instance);
+                codegen_remove_generic_instance(codegen, name);
+                return STPair::ST(integer_to_string(size), RType::Usize);
+            }
+            generated
+        },
         _ => false,
     };
 
@@ -4141,6 +4152,35 @@ fn codegen_emit_call_void(
     codegen_emit_line(codegen, line);
 }
 
+/// Mangles a function name by replacing all `::` with `..`  and appending `.<type>` if the function is generic.
+fn codegen_mangle_name(codegen: &Codegen, callee: &String) -> String {
+    let mut name: String = string_with_capacity(string_len(callee));
+    let mut i: usize = 0;
+    while i < string_len(callee) {
+        let mut c: char = string_at(callee, i);
+        c = if c == ':' { '.' } else { c };
+        string_push(&mut name, c);
+        i = i + 1;
+    }
+    match codegen_generic_instance(codegen, callee) {
+        Option::Some(ty) => {
+            string_push(&mut name, '.'); // mangle name to avoid name collisions
+            match &ty {
+                RType::Enum(enum_name) => {
+                    if string_eq(&enum_name, &string("&str")) {
+                        string_push_string(&mut name, &string("str"));
+                        return name;
+                    }
+                },
+                _ => {},
+            }
+            string_push_string(&mut name, &rType_to_string(&ty));
+        },
+        _ => {},
+    }
+    name
+}
+
 /// Construct a call instruction and return it.
 /// ```llvm
 /// call <ty> @<name>(<type> <arg>, ...)
@@ -4156,14 +4196,7 @@ fn codegen_construct_call(
     let mut line: String = string("call ");
     string_push_string(&mut line, &rType_to_llvm_name(codegen, icg, return_type));
     string_push_str(&mut line, " @");
-    let mut name: String = string_replace_all(callee, ':', '.');
-    match codegen_generic_instance(codegen, callee) {
-        Option::Some(ty) => {
-            string_push(&mut name, '.'); // mangle name to avoid name collisions
-            string_push_string(&mut name, &rType_to_string(&ty));
-        },
-        _ => {},
-    }
+    let name: String = codegen_mangle_name(codegen, callee);
     string_push_string(&mut line, &name);
     string_push(&mut line, '(');
 
@@ -4207,14 +4240,7 @@ fn codegen_emit_fn_signature(
     string_push_str(&mut line, "define ");
     string_push_string(&mut line, return_type_name);
     string_push_str(&mut line, " @");
-    let mut name: String = string_replace_all(fn_name, ':', '.');
-    match codegen_generic_instance(codegen, fn_name) {
-        Option::Some(ty) => {
-            string_push(&mut name, '.'); // mangle name to avoid name collisions
-            string_push_string(&mut name, &rType_to_string(&ty));
-        },
-        _ => {}, // not generic
-    }
+    let name: String = codegen_mangle_name(codegen, fn_name);
     string_push_string(&mut line, &name);
     string_push_str(&mut line, "(");
 
@@ -7660,18 +7686,6 @@ fn string_push_str(String::Inner(bytes): &mut String, str: &str) {
 /// Push a string onto another string.
 fn string_push_string(String::Inner(bytes): &mut String, String::Inner(other_bytes): &String) {
     vec_extend::<u8>(bytes, other_bytes);
-}
-
-fn string_replace_all(string: &String, to_replace: char, replacement: char) -> String {
-    let mut new_string: String = string_with_capacity(string_len(string));
-    let mut i: usize = 0;
-    while i < string_len(string) {
-        let mut c: char = string_at(string, i);
-        c = if c == to_replace { replacement } else { c };
-        string_push(&mut new_string, c);
-        i = i + 1;
-    }
-    new_string
 }
 
 /// Converts a string into an integer given the base.
