@@ -937,9 +937,13 @@ fn rType_is_numeric(ty: &RType) -> bool {
     }
 }
 
-fn rType_is_enum(ty: &RType) -> bool {
+fn rType_is_enum(codegen: &Codegen, ty: &RType) -> bool {
     match ty {
         RType::Enum(_) => true,
+        RType::Generic(_) => match codegen_generic_instance(codegen, codegen_current_function(codegen)) {
+            Option::Some(instance) => rType_is_enum(codegen, &instance),
+            _ => panic("unexpected missing instantiation for generic type in generic function"),
+        },
         _ => false,
     }
 }
@@ -2878,7 +2882,7 @@ fn codegen_function(codegen: &mut Codegen, icg: &ICodegen, function: &RAstFuncti
         _ => {
             if rType_eq(&block_type, &RType::Never) {
                 // there is not value, so dummy return value that is never reached anyway
-                value_name = if rType_is_enum(&return_type) {
+                value_name = if rType_is_enum(codegen, &return_type) {
                     codegen_emit_alloca(codegen, icg, &return_type)
                 } else {
                     string("0")
@@ -3097,7 +3101,7 @@ fn codegen_unary_op(
             },
             _ => {
                 let STPair::ST(name, ty): STPair = codegen_expression(codegen, icg, value);
-                if rType_is_enum(&ty) {
+                if rType_is_enum(codegen, &ty) {
                     let new_type: RType = RType::Reference(box_new::<RType>(ty), *mutable_ref);
                     STPair::ST(name, new_type) // enum is already a pointer
                 } else {
@@ -3116,7 +3120,7 @@ fn codegen_unary_op(
                 RType::RawPointerMut(pointed) => rType_clone(box_deref::<RType>(&pointed)),
                 _ => RType::Unit, // assume this case never occurs
             };
-            if not(rType_is_enum(&inner_type)) {
+            if not(rType_is_enum(codegen, &inner_type)) {
                 name = codegen_emit_load(codegen, icg, &inner_type, &name);
             }
             STPair::ST(name, inner_type)
@@ -3147,7 +3151,7 @@ fn codegen_literal(codegen: &mut Codegen, icg: &ICodegen, literal: &RLiteral) ->
 /// Emit LLVM-IR for a variable-use expression.
 fn codegen_variable_use(codegen: &mut Codegen, icg: &ICodegen, variable_name: &String) -> STPair {
     let STPair::ST(pointer_name, ty): STPair = codegen_scope_lookup(codegen, variable_name);
-    if not(rType_is_enum(&ty)) {
+    if not(rType_is_enum(codegen, &ty)) {
         let value_name: String = codegen_emit_load(codegen, icg, &ty, &pointer_name);
         STPair::ST(value_name, ty)
     } else {
@@ -3264,7 +3268,7 @@ fn codegen_call(
         string_new()
     };
 
-    if rType_is_enum(&return_type) {
+    if rType_is_enum(codegen, &return_type) {
         let pointer: String = codegen_emit_alloca(codegen, icg, &return_type);
         codegen_emit_store(codegen, icg, &return_type, &result_name, &pointer);
         result_name = pointer;
@@ -3369,7 +3373,7 @@ fn codegen_if(codegen: &mut Codegen, icg: &ICodegen, if_expression: &RAstIf) -> 
         // now we know the type and thus the size to allocate on the stack
         codegen_fixup_alloca(codegen, icg, alloca_idx, &if_type);
 
-        if not(rType_is_enum(&if_type)) {
+        if not(rType_is_enum(codegen, &if_type)) {
             codegen_emit_load(codegen, icg, &if_type, &result)
         } else {
             result
@@ -3455,7 +3459,7 @@ fn codegen_match(codegen: &mut Codegen, icg: &ICodegen, value: &RAstExpr, arms: 
         // now we know the type and thus the size to allocate on the stack
         codegen_fixup_alloca(codegen, icg, alloca_idx, &return_type);
 
-        if not(rType_is_enum(&return_type)) {
+        if not(rType_is_enum(codegen, &return_type)) {
             codegen_emit_load(codegen, icg, &return_type, &result)
         } else {
             result
@@ -3543,7 +3547,7 @@ fn codegen_arm_match(
 ) {
     let eq: RAstComparisonOp = RAstComparisonOp::Eq;
     let scrutinee: Scrutinee = scrutinee_from_type(expr_type);
-    let is_enum_reference: bool = rType_is_enum(scrutinee_match_type(&scrutinee));
+    let is_enum_reference: bool = rType_is_enum(codegen, scrutinee_match_type(&scrutinee));
     let expr_name: String = if and(scrutinee_is_reference(&scrutinee), not(is_enum_reference)) {
         codegen_emit_load(codegen, icg, scrutinee_match_type(&scrutinee), expr_name)
     } else {
@@ -3600,7 +3604,7 @@ fn codegen_bind_or_destructure(
         RAstPattern::EnumVariant(name, variant, inner_patterns) => {
             // assume all inner patterns are irrefutable
             if vec_len::<RAstPattern>(inner_patterns) > 0 {
-                let is_enum_reference: bool = rType_is_enum(scrutinee_match_type(&scrutinee));
+                let is_enum_reference: bool = rType_is_enum(codegen, scrutinee_match_type(&scrutinee));
                 let expr_name: String = if and(scrutinee_is_reference(&scrutinee), not(is_enum_reference)) {
                     codegen_emit_load(codegen, icg, scrutinee_match_type(&scrutinee), expr_name)
                 } else {
@@ -4110,7 +4114,7 @@ fn codegen_emit_pointer_add(
 /// If the value is an enum, load the value and return the name of the register with the loaded
 /// value, otherwise return back the given value's name.
 fn codegen_emit_load_if_enum(codegen: &mut Codegen, icg: &ICodegen, value: String, ty: &RType) -> String {
-    if rType_is_enum(&ty) {
+    if rType_is_enum(codegen, &ty) {
         codegen_emit_load(codegen, icg, &ty, &value)
     } else {
         value
@@ -4212,7 +4216,7 @@ fn codegen_construct_call(
     while i < len {
         let argument_type: &RType = vec_at::<RType>(arg_types, i);
         let argument_value: &String = vec_at::<String>(args, i);
-        if rType_is_enum(argument_type) {
+        if rType_is_enum(codegen, argument_type) {
             string_push_str(&mut line, "ptr"); // pass enums by reference
         } else {
             string_push_string(&mut line, &rType_to_llvm_name(codegen, icg, argument_type));
@@ -4255,7 +4259,7 @@ fn codegen_emit_fn_signature(
     let len: usize = vec_len::<RAstVariable>(parameters);
     while i < len {
         let RAstVariable::Variable(_, parameter_type): &RAstVariable = vec_at::<RAstVariable>(parameters, i);
-        if rType_is_enum(parameter_type) {
+        if rType_is_enum(codegen, parameter_type) {
             string_push_str(&mut line, "ptr"); // pass enums by reference
         } else {
             string_push_string(&mut line, &rType_to_llvm_name(codegen, icg, parameter_type));
