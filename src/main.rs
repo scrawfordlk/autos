@@ -837,13 +837,13 @@ fn rType_size(codegen: &Codegen, icg: &ICodegen, ty: &RType) -> usize {
         RType::Usize | RType::Reference(_, _) | RType::RawPointerMut(_) => size_of::<usize>(),
         RType::Unit | RType::Never => 0,
         RType::Enum(name) => match iCodegen_search_global(icg, string_clone(name)) {
-            Option::Some(Item::Enum(rast_enum)) => rAstEnum_size(codegen, icg, rast_enum),
+            Option::Some(item) => match item {
+                Item::Enum(rast_enum) => rAstEnum_size(codegen, icg, rast_enum),
+                _ => 16, // assume that it is the built-in &str (8 bytes for pointer, 8 bytes for length)
+            },
             _ => 16, // assume that it is the built-in &str (8 bytes for pointer, 8 bytes for length)
         },
-        RType::Generic(_) => match codegen_generic_instance(codegen) {
-            Option::Some(instance) => rType_size(codegen, icg, instance),
-            _ => panic("cannot identify size of uninstantiated generic type"),
-        },
+        RType::Generic(_) => panic("cannot identify size of uninstantiated generic type"),
     }
 }
 
@@ -906,9 +906,9 @@ fn rType_to_llvm_name(codegen: &Codegen, icg: &ICodegen, ty: &RType) -> String {
         RType::Never => string("void"),
         RType::Reference(_, _) => string("ptr"),
         RType::RawPointerMut(_) => string("ptr"),
-        RType::Generic(_) => match codegen_generic_instance(codegen) {
-            Option::Some(instance) => rType_to_llvm_name(codegen, icg, instance),
-            _ => panic("cannot determine LLVM type for uninstantiated generic type"),
+        RType::Generic(_) => match codegen_generic_instance(codegen, codegen_current_function(codegen)) {
+            Option::Some(instance) => rType_to_llvm_name(codegen, icg, &instance),
+            _ => panic("can't determine a LLVM type for an uninstantiated generic type"),
         },
         enum_type => {
             let mut size: usize = rType_size(codegen, icg, enum_type);
@@ -2624,8 +2624,8 @@ fn semantic_check_pattern(
 
 /// Type that encapsulates the mutable state during LLVM-IR code generation from an AST.
 enum Codegen {
-    /// llvm code, is main function, SSA counter, local symbol table, current type instantantiation
-    Gen(Code, bool, Counter, StringMapStack<STPair>, Option<RType>),
+    /// llvm code, current function, SSA counter, local symbol table
+    Gen(Code, String, Counter, StringMapStack<STPair>, Generic),
 }
 
 /// Type that encapsulates the immutable information needed by the code generator.
@@ -2634,6 +2634,7 @@ enum ICodegen {
     Static(RAst, StringMap<Item>),
 }
 
+/// Type that keeps track of counters to avoid name collisions.
 enum Counter {
     /// Local variable counter, global string counter
     Counter(usize, usize),
@@ -2659,7 +2660,7 @@ fn iCodegen_search_global(codegen: &ICodegen, name: String) -> Option<&Item> {
 fn codegen_new() -> Codegen {
     let local_variables: StringMapStack<STPair> = stringMapStack_new::<STPair>();
     let counter: Counter = Counter::Counter(0, 0);
-    Codegen::Gen(code_new(), false, counter, local_variables, Option::None)
+    Codegen::Gen(code_new(), string_new(), counter, local_variables, generic_new())
 }
 
 /// Get a shared reference to the code.
@@ -2672,15 +2673,18 @@ fn codegen_code_mut(Codegen::Gen(code, _, _, _, _): &mut Codegen) -> &mut Code {
     code
 }
 
-/// Marks the current function as the main function.
-fn codegen_mark_as_main(codegen: &mut Codegen, is_main_function: bool) {
-    let Codegen::Gen(_, is_main, _, _, _): &mut Codegen = codegen;
-    *is_main = is_main_function;
+/// Sets the current function's name to the given name.
+fn codegen_set_current_function(Codegen::Gen(_, current_function, _, _, _): &mut Codegen, function: String) {
+    *current_function = function;
+}
+
+fn codegen_current_function(Codegen::Gen(_, function, _, _, _): &Codegen) -> &String {
+    function
 }
 
 /// Return true if the current function is the main function.
-fn codegen_is_main(Codegen::Gen(_, is_main, _, _, _): &Codegen) -> bool {
-    *is_main
+fn codegen_is_main(Codegen::Gen(_, function, _, _, _): &Codegen) -> bool {
+    string_eq(function, &string("main"))
 }
 
 /// Push a new empty scope onto the stack.
@@ -2722,34 +2726,37 @@ fn codegen_reset_ssa_counter(Codegen::Gen(_, _, Counter::Counter(counter, _), _,
     *counter = 0;
 }
 
-/// Instantiate the generic with the given type.
-fn codegen_instantiate_generic(Codegen::Gen(_, _, _, _, instance): &mut Codegen, ty: RType) {
-    eprint_str("Instantiate generic parameter with: ");
-    eprint_string(&rType_to_string(&ty));
-    eprintln();
-    *instance = Option::Some(ty)
-}
-
-/// Undo the instantiation of the generic.
-fn codegen_uninstantiate_generic(Codegen::Gen(_, _, _, _, instance): &mut Codegen) {
-    eprint_str("Uninstantiating generic parameter that was holding: ");
-    match instance {
-        Option::Some(instance) => {
-            eprint_string(&rType_to_string(instance));
+/// Instantiate the generic type parameter with the given type.
+/// Returns false if the code for the given type has already been generated.
+fn codegen_instantiate_generic(codegen: &mut Codegen, name: &String, ty: &RType) -> bool {
+    let instance: RType = match ty {
+        RType::Generic(_) => match codegen_generic_instance(codegen, codegen_current_function(codegen)) {
+            Option::Some(instance) => instance,
+            _ => rType_clone(ty), // assume this does not occur
         },
-        _ => eprint_str("Surprising missing instance definition"),
+        _ => rType_clone(ty),
+    };
+    let Codegen::Gen(_, _, _, _, generic): &mut Codegen = codegen;
+    generic_instantiate(generic, name, &instance)
+}
+
+/// Get the type the generic type parameter is mapped to.
+/// Returns None if there is no mapping for the generic type parameter.
+fn codegen_generic_instance(Codegen::Gen(_, _, _, _, generic): &Codegen, name: &String) -> Option<RType> {
+    generic_get_type(generic, name)
+}
+
+/// Undo the instantiation of the generic type parameter.
+fn codegen_remove_generic_instance(Codegen::Gen(_, _, _, _, generic): &mut Codegen, name: &String) {
+    generic_uninstantiate(generic, name);
+}
+
+/// Return true if the given item's generic parameter is instantiated.
+fn codegen_is_instantiated(Codegen::Gen(_, _, _, _, generic): &Codegen, name: &String) -> bool {
+    match generic_get_type(generic, name) {
+        Option::Some(_) => true,
+        _ => false,
     }
-    eprintln();
-    *instance = Option::None
-}
-
-/// Get the instantiation of the generic if there is one.
-fn codegen_generic_instance(Codegen::Gen(_, _, _, _, instance): &Codegen) -> &Option<RType> {
-    instance
-}
-
-fn codegen_generic_is_instantiated(codegen: &Codegen) -> bool {
-    not(option_is_none::<RType>(codegen_generic_instance(codegen)))
 }
 
 /// Get a unique virtual register name.
@@ -2824,12 +2831,12 @@ fn codegen_extern_block(codegen: &mut Codegen, icg: &ICodegen, functions: &Vec<R
 /// Emit LLVM-IR for one function definition.
 fn codegen_function(codegen: &mut Codegen, icg: &ICodegen, function: &RAstFunction) {
     let RAstFunction::Fn(is_generic, _, name, parameters, return_type, body): &RAstFunction = function;
-    if and(*is_generic, not(codegen_generic_is_instantiated(codegen))) {
+    codegen_set_current_function(codegen, string_clone(name));
+    if and(*is_generic, not(codegen_is_instantiated(codegen, name))) {
         return; // do not generate generic functions unless type parameter is instantiated
     }
 
-    let llvm_return_type: String = if string_eq(name, &string("main")) {
-        codegen_mark_as_main(codegen, true);
+    let llvm_return_type: String = if codegen_is_main(codegen) {
         if rType_eq(&return_type, &RType::Unit) {
             string("i64")
         } else {
@@ -2876,8 +2883,6 @@ fn codegen_function(codegen: &mut Codegen, icg: &ICodegen, function: &RAstFuncti
         },
     }
     codegen_emit_function_end(codegen);
-
-    codegen_mark_as_main(codegen, false);
     codegen_pop_scope(codegen);
 }
 
@@ -3203,29 +3208,6 @@ fn codegen_call(
     values: &Vec<RAstExpr>,
     generic: &Option<RType>,
 ) -> STPair {
-    // TODO: we might be overwriting the current instance
-    // Maybe I should differentiate two different instances:
-    //  - 1. The instance for the current function (None, if not generic, Some if generic)
-    //  - 2. The instance to resolve types when performing a function call.
-    // Challenge: I somehow have to deal with these overlapping in some weird ways.
-    // That is these have to work
-    // ```
-    // fn main() {
-    // f::<usize>(10);
-    // }
-    // fn f<T>(param: T) {
-    //   g::<u8>(10 as u8); // T is currently instantiated to usize but also we know that we
-    //   instantiate g with T, i.e. u8. So g's parameter of type T, is actually type u8, while f's
-    //   parameter is still type usize when generating code.
-    // }
-    // ```
-    match generic {
-        Option::Some(instance) => {
-            codegen_instantiate_generic(codegen, rType_clone(instance));
-        },
-        _ => {},
-    }
-
     let mut value_types: Vec<RType> = vec_new::<RType>();
     let mut value_names: Vec<String> = vec_new::<String>();
     let mut i: usize = 0;
@@ -3245,6 +3227,11 @@ fn codegen_call(
         _ => RType::Unit, // assume this case never occurs
     };
 
+    let generate_function: bool = match generic {
+        Option::Some(instance) => codegen_instantiate_generic(codegen, name, instance),
+        _ => false,
+    };
+
     let mut result_name: String = if rType_has_value(&return_type) {
         codegen_emit_call_assign(codegen, icg, name, &return_type, &value_types, &value_names)
     } else {
@@ -3259,32 +3246,28 @@ fn codegen_call(
     }
 
     let items: &Vec<RAstItem> = iCodegen_ast_items(icg);
+
     match generic {
-        Option::Some(instance) => {
-            let mut i: usize = 0;
-            while i < vec_len::<RAstItem>(items) {
-                match vec_at::<RAstItem>(items, i) {
-                    RAstItem::Function(function) => {
-                        if string_eq(name, rAstFunction_name(function)) {
-                            let saved: Option<RType> = match codegen_generic_instance(codegen) {
-                                Option::Some(ty) => Option::Some(rType_clone(ty)),
-                                _ => Option::None,
-                            };
-                            eprint_str("Generating code for generic function: ");
-                            eprint_string(name);
-                            // TODO: handle generating code for another function while
-                            // generating code for current function
-                            codegen_function(codegen, icg, function);
-                            match saved {
-                                Option::Some(ty) => codegen_instantiate_generic(codegen, ty), // restore saved instance
-                                _ => codegen_uninstantiate_generic(codegen),
+        Option::Some(_) => {
+            if generate_function {
+                let mut i: usize = 0;
+                while i < vec_len::<RAstItem>(items) {
+                    match vec_at::<RAstItem>(items, i) {
+                        RAstItem::Function(function) => {
+                            let other: &String = rAstFunction_name(function);
+                            if string_eq(name, other) {
+                                // TODO: handle generating code for another function while
+                                // generating code for current function
+                                codegen_function(codegen, icg, function);
+                                i = vec_len::<RAstItem>(items); // break
                             }
-                        }
-                    },
-                    _ => {},
+                        },
+                        _ => {},
+                    }
+                    i = i + 1;
                 }
-                i = i + 1;
             }
+            codegen_remove_generic_instance(codegen, name)
         },
         _ => {},
     }
@@ -3647,10 +3630,79 @@ fn codegen_enum_destructure(
     }
 }
 
+// ---------------------------- Generics ---------------------------------
+
+/// Type that tracks generic mappings and already generated functions.
+enum Generic {
+    /// type mappings, generated functions
+    Manager(StringMap<RType>, StringMap<Vec<RType>>),
+}
+
+fn generic_new() -> Generic {
+    Generic::Manager(stringMap_new::<RType>(), stringMap_new::<Vec<RType>>())
+}
+
+/// Instantiate the generic type parameter by creating a mapping for the item's type parameter.
+/// Returns false (but still inserts) if the code for the given type has already been generated.
+fn generic_instantiate(generic: &mut Generic, name: &String, ty: &RType) -> bool {
+    let Generic::Manager(mappings, generated): &mut Generic = generic;
+    match stringMap_get_mut::<Vec<RType>>(generated, string_clone(name)) {
+        Option::Some(instances) => {
+            let mut i: usize = 0;
+            while i < vec_len::<RType>(instances) {
+                if rType_eq(ty, vec_at::<RType>(instances, i)) {
+                    stringMap_insert(mappings, string_clone(name), rType_clone(ty));
+                    return false; // already generated code for the given type
+                }
+                i = i + 1;
+            }
+            vec_push::<RType>(instances, rType_clone(ty));
+        },
+        _ => {
+            let mut instances: Vec<RType> = vec_new::<RType>();
+            vec_push::<RType>(&mut instances, rType_clone(ty));
+            stringMap_insert(generated, string_clone(name), instances);
+        },
+    }
+    stringMap_insert(mappings, string_clone(name), rType_clone(ty));
+    true
+}
+
+/// Get the generic parameter's actual type for a given item.
+fn generic_get_type(Generic::Manager(mappings, _): &Generic, name: &String) -> Option<RType> {
+    match stringMap_get::<RType>(mappings, string_clone(name)) {
+        Option::Some(ty) => Option::Some(rType_clone(ty)),
+        _ => Option::None,
+    }
+}
+
+/// Returns true if the code for the given type has already been generated.
+fn generic_is_generated(Generic::Manager(_, generated): &Generic, name: &String, ty: &RType) -> bool {
+    let instances: &Vec<RType> = match stringMap_get(generated, string_clone(name)) {
+        Option::Some(instances) => instances,
+        _ => return false,
+    };
+    let mut i: usize = 0;
+    while i < vec_len::<RType>(instances) {
+        if rType_eq(ty, vec_at::<RType>(instances, i)) {
+            return true;
+        }
+        i = i + 1;
+    }
+    return false;
+}
+
+fn generic_uninstantiate(Generic::Manager(mappings, _): &mut Generic, name: &String) {
+    if not(stringMap_remove::<RType>(mappings, name)) {
+        panic("unexpected removal of non-existent generic type parameter mapping")
+    }
+}
+
 // ---------------------------- Code Emission ---------------------------------
 
 /// The emitted LLVM-IR code.
 enum Code {
+    /// TODO: refactor so that functions can be generated mid other functions
     /// code lines, global strings
     Code(Vec<String>, Vec<String>),
 }
@@ -4019,7 +4071,7 @@ fn codegen_emit_load_if_enum(codegen: &mut Codegen, icg: &ICodegen, value: Strin
 fn codegen_emit_call_assign(
     codegen: &mut Codegen,
     icg: &ICodegen,
-    name: &String,
+    callee: &String,
     return_type: &RType,
     arg_types: &Vec<RType>,
     args: &Vec<String>,
@@ -4029,7 +4081,7 @@ fn codegen_emit_call_assign(
     string_push_str(&mut line, "  ");
     string_push_string(&mut line, &register);
     string_push_str(&mut line, " = ");
-    let call: String = codegen_construct_call(codegen, icg, name, return_type, arg_types, args);
+    let call: String = codegen_construct_call(codegen, icg, callee, return_type, arg_types, args);
     string_push_string(&mut line, &call);
     codegen_emit_line(codegen, line);
     register
@@ -4042,13 +4094,13 @@ fn codegen_emit_call_assign(
 fn codegen_emit_call_void(
     codegen: &mut Codegen,
     icg: &ICodegen,
-    name: &String,
+    callee: &String,
     return_type: &RType,
     arg_types: &Vec<RType>,
     args: &Vec<String>,
 ) {
     let mut line: String = string("  ");
-    let call: String = codegen_construct_call(codegen, icg, name, return_type, arg_types, args);
+    let call: String = codegen_construct_call(codegen, icg, callee, return_type, arg_types, args);
     string_push_string(&mut line, &call);
     codegen_emit_line(codegen, line);
 }
@@ -4060,7 +4112,7 @@ fn codegen_emit_call_void(
 fn codegen_construct_call(
     codegen: &mut Codegen,
     icg: &ICodegen,
-    name: &String,
+    callee: &String,
     return_type: &RType,
     arg_types: &Vec<RType>,
     args: &Vec<String>,
@@ -4068,11 +4120,11 @@ fn codegen_construct_call(
     let mut line: String = string("call ");
     string_push_string(&mut line, &rType_to_llvm_name(codegen, icg, return_type));
     string_push_str(&mut line, " @");
-    let mut name: String = string_replace_all(name, ':', '.');
-    match codegen_generic_instance(codegen) {
+    let mut name: String = string_replace_all(callee, ':', '.');
+    match codegen_generic_instance(codegen, callee) {
         Option::Some(ty) => {
             string_push(&mut name, '.'); // mangle name to avoid name collisions
-            string_push_string(&mut name, &rType_to_string(ty));
+            string_push_string(&mut name, &rType_to_string(&ty));
         },
         _ => {},
     }
@@ -4109,7 +4161,7 @@ fn codegen_construct_call(
 fn codegen_emit_fn_signature(
     codegen: &mut Codegen,
     icg: &ICodegen,
-    name: &String,
+    fn_name: &String,
     return_type_name: &String,
     parameters: &Vec<RAstVariable>,
 ) {
@@ -4117,13 +4169,13 @@ fn codegen_emit_fn_signature(
     string_push_str(&mut line, "define ");
     string_push_string(&mut line, return_type_name);
     string_push_str(&mut line, " @");
-    let mut name: String = string_replace_all(name, ':', '.');
-    match codegen_generic_instance(codegen) {
+    let mut name: String = string_replace_all(fn_name, ':', '.');
+    match codegen_generic_instance(codegen, fn_name) {
         Option::Some(ty) => {
             string_push(&mut name, '.'); // mangle name to avoid name collisions
-            string_push_string(&mut name, &rType_to_string(ty));
+            string_push_string(&mut name, &rType_to_string(&ty));
         },
-        _ => {},
+        _ => {}, // not generic
     }
     string_push_string(&mut line, &name);
     string_push_str(&mut line, "(");
