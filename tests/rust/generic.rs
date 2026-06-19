@@ -1,11 +1,23 @@
-fn pass<T>(parameter: T) -> T {
-    // let reference: &T = other::<T>(&parameter);
-    parameter
+fn end<T>(value: T) -> T {
+    value
+}
+
+fn other<T>(value: T) -> T {
+    deep::<T>(value)
+}
+
+fn pass<T>(parameter: T) -> usize {
+    other::<T>(parameter);
+    other::<usize>(42)
+}
+
+fn deep<T>(arg: T) -> T {
+    return end::<T>(arg);
 }
 
 fn test() -> usize {
-    pass::<u8>(42 as u8); // type mismatch would say "T", not the instance
-    42
+    pass::<u8>(1 as u8);
+    pass::<u8>(2 as u8)
 }
 
 fn main() {
