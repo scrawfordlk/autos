@@ -108,6 +108,46 @@ let ptr: &mut = &mut y;
     ...
   }
   ```
+
+## Generics
+
+Generic functions and enums are supported with some limitations:
+
+- A function/enum can at most have one generic type parameter
+- The type parameter must be called `T`)
+- A generic function cannot call itself (In the near future this limitation will be lifted)
+- All instantiations require turbofish (`::<T>`) syntax
+
+Example:
+
+```rust
+enum Option<T> {
+    Some(T),
+    None
+}
+
+fn is_some<T>(opt: &Option<T>) => bool {
+    match opt {
+        Option::Some(_) => true,
+        _ => false
+    }
+}
+
+fn some<T>(value: T) -> Option<T> {
+    Option::<T>::Some(value)
+}
+
+fn f() -> usize {
+    let opt: Option<usize> = some::<usize>(42);
+    if is_some::<usize>(opt) {
+        42
+    } else {
+        0
+    }
+}
+
+```
+
 ## Builtin Functions
 
 There are currently three builtin functions: The `&str` functions
