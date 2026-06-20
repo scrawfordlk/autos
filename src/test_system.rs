@@ -147,6 +147,7 @@ fn run_clang(path: &Path, output_path: &Path) {
         .arg(path)
         .arg("-o")
         .arg(output_path)
+        .arg("-Wno-override-module") // ignores the missing triple warning
         .status()
         .expect("able to execute clang");
     assert!(status.success(), "clang accepts generated LLVM-IR output");
