@@ -632,8 +632,8 @@ enum RAstFunction {
 
 /// Enum definition.
 enum RAstEnum {
-    /// name, variants
-    Enum(String, Vec<RAstVariant>),
+    /// name, variants, is_generic
+    Enum(String, Vec<RAstVariant>, bool),
 }
 
 /// Extern function declaration.
@@ -681,7 +681,7 @@ enum RAstPatternLiteral {
     Bool(bool),
 }
 
-/// Type forms from the Rust subset grammar.
+/// Types from the Rust subset.
 #[derive(Debug)]
 enum RType {
     U8,
@@ -690,7 +690,8 @@ enum RType {
     Char,
     Unit,
     Never,
-    Enum(String),
+    /// name, optional generic type
+    Enum(String, Option<Box<RType>>),
     /// pointee, mutable
     Reference(Box<RType>, bool),
     RawPointerMut(Box<RType>),
@@ -794,7 +795,7 @@ fn rAstLiteral_type(literal: &RLiteral) -> RType {
         RLiteral::Int(_) => RType::Usize,
         RLiteral::Char(_) => RType::Char,
         RLiteral::Bool(_) => RType::Bool,
-        RLiteral::String(_) => RType::Enum(string("&str")),
+        RLiteral::String(_) => RType::Enum(string("&str"), Option::None),
     }
 }
 
@@ -805,7 +806,7 @@ fn rAstPattern_is_refutable(globals: &StringMap<Item>, pattern: &RAstPattern) ->
         RAstPattern::Wildcard | RAstPattern::Identifier(_, _) => false,
         RAstPattern::EnumVariant(name, _, _) => match stringMap_get::<Item>(globals, string_clone(name)) {
             Option::Some(item) => match item {
-                Item::Enum(RAstEnum::Enum(_, variants)) => vec_len::<RAstVariant>(variants) > 1,
+                Item::Enum(RAstEnum::Enum(_, variants, _)) => vec_len::<RAstVariant>(variants) > 1,
                 _ => true,
             },
             _ => true,
@@ -835,9 +836,9 @@ fn rType_size(codegen: &Codegen, icg: &ICodegen, ty: &RType) -> usize {
         RType::U8 | RType::Char | RType::Bool => 1,
         RType::Usize | RType::Reference(_, _) | RType::RawPointerMut(_) => size_of::<usize>(),
         RType::Unit | RType::Never => 0,
-        RType::Enum(name) => match iCodegen_search_global(icg, string_clone(name)) {
+        RType::Enum(name, generic) => match iCodegen_search_global(icg, string_clone(name)) {
             Option::Some(item) => match item {
-                Item::Enum(rast_enum) => rAstEnum_size(codegen, icg, rast_enum),
+                Item::Enum(rast_enum) => rAstEnum_size(codegen, icg, rast_enum), // TODO:
                 _ => 16, // assume that it is the built-in &str (8 bytes for pointer, 8 bytes for length)
             },
             _ => 16, // assume that it is the built-in &str (8 bytes for pointer, 8 bytes for length)
@@ -850,7 +851,7 @@ fn rType_size(codegen: &Codegen, icg: &ICodegen, ty: &RType) -> usize {
 }
 
 /// Return the size of an enum in bytes.
-fn rAstEnum_size(codegen: &Codegen, icg: &ICodegen, RAstEnum::Enum(_, variants): &RAstEnum) -> usize {
+fn rAstEnum_size(codegen: &Codegen, icg: &ICodegen, RAstEnum::Enum(_, variants, _): &RAstEnum) -> usize {
     let mut max_size: usize = 0;
     let mut i: usize = 0;
     while i < vec_len::<RAstVariant>(variants) {
@@ -938,7 +939,7 @@ fn rType_is_numeric(ty: &RType) -> bool {
 
 fn rType_is_enum(codegen: &Codegen, ty: &RType) -> bool {
     match ty {
-        RType::Enum(_) => true,
+        RType::Enum(_, _) => true,
         RType::Generic => match codegen_generic_instance(codegen, codegen_current_function(codegen)) {
             Option::Some(instance) => rType_is_enum(codegen, &instance),
             _ => panic("unexpected missing instantiation for generic type in generic function"),
@@ -1084,6 +1085,22 @@ fn expect_identifier(lexer: &mut RLexer) -> String {
     }
 }
 
+/// Try to parse a generic type parameter. If there is none, return false.
+fn parse_generic(lexer: &mut RLexer) -> bool {
+    if rLexer_try_consume(lexer, &RToken::LAngle) {
+        let type_param: String = expect_identifier(lexer);
+        if not(string_eq(&type_param, &string("T"))) {
+            parse_error(lexer, &string("generic type parameter must be \"T\""));
+        } else if rLexer_current_token_eq(lexer, &RToken::Comma) {
+            parse_error(lexer, &string("only a single generic type is supported"))
+        }
+        expect_token(lexer, &RToken::RAngle);
+        return true;
+    } else {
+        false
+    }
+}
+
 fn parse_language(lexer: &mut RLexer) -> RAst {
     let mut items: Vec<RAstItem> = vec_new::<RAstItem>();
 
@@ -1186,20 +1203,8 @@ fn parse_function_declaration(lexer: &mut RLexer) -> RAstExternFn {
 
 fn parse_function(lexer: &mut RLexer, is_unsafe: bool) -> RAstFunction {
     expect_token(lexer, &RToken::Fn);
-
     let name: String = expect_identifier(lexer);
-
-    let mut is_generic: bool = false;
-    if rLexer_try_consume(lexer, &RToken::LAngle) {
-        let type_param: String = expect_identifier(lexer);
-        if not(string_eq(&type_param, &string("T"))) {
-            parse_error(lexer, &string("generic type parameter must be \"T\""));
-        } else if rLexer_current_token_eq(lexer, &RToken::Comma) {
-            parse_error(lexer, &string("only a single generic type is supported"))
-        }
-        is_generic = true;
-        expect_token(lexer, &RToken::RAngle);
-    }
+    let is_generic: bool = parse_generic(lexer);
     expect_token(lexer, &RToken::LParen);
 
     let mut parameters: Vec<RAstVariable> = vec_new::<RAstVariable>();
@@ -1231,6 +1236,7 @@ fn parse_function(lexer: &mut RLexer, is_unsafe: bool) -> RAstFunction {
 fn parse_enum(lexer: &mut RLexer) -> RAstEnum {
     expect_token(lexer, &RToken::Enum);
     let name: String = expect_identifier(lexer);
+    let is_generic: bool = parse_generic(lexer);
     expect_token(lexer, &RToken::LBrace);
 
     let mut variants: Vec<RAstVariant> = vec_new::<RAstVariant>();
@@ -1245,7 +1251,7 @@ fn parse_enum(lexer: &mut RLexer) -> RAstEnum {
     }
     expect_token(lexer, &RToken::RBrace);
 
-    RAstEnum::Enum(name, variants)
+    RAstEnum::Enum(name, variants, is_generic)
 }
 
 fn parse_variant(lexer: &mut RLexer) -> RAstVariant {
@@ -1342,7 +1348,7 @@ fn parse_type(lexer: &mut RLexer) -> RType {
                 RToken::Identifier(name) => {
                     if string_eq(name, &string("str")) {
                         rLexer_next_token(lexer);
-                        return RType::Enum(string("&str"));
+                        return RType::Enum(string("&str"), Option::None);
                     }
                 },
                 _ => {},
@@ -1362,7 +1368,13 @@ fn parse_type(lexer: &mut RLexer) -> RType {
             if string_eq(&name, &string("T")) {
                 RType::Generic // T is always a generic parameter
             } else {
-                RType::Enum(name)
+                if rLexer_try_consume(lexer, &RToken::LAngle) {
+                    let instance: RType = parse_type(lexer);
+                    expect_token(lexer, &RToken::RAngle);
+                    RType::Enum(name, Option::Some(box_new::<RType>(instance)))
+                } else {
+                    RType::Enum(name, Option::None)
+                }
             }
         },
         token => {
@@ -1555,6 +1567,10 @@ fn parse_identifier_expression(lexer: &mut RLexer) -> RAstExpr {
         vec_push::<String>(&mut segments, first_identifier);
         match rLexer_current_token(lexer) {
             RToken::Identifier(_) => vec_push::<String>(&mut segments, expect_identifier(lexer)),
+            RToken::DoubleColon => {
+                rLexer_next_token(lexer);
+                vec_push::<String>(&mut segments, expect_identifier(lexer));
+            },
             _ => {},
         };
         parse_path_values(lexer, segments, generic)
@@ -1737,7 +1753,7 @@ fn insert_item_into_global_table(table: &mut StringMap<Item>, item: &RAstItem) {
             let item: Item = Item::Function(rType_clone(return_type), param_types, *is_unsafe, *is_generic);
             stringMap_insert::<Item>(table, string_clone(name), item);
         },
-        RAstItem::Enum(RAstEnum::Enum(name, variants)) => {
+        RAstItem::Enum(RAstEnum::Enum(name, variants, is_generic)) => {
             let mut cloned_variants: Vec<RAstVariant> = vec_new::<RAstVariant>();
             let mut i: usize = 0;
             while i < vec_len::<RAstVariant>(variants) {
@@ -1749,7 +1765,7 @@ fn insert_item_into_global_table(table: &mut StringMap<Item>, item: &RAstItem) {
                 vec_push::<RAstVariant>(&mut cloned_variants, variant);
                 i = i + 1;
             }
-            let item: Item = Item::Enum(RAstEnum::Enum(string_clone(name), cloned_variants));
+            let item: Item = Item::Enum(RAstEnum::Enum(string_clone(name), cloned_variants, *is_generic));
             stringMap_insert::<Item>(table, string_clone(name), item);
         },
         RAstItem::ExternBlock(functions) => {
@@ -1779,14 +1795,14 @@ fn insert_item_into_global_table(table: &mut StringMap<Item>, item: &RAstItem) {
 fn insert_builtin_functions(table: &mut StringMap<Item>) {
     let as_ptr: String = string("str::as_ptr");
     let mut parameters: Vec<RType> = vec_new::<RType>();
-    vec_push::<RType>(&mut parameters, RType::Enum(string("&str")));
+    vec_push::<RType>(&mut parameters, RType::Enum(string("&str"), Option::None));
     let return_type: RType = RType::RawPointerMut(box_new::<RType>(RType::U8));
     let item: Item = Item::Function(return_type, parameters, false, false);
     stringMap_insert::<Item>(table, as_ptr, item);
 
     let len: String = string("str::len");
     let mut parameters: Vec<RType> = vec_new::<RType>();
-    vec_push::<RType>(&mut parameters, RType::Enum(string("&str")));
+    vec_push::<RType>(&mut parameters, RType::Enum(string("&str"), Option::None));
     let item: Item = Item::Function(RType::Usize, parameters, false, false);
     stringMap_insert::<Item>(table, len, item);
 
@@ -2456,7 +2472,7 @@ fn semantic_check_call(
 
 fn semantic_check_enum(
     semantic: &mut Semantic,
-    RAstEnum::Enum(name, variants): &RAstEnum,
+    RAstEnum::Enum(name, variants, is_generic): &RAstEnum,
     variant: &String,
     values: &Vec<RAstExpr>,
     globals: &StringMap<Item>,
@@ -2476,7 +2492,7 @@ fn semantic_check_enum(
         semantic_expect_coerced_type_match(semantic, &expr_type, field_type);
         i = i + 1;
     }
-    RType::Enum(string_clone(name))
+    RType::Enum(string_clone(name), Option::None)
 }
 
 fn semantic_check_if(semantic: &mut Semantic, if_expression: &RAstIf, globals: &StringMap<Item>) -> RType {
@@ -2617,7 +2633,7 @@ fn semantic_check_pattern(
         RAstPattern::EnumVariant(enum_name, variant, inner_patterns) => {
             let fields: Vec<RType> = match stringMap_get::<Item>(globals, string_clone(enum_name)) {
                 Option::Some(item) => match item {
-                    Item::Enum(RAstEnum::Enum(_, variants)) => {
+                    Item::Enum(RAstEnum::Enum(_, variants, is_generic)) => {
                         if and(not(refutable_ok), vec_len::<RAstVariant>(variants) > 1) {
                             semantic_error(&string("nested enum patterns must all be irrefutable"));
                         }
@@ -2649,7 +2665,7 @@ fn semantic_check_pattern(
                 }
                 i = i + 1;
             }
-            RType::Enum(string_clone(enum_name))
+            RType::Enum(string_clone(enum_name), Option::None)
         },
     };
     semantic_expect_type_match(semantic, &pattern_type, scrutinee_match_type(&scrutinee));
@@ -3142,7 +3158,6 @@ fn codegen_unary_op(
                 }
             },
         },
-
         RAstUnaryOp::Dereference => {
             let STPair::ST(mut name, ty): STPair = codegen_expression(codegen, icg, value);
             let inner_type: RType = match ty {
@@ -3165,7 +3180,7 @@ fn codegen_literal(codegen: &mut Codegen, icg: &ICodegen, literal: &RLiteral) ->
         RLiteral::Char(value) => STPair::ST(integer_to_string(*value as usize), RType::Char),
         RLiteral::Bool(value) => STPair::ST(integer_to_string(*value as usize), RType::Bool),
         RLiteral::String(value) => {
-            let struct_type: RType = RType::Enum(string("&str"));
+            let struct_type: RType = RType::Enum(string("&str"), Option::None);
             let string_ptr: String = codegen_emit_string(codegen, value);
             let struct_ptr: String = codegen_emit_alloca(codegen, icg, &struct_type);
             let string_ptr_type: RType = RType::RawPointerMut(box_new::<RType>(RType::U8));
@@ -3200,7 +3215,7 @@ fn codegen_path(
     let enum_type: &String = vec_at::<String>(path, 0);
     match iCodegen_search_global(icg, string_clone(enum_type)) {
         Option::Some(item) => match item {
-            Item::Enum(RAstEnum::Enum(_, variants)) => {
+            Item::Enum(RAstEnum::Enum(_, variants, _)) => {
                 return codegen_enum(codegen, icg, path, variants, values);
             },
             _ => {},
@@ -3222,7 +3237,7 @@ fn codegen_enum(
     let variant: &String = vec_at::<String>(path, 1);
     let tag: String = integer_to_string(variants_get_discriminator(variants, variant));
 
-    let enum_type: RType = RType::Enum(string_clone(enum_name));
+    let enum_type: RType = RType::Enum(string_clone(enum_name), Option::None);
     let enum_ptr: String = codegen_emit_alloca(codegen, icg, &enum_type);
     codegen_emit_store(codegen, icg, &RType::Usize, &tag, &enum_ptr);
 
@@ -3590,7 +3605,7 @@ fn codegen_arm_match(
         },
         RAstPattern::EnumVariant(name, variant, _) => {
             let tag: usize = match iCodegen_search_global(icg, string_clone(name)) {
-                Option::Some(Item::Enum(RAstEnum::Enum(_, variants))) => {
+                Option::Some(Item::Enum(RAstEnum::Enum(_, variants, _))) => {
                     variants_get_discriminator(variants, variant)
                 },
                 _ => 0, // assume this case does not occur
@@ -3664,7 +3679,7 @@ fn codegen_enum_destructure(
 ) {
     let fields: Vec<RType> = match iCodegen_search_global(icg, string_clone(name)) {
         Option::Some(item) => match item {
-            Item::Enum(RAstEnum::Enum(_, variants)) => {
+            Item::Enum(RAstEnum::Enum(_, variants, is_generic)) => {
                 match rAstEnum_get_variant_fields(variants, variant) {
                     Option::Some(fields) => fields,
                     _ => return, // assume this does not occur
@@ -4204,7 +4219,7 @@ fn codegen_mangle_name(codegen: &Codegen, callee: &String) -> String {
         Option::Some(ty) => {
             string_push(&mut name, '.'); // mangle name to avoid name collisions
             match &ty {
-                RType::Enum(enum_name) => {
+                RType::Enum(enum_name, _) => {
                     if string_eq(&enum_name, &string("&str")) {
                         string_push_string(&mut name, &string("str"));
                         return name;
@@ -7190,8 +7205,24 @@ fn rType_eq(a: &RType, b: &RType) -> bool {
             RType::Never => true,
             _ => false,
         },
-        RType::Enum(left) => match b {
-            RType::Enum(right) => string_eq(left, right),
+        RType::Enum(left, left_generic) => match b {
+            RType::Enum(right, right_generic) => {
+                if not(string_eq(left, right)) {
+                    return false;
+                }
+                match left_generic {
+                    Option::Some(ty) => match right_generic {
+                        Option::Some(other_ty) => {
+                            rType_eq(box_deref::<RType>(ty), box_deref::<RType>(other_ty))
+                        },
+                        _ => false,
+                    },
+                    _ => match right_generic {
+                        Option::None => true,
+                        _ => false,
+                    },
+                }
+            },
             _ => false,
         },
         RType::Reference(left, left_mut) => match b {
@@ -7501,7 +7532,16 @@ fn rType_clone(t: &RType) -> RType {
         RType::Char => RType::Char,
         RType::Unit => RType::Unit,
         RType::Never => RType::Never,
-        RType::Enum(name) => RType::Enum(string_clone(name)),
+        RType::Enum(name, generic) => {
+            let generic: Option<Box<RType>> = match generic {
+                Option::Some(inner) => {
+                    let inner: &RType = box_deref::<RType>(inner);
+                    Option::Some(box_new::<RType>(rType_clone(inner)))
+                },
+                _ => Option::None,
+            };
+            RType::Enum(string_clone(name), generic)
+        },
         RType::Reference(inner, mutable) => {
             RType::Reference(box_new::<RType>(rType_clone(box_deref::<RType>(inner))), *mutable)
         },
@@ -7862,7 +7902,17 @@ fn rType_to_string(ty: &RType) -> String {
         RType::Char => string("char"),
         RType::Unit => string("()"),
         RType::Never => string("!"),
-        RType::Enum(name) => string_clone(name),
+        RType::Enum(name, generic) => {
+            let mut type_name: String = string_clone(name);
+            match generic {
+                Option::Some(inner) => {
+                    let inner: &RType = box_deref::<RType>(inner);
+                    string_push_string(&mut type_name, &rType_to_string(inner));
+                },
+                _ => {},
+            }
+            type_name
+        },
         RType::Reference(inner, mutable) => {
             let mut str: String = if *mutable { string("&mut ") } else { string("&") };
             string_push_string(&mut str, &rType_to_string(box_deref::<RType>(inner)));
