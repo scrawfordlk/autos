@@ -2462,7 +2462,7 @@ fn semantic_check_path(
         Option::Some(item) => match item {
             Item::Enum(e) => {
                 let variant: &String = vec_at::<String>(path, 1);
-                return semantic_check_enum(semantic, e, variant, values, globals);
+                return semantic_check_enum(semantic, e, variant, values, globals, generic);
             },
             Item::Function(return_type, parameter_types, is_unsafe, is_generic) => {
                 return semantic_check_call(
@@ -2518,7 +2518,7 @@ fn semantic_check_call(
         semantic_error(&string("calling an unsafe function requires unsafe"));
     }
     match generic {
-        Option::Some(instance) => {
+        Option::Some(_) => {
             if not(is_generic) {
                 semantic_error(&string("non-generic function calls should not specify a type"));
             }
@@ -2552,7 +2552,22 @@ fn semantic_check_enum(
     variant: &String,
     values: &Vec<RAstExpr>,
     globals: &StringMap<Item>,
+    generic: &Option<RType>,
 ) -> RType {
+    let instance: Option<Box<RType>> = match generic {
+        Option::Some(ty) => {
+            if not(*is_generic) {
+                semantic_error(&string("non-generic enum constructors cannot specify a type"));
+            }
+            Option::Some(box_new::<RType>(rType_clone(ty)))
+        },
+        _ => {
+            if *is_generic {
+                semantic_error(&string("generic enum constructors require turbofish syntax"))
+            }
+            Option::None
+        },
+    };
     let fields: Vec<RType> = match rAstEnum_get_variant_fields(variants, variant) {
         Option::Some(fields) => fields,
         _ => semantic_error(&string("use of undefined enum variant constructor")),
@@ -2563,12 +2578,13 @@ fn semantic_check_enum(
     let mut i: usize = 0;
     while i < vec_len::<RType>(&fields) {
         let field_type: &RType = vec_at::<RType>(&fields, i);
+        let field_type: RType = rType_instantiate_generic(field_type, &generic);
         let expr: &RAstExpr = vec_at::<RAstExpr>(values, i);
         let expr_type: RType = semantic_check_expression(semantic, expr, globals);
-        semantic_expect_coerced_type_match(semantic, &expr_type, field_type);
+        semantic_expect_coerced_type_match(semantic, &expr_type, &field_type);
         i = i + 1;
     }
-    RType::Enum(string_clone(name), Option::None)
+    RType::Enum(string_clone(name), instance)
 }
 
 fn semantic_check_if(semantic: &mut Semantic, if_expression: &RAstIf, globals: &StringMap<Item>) -> RType {
