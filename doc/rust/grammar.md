@@ -7,12 +7,12 @@ language  -> { function | extern | enum }
 
 function  -> signature block
 
-signature -> [ "unsafe" ] "fn" identifier
+signature -> [ "unsafe" ] "fn" identifier [ "<" "T" ">" ]
              "(" [ variable { "," variable } [ "," ] ] ")" [ "->" type ]
 
 extern    -> "unsafe" "extern" ""C"" "{" { signature ";" } "}"
 
-enum      -> "enum" identifier "{" variant "," { variant "," } "}"
+enum      -> "enum" identifier [ "<" "T" ">" ] "{" variant "," { variant "," } "}"
 
 variant   -> identifier [ "(" type { "," type } ")" ]
 
@@ -57,7 +57,8 @@ match -> "match" expression "{" { arm } "}"
 
 arm   -> pattern { "|" pattern } "=>" expression ","
 
-path  -> identifier [ "::" identifier ] [ "(" [ expression { "," expression } [ "," ] ] ")" ]
+path  -> identifier [ "::" "<" type ">" ] [ "::" identifier ]
+         [ "(" [ expression { "," expression } [ "," ] ] ")" ]
 ```
 
 ## Pattern
@@ -80,7 +81,7 @@ type       -> "u8"
             | "usize"
             | "bool"
             | "char"
-            | identifier
+            | identifier [ "<" type ">" ]
             | ( "&" [ "mut" ] | "*" "mut" ) type
 
 literal    -> integer | string | character | boolean
