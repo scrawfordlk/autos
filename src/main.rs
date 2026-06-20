@@ -1789,6 +1789,10 @@ fn insert_builtin_functions(table: &mut StringMap<Item>) {
     vec_push::<RType>(&mut parameters, RType::Enum(string("&str")));
     let item: Item = Item::Function(RType::Usize, parameters, false, false);
     stringMap_insert::<Item>(table, len, item);
+
+    let sizeof: String = string("size_of");
+    let item: Item = Item::Function(RType::Usize, vec_new::<RType>(), false, true);
+    stringMap_insert::<Item>(table, sizeof, item);
 }
 
 /// Semantic analysis state.
