@@ -3278,10 +3278,7 @@ fn codegen_call(
                 return STPair::ST(integer_to_string(size), RType::Usize);
             }
 
-            match &return_type {
-                RType::Generic => return_type = rType_clone(instance),
-                _ => {},
-            }
+            return_type = rType_instantiate_generic(&return_type, generic);
             do_generate
         },
         _ => false,
