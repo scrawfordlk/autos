@@ -986,6 +986,17 @@ fn rType_has_value(ty: &RType) -> bool {
     not(rType_coerced_match(ty, &RType::Unit))
 }
 
+/// If the given type is generic and the generic mapping is not None, return the mapped type.
+fn rType_instantiate_generic(ty: &RType, mapping: &Option<RType>) -> RType {
+    match ty {
+        RType::Generic => match mapping {
+            Option::Some(instance) => rType_clone(instance),
+            _ => rType_clone(ty),
+        },
+        _ => rType_clone(ty),
+    }
+}
+
 /// Possible types of a scrutinee in a match expression. The contained type is the type the Scrutinee is matched
 /// against, while the variant encodes whether bindings are (mutable) references.
 #[derive(Debug)]
@@ -2155,7 +2166,9 @@ fn semantic_check_expression(
         },
         RAstExpr::Literal(literal) => rAstLiteral_type(literal),
         RAstExpr::Variable(name) => semantic_check_variable_use(semantic, false, name),
-        RAstExpr::Path(path, values, generic) => semantic_check_path(semantic, path, values, globals),
+        RAstExpr::Path(path, values, generic) => {
+            semantic_check_path(semantic, path, values, globals, generic)
+        },
         RAstExpr::Block(is_unsafe, block) => semantic_check_block(semantic, block, *is_unsafe, globals),
         RAstExpr::If(if_expression) => semantic_check_if(semantic, if_expression, globals),
         RAstExpr::While(condition, body) => {
@@ -2322,6 +2335,7 @@ fn semantic_check_path(
     path: &Vec<String>,
     values: &Vec<RAstExpr>,
     globals: &StringMap<Item>,
+    generic: &Option<RType>,
 ) -> RType {
     let first_ident: &String = vec_at::<String>(path, 0);
     match stringMap_get::<Item>(globals, string_clone(first_ident)) {
@@ -2330,16 +2344,34 @@ fn semantic_check_path(
                 let variant: &String = vec_at::<String>(path, 1);
                 return semantic_check_enum(semantic, e, variant, values, globals);
             },
-            Item::Function(return_type, param_types, is_unsafe, _) => {
-                return semantic_check_call(semantic, return_type, param_types, *is_unsafe, values, globals);
+            Item::Function(return_type, parameter_types, is_unsafe, is_generic) => {
+                return semantic_check_call(
+                    semantic,
+                    return_type,
+                    parameter_types,
+                    *is_unsafe,
+                    values,
+                    globals,
+                    *is_generic,
+                    generic,
+                );
             },
         },
         _ => {
             let function_name: String = rAstPath_to_string(path);
             match stringMap_get::<Item>(globals, function_name) {
                 Option::Some(item) => match item {
-                    Item::Function(return_ty, params, is_unsafe, _) => {
-                        return semantic_check_call(semantic, return_ty, params, *is_unsafe, values, globals);
+                    Item::Function(return_type, parameter_types, is_unsafe, is_generic) => {
+                        return semantic_check_call(
+                            semantic,
+                            return_type,
+                            parameter_types,
+                            *is_unsafe,
+                            values,
+                            globals,
+                            *is_generic,
+                            generic,
+                        );
                     },
                     _ => {},
                 },
@@ -2359,9 +2391,23 @@ fn semantic_check_call(
     is_unsafe: bool,
     values: &Vec<RAstExpr>,
     globals: &StringMap<Item>,
+    is_generic: bool,
+    generic: &Option<RType>,
 ) -> RType {
     if and(is_unsafe, not(semantic_is_unsafe_context(semantic))) {
         semantic_error(&string("calling an unsafe function requires unsafe"));
+    }
+    match generic {
+        Option::Some(instance) => {
+            if not(is_generic) {
+                semantic_error(&string("non-generic function calls should not specify a type"));
+            }
+        },
+        _ => {
+            if is_generic {
+                semantic_error(&string("calling generic function requires turbofish syntax"))
+            }
+        },
     }
     if vec_len::<RType>(&parameter_types) != vec_len::<RAstExpr>(values) {
         semantic_error(&string("function call does not have correct amount of arguments"));
@@ -2369,12 +2415,15 @@ fn semantic_check_call(
     let mut i: usize = 0;
     while i < vec_len::<RAstExpr>(values) {
         let param_type: &RType = vec_at::<RType>(parameter_types, i);
+        let param_type: RType = rType_instantiate_generic(param_type, generic);
+
         let arg: &RAstExpr = vec_at::<RAstExpr>(values, i);
         let arg_type: RType = semantic_check_expression(semantic, arg, globals);
-        semantic_expect_coerced_type_match(semantic, &arg_type, param_type);
+
+        semantic_expect_coerced_type_match(semantic, &arg_type, &param_type);
         i = i + 1;
     }
-    rType_clone(return_type)
+    rType_instantiate_generic(return_type, generic)
 }
 
 fn semantic_check_enum(
