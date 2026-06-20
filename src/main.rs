@@ -7983,7 +7983,9 @@ fn rType_to_string(ty: &RType) -> String {
             match generic {
                 Option::Some(inner) => {
                     let inner: &RType = box_deref::<RType>(inner);
+                    string_push(&mut type_name, '<');
                     string_push_string(&mut type_name, &rType_to_string(inner));
+                    string_push(&mut type_name, '>');
                 },
                 _ => {},
             }
