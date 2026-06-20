@@ -836,12 +836,18 @@ fn rType_size(codegen: &Codegen, icg: &ICodegen, ty: &RType) -> usize {
         RType::U8 | RType::Char | RType::Bool => 1,
         RType::Usize | RType::Reference(_, _) | RType::RawPointerMut(_) => size_of::<usize>(),
         RType::Unit | RType::Never => 0,
-        RType::Enum(name, generic) => match iCodegen_search_global(icg, string_clone(name)) {
-            Option::Some(item) => match item {
-                Item::Enum(rast_enum) => rAstEnum_size(codegen, icg, rast_enum), // TODO:
+        RType::Enum(name, generic) => {
+            let generic: Option<RType> = match generic {
+                Option::Some(instance) => Option::Some(rType_clone(box_deref::<RType>(instance))),
+                _ => Option::None,
+            };
+            match iCodegen_search_global(icg, string_clone(name)) {
+                Option::Some(item) => match item {
+                    Item::Enum(rast_enum) => rAstEnum_size(codegen, icg, rast_enum, &generic),
+                    _ => 16, // assume that it is the built-in &str (8 bytes for pointer, 8 bytes for length)
+                },
                 _ => 16, // assume that it is the built-in &str (8 bytes for pointer, 8 bytes for length)
-            },
-            _ => 16, // assume that it is the built-in &str (8 bytes for pointer, 8 bytes for length)
+            }
         },
         RType::Generic => match codegen_generic_instance(codegen, codegen_current_function(codegen)) {
             Option::Some(instance) => rType_size(codegen, icg, &instance),
@@ -851,7 +857,8 @@ fn rType_size(codegen: &Codegen, icg: &ICodegen, ty: &RType) -> usize {
 }
 
 /// Return the size of an enum in bytes.
-fn rAstEnum_size(codegen: &Codegen, icg: &ICodegen, RAstEnum::Enum(_, variants, _): &RAstEnum) -> usize {
+fn rAstEnum_size(codegen: &Codegen, icg: &ICodegen, e: &RAstEnum, generic: &Option<RType>) -> usize {
+    let RAstEnum::Enum(_, variants, _): &RAstEnum = e;
     let mut max_size: usize = 0;
     let mut i: usize = 0;
     while i < vec_len::<RAstVariant>(variants) {
@@ -861,7 +868,8 @@ fn rAstEnum_size(codegen: &Codegen, icg: &ICodegen, RAstEnum::Enum(_, variants, 
         let mut size: usize = 0;
         while j < vec_len::<RType>(field_types) {
             let ty: &RType = vec_at::<RType>(field_types, j);
-            size = size + rType_size(codegen, icg, ty);
+            let field: RType = rType_instantiate_generic(ty, generic);
+            size = size + rType_size(codegen, icg, &field);
             j = j + 1;
         }
 
@@ -3308,7 +3316,7 @@ fn codegen_path(
     match iCodegen_search_global(icg, string_clone(enum_type)) {
         Option::Some(item) => match item {
             Item::Enum(RAstEnum::Enum(_, variants, _)) => {
-                return codegen_enum(codegen, icg, path, variants, values);
+                return codegen_enum(codegen, icg, path, variants, values, generic);
             },
             _ => {},
         },
@@ -3324,12 +3332,17 @@ fn codegen_enum(
     path: &Vec<String>,
     variants: &Vec<RAstVariant>,
     values: &Vec<RAstExpr>,
+    generic: &Option<RType>,
 ) -> STPair {
     let enum_name: &String = vec_at::<String>(path, 0);
     let variant: &String = vec_at::<String>(path, 1);
     let tag: String = integer_to_string(variants_get_discriminator(variants, variant));
 
-    let enum_type: RType = RType::Enum(string_clone(enum_name), Option::None);
+    let mapping: Option<Box<RType>> = match generic {
+        Option::Some(instance) => Option::Some(box_new::<RType>(rType_clone(instance))),
+        _ => Option::None,
+    };
+    let enum_type: RType = RType::Enum(string_clone(enum_name), mapping);
     let enum_ptr: String = codegen_emit_alloca(codegen, icg, &enum_type);
     codegen_emit_store(codegen, icg, &RType::Usize, &tag, &enum_ptr);
 
