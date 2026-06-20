@@ -1813,35 +1813,22 @@ fn semantic_set_current_fn_return_type(semantic: &mut Semantic, ty: RType) {
     *return_type = ty;
 }
 
-/// Get the raw unsafe depth value.
-fn semantic_unsafe_depth(semantic: &Semantic) -> usize {
-    let Semantic::Semantic(_, _, unsafe_depth, _): &Semantic = semantic;
-    *unsafe_depth
-}
-
-/// Set the raw unsafe depth value.
-fn semantic_set_unsafe_depth(semantic: &mut Semantic, unsafe_depth: usize) {
-    let Semantic::Semantic(_, _, current_unsafe_depth, _): &mut Semantic = semantic;
-    *current_unsafe_depth = unsafe_depth;
-}
-
 /// Enter a new unsafe context.
-fn semantic_push_unsafe_context(semantic: &mut Semantic) {
-    let current_depth: usize = semantic_unsafe_depth(semantic);
-    semantic_set_unsafe_depth(semantic, current_depth + 1);
+fn semantic_push_unsafe_context(Semantic::Semantic(_, _, current_depth, _): &mut Semantic) {
+    *current_depth = *current_depth + 1;
 }
 
 /// Exit an unsafe context.
-fn semantic_pop_unsafe_context(semantic: &mut Semantic) {
-    let current_depth: usize = semantic_unsafe_depth(semantic);
-    if current_depth > 0 {
-        semantic_set_unsafe_depth(semantic, current_depth - 1);
+fn semantic_pop_unsafe_context(Semantic::Semantic(_, _, current_depth, _): &mut Semantic) {
+    if *current_depth == 0 {
+        panic("unexpected leaving of unsafe block - this is a compiler bug")
     }
+    *current_depth = *current_depth - 1;
 }
 
 /// Return true if unsafe operations are allowed.
-fn semantic_is_unsafe_context(semantic: &Semantic) -> bool {
-    semantic_unsafe_depth(semantic) > 0
+fn semantic_is_unsafe_context(Semantic::Semantic(_, _, current_depth, _): &Semantic) -> bool {
+    *current_depth > 0
 }
 
 /// Run semantic analysis and return collected items.
