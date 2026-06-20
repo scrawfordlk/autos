@@ -1774,12 +1774,12 @@ fn insert_builtin_functions(table: &mut StringMap<Item>) {
 
 /// Semantic analysis state.
 enum Semantic {
-    /// local symbol table, current return type, unsafe context depth, current generic type instance
-    Semantic(StringMapStack<Variable>, RType, usize, Option<RType>),
+    /// local symbol table, current return type, unsafe context depth, placeholder for generics
+    Semantic(StringMapStack<Variable>, RType, usize, usize),
 }
 
 fn semantic_new() -> Semantic {
-    Semantic::Semantic(stringMapStack_new::<Variable>(), RType::Unit, 0, Option::None)
+    Semantic::Semantic(stringMapStack_new::<Variable>(), RType::Unit, 0, 0)
 }
 
 fn semantic_locals(semantic: &Semantic) -> &StringMapStack<Variable> {
@@ -1831,23 +1831,6 @@ fn semantic_pop_unsafe_context(semantic: &mut Semantic) {
 /// Return true if unsafe operations are allowed.
 fn semantic_is_unsafe_context(semantic: &Semantic) -> bool {
     semantic_unsafe_depth(semantic) > 0
-}
-
-/// Set a generic type parameter instantiation.
-fn semantic_set_generic(Semantic::Semantic(_, _, _, generic): &mut Semantic, instance: &RType) {
-    *generic = Option::Some(rType_clone(instance));
-}
-
-fn semantic_get_generic(Semantic::Semantic(_, _, _, generic): &Semantic) -> Option<&RType> {
-    match generic {
-        Option::Some(ty) => Option::Some(ty),
-        _ => Option::None,
-    }
-}
-
-/// Reset a generic type parameter instantiation.
-fn semantic_reset_generic(Semantic::Semantic(_, _, _, generic): &mut Semantic) {
-    *generic = Option::None;
 }
 
 /// Run semantic analysis and return collected items.
@@ -2172,15 +2155,7 @@ fn semantic_check_expression(
         },
         RAstExpr::Literal(literal) => rAstLiteral_type(literal),
         RAstExpr::Variable(name) => semantic_check_variable_use(semantic, false, name),
-        RAstExpr::Path(path, values, generic) => {
-            match generic {
-                Option::Some(instance) => semantic_set_generic(semantic, instance),
-                _ => {},
-            };
-            let ty: RType = semantic_check_path(semantic, path, values, globals);
-            semantic_reset_generic(semantic);
-            ty
-        },
+        RAstExpr::Path(path, values, generic) => semantic_check_path(semantic, path, values, globals),
         RAstExpr::Block(is_unsafe, block) => semantic_check_block(semantic, block, *is_unsafe, globals),
         RAstExpr::If(if_expression) => semantic_check_if(semantic, if_expression, globals),
         RAstExpr::While(condition, body) => {
