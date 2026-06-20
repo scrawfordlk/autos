@@ -108,3 +108,25 @@ let ptr: &mut = &mut y;
     ...
   }
   ```
+## Builtin Functions
+
+There are currently three builtin functions: The `&str` functions
+`str::as_ptr()` and `str::len()`, as well as the generic function `size_of<T>()`.
+The former are needed to be able to work with `&str`, the latter is useful
+for generic data structures and functions.
+
+## I/O
+
+For I/O, use an extern block:
+
+```rust
+unsafe extern "C" {
+    fn malloc(size: usize) -> *mut u8;
+    fn exit(code: usize) -> !;
+    fn open(path: *mut u8, flags: usize, mode: usize) -> usize;
+    fn write(fd: usize, buf: *mut u8, count: usize) -> usize;
+    fn read(fd: usize, buf: *mut u8, count: usize) -> usize;
+}
+```
+
+Strictly speaking, only these five functions are supported, however in theory, any function in libc can be called this way.
