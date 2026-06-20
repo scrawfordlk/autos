@@ -1860,6 +1860,12 @@ fn semantic_check_generic_usage(semantic: &Semantic, ty: &RType) {
                 semantic_error(&string("cannot use type parameter \"T\" in non-generic function"));
             }
         },
+        RType::Reference(inner, _) => {
+            semantic_check_generic_usage(semantic, box_deref::<RType>(inner));
+        },
+        RType::RawPointerMut(inner) => {
+            semantic_check_generic_usage(semantic, box_deref::<RType>(inner));
+        },
         _ => {},
     }
 }
