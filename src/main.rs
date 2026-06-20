@@ -993,6 +993,14 @@ fn rType_instantiate_generic(ty: &RType, mapping: &Option<RType>) -> RType {
             Option::Some(instance) => rType_clone(instance),
             _ => rType_clone(ty),
         },
+        RType::Reference(inner, mutable) => RType::Reference(
+            box_new::<RType>(rType_instantiate_generic(box_deref::<RType>(inner), mapping)),
+            *mutable,
+        ),
+        RType::RawPointerMut(inner) => RType::RawPointerMut(box_new::<RType>(rType_instantiate_generic(
+            box_deref::<RType>(inner),
+            mapping,
+        ))),
         _ => rType_clone(ty),
     }
 }
