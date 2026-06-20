@@ -1785,12 +1785,12 @@ fn insert_builtin_functions(table: &mut StringMap<Item>) {
 
 /// Semantic analysis state.
 enum Semantic {
-    /// local symbol table, current return type, unsafe context depth, placeholder for generics
-    Semantic(StringMapStack<Variable>, RType, usize, usize),
+    /// local symbol table, current return type, unsafe context depth, current function is generic
+    Semantic(StringMapStack<Variable>, RType, usize, bool),
 }
 
 fn semantic_new() -> Semantic {
-    Semantic::Semantic(stringMapStack_new::<Variable>(), RType::Unit, 0, 0)
+    Semantic::Semantic(stringMapStack_new::<Variable>(), RType::Unit, 0, false)
 }
 
 fn semantic_locals(semantic: &Semantic) -> &StringMapStack<Variable> {
@@ -1831,14 +1831,35 @@ fn semantic_is_unsafe_context(Semantic::Semantic(_, _, current_depth, _): &Seman
     *current_depth > 0
 }
 
+fn semantic_set_is_generic(Semantic::Semantic(_, _, _, state): &mut Semantic, is_generic: bool) {
+    *state = is_generic;
+}
+
+fn semantic_current_function_is_generic(Semantic::Semantic(_, _, _, is_generic): &Semantic) -> bool {
+    *is_generic
+}
+
 /// Run semantic analysis and return collected items.
 fn semantic_check_run(ast: &RAst, items: &StringMap<Item>) {
     let mut semantic: Semantic = semantic_new();
     semantic_check_language(&mut semantic, ast, &items);
 }
 
+fn semantic_check_generic_usage(semantic: &Semantic, ty: &RType) {
+    match ty {
+        RType::Generic => {
+            if not(semantic_current_function_is_generic(semantic)) {
+                semantic_error(&string("cannot use type parameter \"T\" in non-generic function"));
+            }
+        },
+        _ => {},
+    }
+}
+
 /// Check if the given types are equal, otherwise throw an error.
-fn semantic_expect_type_match(left: &RType, right: &RType) {
+fn semantic_expect_type_match(semantic: &Semantic, left: &RType, right: &RType) {
+    semantic_check_generic_usage(semantic, left);
+    semantic_check_generic_usage(semantic, right);
     if not(rType_eq(left, right)) {
         let mut message: String = string("type mismatch: expected ");
         string_push_string(&mut message, &rType_to_string(left));
@@ -1850,14 +1871,15 @@ fn semantic_expect_type_match(left: &RType, right: &RType) {
 
 /// Check if the given types, coerced from `actual` to `expected`, match.
 fn semantic_expect_coerced_type_match(semantic: &Semantic, actual: &RType, expected: &RType) {
-    if rType_coerced_match(actual, expected) {
-        return;
+    semantic_check_generic_usage(semantic, actual);
+    semantic_check_generic_usage(semantic, expected);
+    if not(rType_coerced_match(actual, expected)) {
+        let mut message: String = string("coerced type mismatch: expected ");
+        string_push_string(&mut message, &rType_to_string(expected));
+        string_push_str(&mut message, ", but got ");
+        string_push_string(&mut message, &rType_to_string(actual));
+        semantic_error(&message);
     }
-    let mut message: String = string("coerced type mismatch: expected ");
-    string_push_string(&mut message, &rType_to_string(expected));
-    string_push_str(&mut message, ", but got ");
-    string_push_string(&mut message, &rType_to_string(actual));
-    semantic_error(&message);
 }
 
 /// Check if the given types, using Least Upper Bound Coercion, match.
@@ -2041,6 +2063,7 @@ fn semantic_check_extern(semantic: &mut Semantic, declarations: &Vec<RAstExternF
 fn semantic_check_function(semantic: &mut Semantic, function: &RAstFunction, globals: &StringMap<Item>) {
     let RAstFunction::Fn(is_generic, is_unsafe, _, parameters, return_type, body): &RAstFunction = function;
 
+    semantic_set_is_generic(semantic, *is_generic);
     semantic_set_current_fn_return_type(semantic, rType_clone(return_type));
     semantic_enter_scope(semantic);
 
@@ -2053,12 +2076,12 @@ fn semantic_check_function(semantic: &mut Semantic, function: &RAstFunction, glo
         semantic_check_pattern(semantic, pattern, parameter_type, false, globals);
         i = i + 1;
     }
-
     let block_type: RType = semantic_check_block(semantic, body, *is_unsafe, globals);
     semantic_expect_coerced_type_match(semantic, &block_type, return_type);
 
     semantic_leave_scope(semantic);
     semantic_set_current_fn_return_type(semantic, RType::Unit);
+    semantic_set_is_generic(semantic, false);
 }
 
 /// Analyze one block and return its resulting type.
@@ -2178,7 +2201,7 @@ fn semantic_check_return(
             semantic_expect_coerced_type_match(semantic, &ty, semantic_current_fn_return_type(semantic));
         },
         Option::None => {
-            semantic_expect_type_match(semantic_current_fn_return_type(semantic), &RType::Unit);
+            semantic_expect_type_match(semantic, semantic_current_fn_return_type(semantic), &RType::Unit);
         },
     }
     RType::Never
@@ -2238,7 +2261,7 @@ fn semantic_check_binary_op(
 ) -> RType {
     let left_type: RType = semantic_check_expression(semantic, left, globals);
     let right_type: RType = semantic_check_expression(semantic, right, globals);
-    semantic_expect_type_match(&left_type, &right_type);
+    semantic_expect_type_match(semantic, &left_type, &right_type);
 
     match operator {
         RAstBinaryOp::Arithmetic(_) => {
@@ -2569,6 +2592,7 @@ fn semantic_check_pattern(
         RAstPattern::Identifier(mutable, name) => {
             let variable_type: RType = scrutinee_binding_type(&scrutinee);
             semantic_insert_variable(semantic, string_clone(name), variable_type, *mutable);
+            semantic_check_generic_usage(semantic, expression_type);
             return; // type agnostic
         },
         RAstPattern::Wildcard => return, // type agnostic
@@ -2610,7 +2634,7 @@ fn semantic_check_pattern(
             RType::Enum(string_clone(enum_name))
         },
     };
-    semantic_expect_type_match(&pattern_type, scrutinee_match_type(&scrutinee));
+    semantic_expect_type_match(semantic, &pattern_type, scrutinee_match_type(&scrutinee));
 }
 
 // -----------------------------------------------------------------
