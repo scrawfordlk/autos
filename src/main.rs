@@ -2073,18 +2073,94 @@ fn semantic_check_language(semantic: &mut Semantic, ast: &RAst, globals: &String
         let item: &RAstItem = vec_at::<RAstItem>(items, i);
         match item {
             RAstItem::Function(function) => semantic_check_function(semantic, function, globals),
-            RAstItem::Enum(e) => semantic_check_enum_def(semantic, e),
+            RAstItem::Enum(e) => semantic_check_enum_def(semantic, e, globals),
             RAstItem::ExternBlock(declarations) => semantic_check_extern(semantic, declarations),
         }
         i = i + 1;
     }
 }
 
-fn semantic_check_enum_def(semantic: &mut Semantic, e: &RAstEnum) {
-    // TODO: Check:
-    //  - no recursion (check with recursion)
-    //  - generic usage
-    //  - no duplicate variants
+fn semantic_check_enum_def(semantic: &mut Semantic, e: &RAstEnum, globals: &StringMap<Item>) {
+    let RAstEnum::Enum(name, variants, is_generic): &RAstEnum = e;
+    let mut i: usize = 0;
+    while i < vec_len::<RAstVariant>(variants) {
+        let RAstVariant::Variant(variant_name, fields): &RAstVariant = vec_at::<RAstVariant>(variants, i);
+
+        let mut j: usize = 0;
+        while j < vec_len::<RAstVariant>(variants) {
+            let RAstVariant::Variant(other, _): &RAstVariant = vec_at::<RAstVariant>(variants, j);
+            if and(i != j, string_eq(variant_name, other)) {
+                semantic_error(&string("duplicate variants in enum found"));
+            }
+            j = j + 1;
+        }
+        semantic_check_variant(
+            semantic,
+            &RType::Enum(string_clone(name), Option::None),
+            fields,
+            *is_generic,
+            globals,
+        );
+        i = i + 1;
+    }
+}
+
+fn semantic_check_variant(
+    semantic: &Semantic,
+    enum_type: &RType,
+    fields: &Vec<RType>,
+    is_generic: bool,
+    globals: &StringMap<Item>,
+) {
+    let mut i: usize = 0;
+    while i < vec_len::<RType>(fields) {
+        let field: &RType = vec_at::<RType>(fields, i);
+        semantic_check_variant_field(semantic, &enum_type, field, is_generic, globals);
+        i = i + 1;
+    }
+}
+
+fn semantic_check_variant_field(
+    semantic: &Semantic,
+    enum_ty: &RType,
+    field: &RType,
+    is_generic: bool,
+    globals: &StringMap<Item>,
+) {
+    match field {
+        RType::Generic => {
+            if not(is_generic) {
+                semantic_error(&string(
+                    "cannot use a generic type parameter in a non-generic enum",
+                ))
+            }
+        },
+        RType::Reference(inner, _) => {
+            semantic_check_variant_field(semantic, enum_ty, box_deref::<RType>(inner), is_generic, globals)
+        },
+        RType::RawPointerMut(inner) => {
+            semantic_check_variant_field(semantic, enum_ty, box_deref::<RType>(inner), is_generic, globals)
+        },
+        RType::Enum(name, generic) => {
+            // TODO: check recursion
+            match generic {
+                Option::Some(instance) => {
+                    let ty: &RType = box_deref::<RType>(instance);
+                    semantic_check_variant_field(semantic, enum_ty, ty, is_generic, globals);
+                },
+                _ => {},
+            }
+            match stringMap_get::<Item>(globals, string_clone(name)) {
+                Option::Some(item) => match item {
+                    Item::Enum(_) => {},
+                    _ => semantic_error(&string("cannot use an undefined enum in enum definition")),
+                },
+                _ => semantic_error(&string("cannot use an undefined enum in enum definition")),
+            }
+        },
+        RType::Unit | RType::Never => semantic_error(&string("cannot use value-less type as enum field")),
+        _ => {},
+    }
 }
 
 fn semantic_check_extern(semantic: &mut Semantic, declarations: &Vec<RAstExternFn>) {
