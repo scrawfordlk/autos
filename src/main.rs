@@ -2769,15 +2769,13 @@ fn semantic_check_pattern(
         RAstPattern::Wildcard => return, // type agnostic
         RAstPattern::EnumVariant(enum_name, variant, inner_patterns) => {
             let mut enum_type: RType = RType::Enum(string_clone(enum_name), Option::None);
+            let generic: Option<RType> = rType_extract_enum_generic(scrutinee_match_type(&scrutinee));
 
             let fields: Vec<RType> = match stringMap_get::<Item>(globals, string_clone(enum_name)) {
                 Option::Some(item) => match item {
                     Item::Enum(RAstEnum::Enum(_, variants, is_generic)) => {
                         if *is_generic {
-                            enum_type = rType_instantiate_generic(
-                                &enum_type,
-                                &rType_extract_enum_generic(scrutinee_match_type(&scrutinee)),
-                            );
+                            enum_type = rType_instantiate_generic(&enum_type, &generic);
                         }
                         if and(not(refutable_ok), vec_len::<RAstVariant>(variants) > 1) {
                             semantic_error(&string("nested enum patterns must all be irrefutable"));
@@ -2797,13 +2795,14 @@ fn semantic_check_pattern(
             let mut i: usize = 0;
             while i < vec_len::<RAstPattern>(inner_patterns) {
                 let pattern: &RAstPattern = vec_at::<RAstPattern>(inner_patterns, i);
-                let ty: RType = scrutinee_inherit_borrow(&scrutinee, vec_at::<RType>(&fields, i));
+                let mut field_type: RType = rType_instantiate_generic(vec_at::<RType>(&fields, i), &generic);
+                field_type = scrutinee_inherit_borrow(&scrutinee, &field_type);
                 match pattern {
                     RAstPattern::Identifier(mutable, name) => {
-                        semantic_insert_variable(semantic, string_clone(name), ty, *mutable);
+                        semantic_insert_variable(semantic, string_clone(name), field_type, *mutable);
                     },
                     RAstPattern::EnumVariant(_, _, _) => {
-                        semantic_check_pattern(semantic, pattern, &ty, false, globals);
+                        semantic_check_pattern(semantic, pattern, &field_type, false, globals);
                     },
                     RAstPattern::Wildcard => {},
                     _ => semantic_error(&string("An enum's inner patterns must all be irrefutable!")),
