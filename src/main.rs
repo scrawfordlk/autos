@@ -3826,9 +3826,10 @@ fn codegen_enum_destructure(
     patterns: &Vec<RAstPattern>,
     scrutinee: &Scrutinee,
 ) {
+    let generic: Option<RType> = rType_extract_enum_generic(scrutinee_match_type(scrutinee));
     let fields: Vec<RType> = match iCodegen_search_global(icg, string_clone(name)) {
         Option::Some(item) => match item {
-            Item::Enum(RAstEnum::Enum(_, variants, is_generic)) => {
+            Item::Enum(RAstEnum::Enum(_, variants, _)) => {
                 match rAstEnum_get_variant_fields(variants, variant) {
                     Option::Some(fields) => fields,
                     _ => return, // assume this does not occur
@@ -3838,14 +3839,15 @@ fn codegen_enum_destructure(
         },
         _ => return, // assume this case does not occur
     };
+
     let mut offset = codegen_emit_pointer_add(codegen, icg, initial_offset, &RType::Usize, 1); // skip discriminant
     let mut i: usize = 0;
     while i < vec_len::<RType>(&fields) {
-        let ty: &RType = vec_at::<RType>(&fields, i);
+        let ty: RType = rType_instantiate_generic(vec_at::<RType>(&fields, i), &generic);
         let pattern: &RAstPattern = vec_at::<RAstPattern>(patterns, i);
         match pattern {
             RAstPattern::Identifier(_, name) => {
-                let variable_type: RType = scrutinee_inherit_borrow(scrutinee, ty);
+                let variable_type: RType = scrutinee_inherit_borrow(scrutinee, &ty);
                 let pointer: String = codegen_emit_alloca(codegen, icg, &variable_type);
                 if scrutinee_is_reference(scrutinee) {
                     codegen_emit_store(codegen, icg, &variable_type, &offset, &pointer);
