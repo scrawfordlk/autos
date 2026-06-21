@@ -302,10 +302,10 @@ fn rLexer_expect_char(lexer: &mut RLexer, expected: char) {
             if c != expected {
                 let mut message: String = string("unexpected character: ");
                 string_push_string(&mut message, &rLiteral_to_string(&RLiteral::Char(c)));
-                lexer_error(lexer, &message);
+                rLexer_error(lexer, &message);
             }
         },
-        _ => lexer_error(lexer, &string("unexpected end of input")),
+        _ => rLexer_error(lexer, &string("unexpected end of input")),
     }
 }
 
@@ -425,7 +425,7 @@ fn rLexer_scan_integer(lexer: &mut RLexer) -> usize {
         _ => {
             let mut message: String = string("invalid integer literal: ");
             string_push_string(&mut message, &value);
-            lexer_error(lexer, &message);
+            rLexer_error(lexer, &message);
         },
     }
 }
@@ -440,7 +440,7 @@ fn rLexer_scan_char_literal(lexer: &mut RLexer) -> char {
                 ch
             }
         },
-        _ => lexer_error(lexer, &string("unexpected end of file")),
+        _ => rLexer_error(lexer, &string("unexpected end of file")),
     };
     rLexer_expect_char(lexer, '\'');
     c
@@ -460,7 +460,7 @@ fn rLexer_scan_string_literal(lexer: &mut RLexer) -> String {
                     string_push(&mut s, c);
                 }
             },
-            _ => lexer_error(lexer, &string("unexpected end of string literal")),
+            _ => rLexer_error(lexer, &string("unexpected end of string literal")),
         }
     }
     s // satisfy compiler
@@ -476,7 +476,7 @@ fn rLexer_scan_escape_char(lexer: &mut RLexer) -> char {
             '0' => '\0',
             c => c,
         },
-        _ => lexer_error(lexer, &string("unexpected end of escape sequence")),
+        _ => rLexer_error(lexer, &string("unexpected end of escape sequence")),
     }
 }
 
@@ -503,7 +503,7 @@ fn rLexer_scan_symbol(lexer: &mut RLexer) -> RToken {
         c => {
             let mut message: String = string("unexpected character: ");
             string_push_string(&mut message, &rLiteral_to_string(&RLiteral::Char(c)));
-            lexer_error(lexer, &message);
+            rLexer_error(lexer, &message);
         },
     }
 }
@@ -612,11 +612,11 @@ fn rLexer_skip_attributes(lexer: &mut RLexer) {
                                 skipping = false
                             }
                         },
-                        _ => lexer_error(lexer, &string("attribute is missing closing ']'")),
+                        _ => rLexer_error(lexer, &string("attribute is missing closing ']'")),
                     }
                 }
             } else {
-                lexer_error(lexer, &string("expected '[' after '#'"));
+                rLexer_error(lexer, &string("expected '[' after '#'"));
             }
         } else {
             return;
@@ -4388,23 +4388,15 @@ fn codegen_mangle_name(codegen: &Codegen, callee: &String) -> String {
     string_replace_all(&mut name, ':', '.');
     match codegen_generic_instance(codegen, callee) {
         Option::Some(ty) => {
-            string_push(&mut name, '.'); // mangle name to avoid name collisions
-            match &ty {
-                RType::Enum(enum_name, _) => {
-                    if string_eq(&enum_name, &string("&str")) {
-                        string_push_string(&mut name, &string("str"));
-                        return name;
-                    }
-                },
-                _ => {},
-            };
-            let mut mangled: String = rType_to_string(&ty);
-            string_replace_all(&mut mangled, '<', '.');
-            string_replace_all(&mut mangled, '>', '.');
-            string_push_string(&mut name, &mangled);
+            string_push(&mut name, '.'); // mangle for each instantiation
+            string_push_string(&mut name, &rType_to_string(&ty));
         },
         _ => {},
     }
+    string_replace_all(&mut name, '<', '.'); // for generic enums
+    string_replace_all(&mut name, '>', '.'); // for generic enums
+    string_replace_all(&mut name, '&', '$'); // for references
+    string_replace_all(&mut name, ' ', '_'); // for pointers/references
     name
 }
 
@@ -4811,7 +4803,7 @@ fn lLexer_scan_identifier_or_keyword(lexer: &mut LLexer) -> String {
     while true {
         match lLexer_peek_char(lexer) {
             Option::Some(ch) => {
-                if is_alphanumeric_or_dot(ch) {
+                if is_llvm_identifier(ch) {
                     lLexer_consume_char(lexer);
                     string_push(&mut identifier, ch);
                 } else {
@@ -4900,10 +4892,16 @@ fn lLexer_scan_keyword_or_label(lexer: &mut LLexer) -> LToken {
                     lLexer_consume_char(lexer);
                     LToken::LabelIdent(identifier)
                 } else {
-                    panic("unexpected identifier")
+                    let mut msg: String = string("unexpected identifier: ");
+                    string_push_string(&mut msg, &identifier);
+                    lLexer_error(lexer, &msg)
                 }
             },
-            _ => panic("unexpected identifier"),
+            _ => {
+                let mut msg: String = string("unexpected identifier: ");
+                string_push_string(&mut msg, &identifier);
+                lLexer_error(lexer, &msg);
+            },
         }
     }
 }
@@ -4945,7 +4943,11 @@ fn lLexer_scan_symbol(lexer: &mut LLexer) -> LToken {
         ']' => LToken::RBracket,
         ',' => LToken::Comma,
         '=' => LToken::Assign,
-        _ => panic("unsupported token in LLVM input"),
+        c => {
+            let mut msg: String = string("unexpected character in LLVM-IR input: ");
+            string_push(&mut msg, c);
+            lLexer_error(lexer, &msg);
+        },
     }
 }
 
@@ -6592,13 +6594,13 @@ fn report_warning(file: &SourceFile, message: &String) {
     eprint_str("\n");
 }
 
-fn lexer_error(lexer: &RLexer, message: &String) -> ! {
+fn rLexer_error(lexer: &RLexer, message: &String) -> ! {
     report_error(rLexer_sourcefile(lexer), message)
 }
 
 /// Emit an error at the parser current location and abort.
 fn parse_error(lexer: &RLexer, message: &String) -> ! {
-    lexer_error(lexer, message)
+    rLexer_error(lexer, message)
 }
 
 fn semantic_error(message: &String) -> ! {
@@ -6606,6 +6608,10 @@ fn semantic_error(message: &String) -> ! {
     eprint_string(message);
     eprintln();
     exit_process(1)
+}
+
+fn lLexer_error(lexer: &LLexer, message: &String) -> ! {
+    report_error(lLexer_sourcefile(lexer), message)
 }
 
 /// Emit an LLVM parser error and panic.
@@ -6694,9 +6700,8 @@ fn is_alphanumeric(c: char) -> bool {
     or(is_alpha(c), is_digit(c))
 }
 
-/// Check whether a character is alphanumeric or '.'.
-fn is_alphanumeric_or_dot(ch: char) -> bool {
-    or(is_alphanumeric(ch), ch == '.')
+fn is_llvm_identifier(ch: char) -> bool {
+    or(is_alphanumeric(ch), or(ch == '.', ch == '$'))
 }
 
 /// Convert an ASCII character to uppercase.
