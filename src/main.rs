@@ -1045,6 +1045,8 @@ fn rType_extract_enum_generic(ty: &RType) -> Option<RType> {
             Option::Some(instance) => Option::Some(rType_clone(box_deref::<RType>(instance))),
             _ => Option::None,
         },
+        RType::Reference(inner, _) => rType_extract_enum_generic(box_deref::<RType>(inner)),
+        RType::RawPointerMut(inner) => rType_extract_enum_generic(box_deref::<RType>(inner)),
         _ => Option::None,
     }
 }
