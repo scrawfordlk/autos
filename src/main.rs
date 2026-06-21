@@ -6700,14 +6700,6 @@ enum Option<T> {
     None,
 }
 
-/// Check whether an Option value is the None variant.
-fn option_is_none<T>(opt: &Option<T>) -> bool {
-    match opt {
-        Option::Some(_) => false,
-        Option::None => true,
-    }
-}
-
 /// Returns the value wrapped in Some.
 /// If the Option is None, end the program.
 fn unwrap<T>(opt: Option<T>) -> T {
