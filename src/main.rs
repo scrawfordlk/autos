@@ -259,15 +259,30 @@ fn rLexer_consume_char(lexer: &mut RLexer) -> Option<char> {
     *index = *index + 1;
 
     match current {
-        Option::Some(character) => {
+        Option::<char>::Some(character) => {
             if character == '\n' {
                 *line = *line + 1;
                 *last_newline_idx = *index;
             }
         },
-        Option::None => {},
+        _ => {},
     }
     current
+}
+
+/// Peek at the next character and consume/return true if it matches the given character.
+fn rLexer_try_consume_char(lexer: &mut RLexer, expected: char) -> bool {
+    match rLexer_peek_char(lexer) {
+        Option::<char>::Some(c) => {
+            if c == expected {
+                rLexer_consume_char(lexer);
+                true
+            } else {
+                false
+            }
+        },
+        _ => false,
+    }
 }
 
 /// Consume `token` when present and report success.
@@ -283,14 +298,14 @@ fn rLexer_try_consume(lexer: &mut RLexer, token: &RToken) -> bool {
 /// Consume the next character, erroring if it doesn't match expected.
 fn rLexer_expect_char(lexer: &mut RLexer, expected: char) {
     match rLexer_consume_char(lexer) {
-        Option::Some(c) => {
+        Option::<char>::Some(c) => {
             if c != expected {
                 let mut message: String = string("unexpected character: ");
                 string_push_string(&mut message, &rLiteral_to_string(&RLiteral::Char(c)));
                 lexer_error(lexer, &message);
             }
         },
-        Option::None => lexer_error(lexer, &string("unexpected end of input")),
+        _ => lexer_error(lexer, &string("unexpected end of input")),
     }
 }
 
@@ -302,7 +317,7 @@ fn rLexer_next_token(lexer: &mut RLexer) -> RToken {
     rLexer_skip_whitespace(lexer);
 
     let token: RToken = match rLexer_peek_char(lexer) {
-        Option::Some(c) => {
+        Option::<char>::Some(c) => {
             if is_alpha(c) {
                 let ident: String = rLexer_scan_identifier(lexer);
                 rust_identifier_to_token(ident)
@@ -319,7 +334,7 @@ fn rLexer_next_token(lexer: &mut RLexer) -> RToken {
                 rLexer_scan_symbol(lexer)
             }
         },
-        Option::None => RToken::Eof,
+        _ => RToken::Eof,
     };
 
     rLexer_set_current_token(lexer, rToken_clone(&token));
@@ -331,7 +346,7 @@ fn rLexer_scan_identifier(lexer: &mut RLexer) -> String {
     let mut ident: String = string_new();
     while true {
         match rLexer_peek_char(lexer) {
-            Option::Some(c) => {
+            Option::<char>::Some(c) => {
                 if is_alphanumeric(c) {
                     rLexer_consume_char(lexer);
                     string_push(&mut ident, c);
@@ -339,7 +354,7 @@ fn rLexer_scan_identifier(lexer: &mut RLexer) -> String {
                     return ident;
                 }
             },
-            Option::None => return ident,
+            _ => return ident,
         }
     }
     ident // satisfy compiler
@@ -394,7 +409,7 @@ fn rLexer_scan_integer(lexer: &mut RLexer) -> usize {
     let mut done: bool = false;
     while not(done) {
         match rLexer_peek_char(lexer) {
-            Option::Some(c) => {
+            Option::<char>::Some(c) => {
                 if is_digit(c) {
                     string_push(&mut value, c);
                     rLexer_consume_char(lexer);
@@ -402,12 +417,11 @@ fn rLexer_scan_integer(lexer: &mut RLexer) -> usize {
                     done = true;
                 }
             },
-            Option::None => done = true,
+            _ => done = true,
         }
     }
-
     match string_to_integer(&value, 10) {
-        Option::Some(int) => int,
+        Option::<usize>::Some(int) => int,
         _ => {
             let mut message: String = string("invalid integer literal: ");
             string_push_string(&mut message, &value);
@@ -419,9 +433,14 @@ fn rLexer_scan_integer(lexer: &mut RLexer) -> usize {
 fn rLexer_scan_char_literal(lexer: &mut RLexer) -> char {
     rLexer_expect_char(lexer, '\'');
     let c: char = match rLexer_consume_char(lexer) {
-        Option::Some('\\') => rLexer_scan_escape_char(lexer),
-        Option::Some(ch) => ch,
-        Option::None => lexer_error(lexer, &string("unexpected end of file")),
+        Option::<char>::Some(ch) => {
+            if ch == '\\' {
+                rLexer_scan_escape_char(lexer)
+            } else {
+                ch
+            }
+        },
+        _ => lexer_error(lexer, &string("unexpected end of file")),
     };
     rLexer_expect_char(lexer, '\'');
     c
@@ -432,10 +451,16 @@ fn rLexer_scan_string_literal(lexer: &mut RLexer) -> String {
     let mut s: String = string_new();
     while true {
         match rLexer_consume_char(lexer) {
-            Option::Some('"') => return s,
-            Option::Some('\\') => string_push(&mut s, rLexer_scan_escape_char(lexer)),
-            Option::Some(c) => string_push(&mut s, c),
-            Option::None => lexer_error(lexer, &string("unexpected end of string literal")),
+            Option::<char>::Some(c) => {
+                if c == '"' {
+                    return s;
+                } else if c == '\\' {
+                    string_push(&mut s, rLexer_scan_escape_char(lexer));
+                } else {
+                    string_push(&mut s, c);
+                }
+            },
+            _ => lexer_error(lexer, &string("unexpected end of string literal")),
         }
     }
     s // satisfy compiler
@@ -444,12 +469,14 @@ fn rLexer_scan_string_literal(lexer: &mut RLexer) -> String {
 /// Scan an escape sequence after backslash.
 fn rLexer_scan_escape_char(lexer: &mut RLexer) -> char {
     match rLexer_consume_char(lexer) {
-        Option::Some('n') => '\n',
-        Option::Some('t') => '\t',
-        Option::Some('r') => '\r',
-        Option::Some('0') => '\0',
-        Option::Some(c) => c,
-        Option::None => lexer_error(lexer, &string("unexpected end of escape sequence")),
+        Option::<char>::Some(c) => match c {
+            'n' => '\n',
+            't' => '\t',
+            'r' => '\r',
+            '0' => '\0',
+            c => c,
+        },
+        _ => lexer_error(lexer, &string("unexpected end of escape sequence")),
     }
 }
 
@@ -482,91 +509,76 @@ fn rLexer_scan_symbol(lexer: &mut RLexer) -> RToken {
 }
 
 fn rLexer_scan_slash(lexer: &mut RLexer) -> RToken {
-    match rLexer_peek_char(lexer) {
-        Option::Some('/') => {
-            rLexer_consume_char(lexer);
-            rLexer_skip_line_comment(lexer);
-            rLexer_next_token(lexer)
-        },
-        _ => RToken::Slash,
+    if rLexer_try_consume_char(lexer, '/') {
+        rLexer_consume_char(lexer);
+        rLexer_skip_line_comment(lexer);
+        rLexer_next_token(lexer)
+    } else {
+        RToken::Slash
     }
 }
 
 fn rLexer_scan_colon(lexer: &mut RLexer) -> RToken {
-    match rLexer_peek_char(lexer) {
-        Option::Some(':') => {
-            rLexer_consume_char(lexer);
-            RToken::DoubleColon
-        },
-        _ => RToken::Colon,
+    if rLexer_try_consume_char(lexer, ':') {
+        RToken::DoubleColon
+    } else {
+        RToken::Colon
     }
 }
 
 fn rLexer_scan_equals(lexer: &mut RLexer) -> RToken {
-    match rLexer_peek_char(lexer) {
-        Option::Some('=') => {
-            rLexer_consume_char(lexer);
-            RToken::Eq
-        },
-        Option::Some('>') => {
-            rLexer_consume_char(lexer);
-            RToken::FatArrow
-        },
-        _ => RToken::Assign,
+    if rLexer_try_consume_char(lexer, '=') {
+        RToken::Eq
+    } else if rLexer_try_consume_char(lexer, '>') {
+        RToken::FatArrow
+    } else {
+        RToken::Assign
     }
 }
 
 fn rLexer_scan_minus(lexer: &mut RLexer) -> RToken {
-    match rLexer_peek_char(lexer) {
-        Option::Some('>') => {
-            rLexer_consume_char(lexer);
-            RToken::Arrow
-        },
-        _ => RToken::Minus,
+    if rLexer_try_consume_char(lexer, '>') {
+        RToken::Arrow
+    } else {
+        RToken::Minus
     }
 }
 
 fn rLexer_scan_bang(lexer: &mut RLexer) -> RToken {
-    match rLexer_peek_char(lexer) {
-        Option::Some('=') => {
-            rLexer_consume_char(lexer);
-            RToken::Neq
-        },
-        _ => RToken::Bang,
+    if rLexer_try_consume_char(lexer, '=') {
+        RToken::Neq
+    } else {
+        RToken::Bang
     }
 }
 
 fn rLexer_scan_less(lexer: &mut RLexer) -> RToken {
-    match rLexer_peek_char(lexer) {
-        Option::Some('=') => {
-            rLexer_consume_char(lexer);
-            RToken::Leq
-        },
-        _ => RToken::LAngle,
+    if rLexer_try_consume_char(lexer, '=') {
+        RToken::Leq
+    } else {
+        RToken::LAngle
     }
 }
 
 fn rLexer_scan_greater(lexer: &mut RLexer) -> RToken {
-    match rLexer_peek_char(lexer) {
-        Option::Some('=') => {
-            rLexer_consume_char(lexer);
-            RToken::Geq
-        },
-        _ => RToken::RAngle,
+    if rLexer_try_consume_char(lexer, '=') {
+        RToken::Geq
+    } else {
+        RToken::RAngle
     }
 }
 
 fn rLexer_skip_whitespace(lexer: &mut RLexer) {
     while true {
         match rLexer_peek_char(lexer) {
-            Option::Some(c) => {
+            Option::<char>::Some(c) => {
                 if is_whitespace(c) {
                     rLexer_consume_char(lexer);
                 } else {
                     return;
                 }
             },
-            Option::None => return,
+            _ => return,
         }
     }
 }
@@ -574,9 +586,12 @@ fn rLexer_skip_whitespace(lexer: &mut RLexer) {
 fn rLexer_skip_line_comment(lexer: &mut RLexer) {
     while true {
         match rLexer_consume_char(lexer) {
-            Option::Some('\n') => return,
-            Option::Some(_) => (),
-            Option::None => return,
+            Option::<char>::Some(c) => {
+                if c == '\n' {
+                    return;
+                }
+            },
+            _ => return,
         }
     }
 }
@@ -585,27 +600,26 @@ fn rLexer_skip_line_comment(lexer: &mut RLexer) {
 fn rLexer_skip_attributes(lexer: &mut RLexer) {
     rLexer_skip_whitespace(lexer);
     while true {
-        match rLexer_peek_char(lexer) {
-            Option::Some('#') => {
-                rLexer_consume_char(lexer);
-                rLexer_skip_whitespace(lexer);
+        if rLexer_try_consume_char(lexer, '#') {
+            rLexer_skip_whitespace(lexer);
 
-                match rLexer_consume_char(lexer) {
-                    Option::Some('[') => {
-                        let mut skipping: bool = true;
-                        while skipping {
-                            match rLexer_consume_char(lexer) {
-                                Option::Some(']') => skipping = false,
-                                _ => {},
+            if rLexer_try_consume_char(lexer, '[') {
+                let mut skipping: bool = true;
+                while skipping {
+                    match rLexer_consume_char(lexer) {
+                        Option::<char>::Some(c) => {
+                            if c == ']' {
+                                skipping = false
                             }
-                        }
-                    },
-                    _ => {
-                        lexer_error(lexer, &string("expected '[' after '#'"));
-                    },
+                        },
+                        _ => lexer_error(lexer, &string("attribute is missing closing ']'")),
+                    }
                 }
-            },
-            _ => return,
+            } else {
+                lexer_error(lexer, &string("expected '[' after '#'"));
+            }
+        } else {
+            return;
         }
     }
 }
@@ -4902,7 +4916,7 @@ fn lLexer_skip_line(lexer: &mut LLexer) {
     while true {
         match lLexer_consume_char(lexer) {
             Option::Some('\n') => return,
-            Option::Some(_) => (),
+            Option::Some(_) => {},
             Option::None => return,
         }
     }
