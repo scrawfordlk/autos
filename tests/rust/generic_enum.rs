@@ -1,11 +1,14 @@
-enum Option<T> {
-    Some(T),
-    None,
+enum Either<T> {
+    Left(T),
+    Right(T),
 }
 
 fn test() -> usize {
-    let opt: Option<usize> = Option::<usize>::Some(10);
-    42
+    let either: Either<usize> = Either::<usize>::Right(42);
+    match either {
+        Either::Left(value) => value,
+        Either::Right(value) => value,
+    }
 }
 
 fn main() {
