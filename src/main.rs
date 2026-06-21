@@ -1024,7 +1024,28 @@ fn rType_instantiate_generic(ty: &RType, mapping: &Option<RType>) -> RType {
             box_deref::<RType>(inner),
             mapping,
         ))),
+        RType::Enum(name, generic) => match generic {
+            Option::None => match mapping {
+                Option::Some(instance) => RType::Enum(
+                    string_clone(name),
+                    Option::Some(box_new::<RType>(rType_clone(instance))),
+                ),
+                _ => rType_clone(ty),
+            },
+            _ => rType_clone(ty), // already instantiated
+        },
         _ => rType_clone(ty),
+    }
+}
+
+/// If the given type is a generic enum, extract the instance type if there is one.
+fn rType_extract_enum_generic(ty: &RType) -> Option<RType> {
+    match ty {
+        RType::Enum(_, generic) => match generic {
+            Option::Some(instance) => Option::Some(rType_clone(box_deref::<RType>(instance))),
+            _ => Option::None,
+        },
+        _ => Option::None,
     }
 }
 
@@ -2745,9 +2766,17 @@ fn semantic_check_pattern(
         },
         RAstPattern::Wildcard => return, // type agnostic
         RAstPattern::EnumVariant(enum_name, variant, inner_patterns) => {
+            let mut enum_type: RType = RType::Enum(string_clone(enum_name), Option::None);
+
             let fields: Vec<RType> = match stringMap_get::<Item>(globals, string_clone(enum_name)) {
                 Option::Some(item) => match item {
                     Item::Enum(RAstEnum::Enum(_, variants, is_generic)) => {
+                        if *is_generic {
+                            enum_type = rType_instantiate_generic(
+                                &enum_type,
+                                &rType_extract_enum_generic(scrutinee_match_type(&scrutinee)),
+                            );
+                        }
                         if and(not(refutable_ok), vec_len::<RAstVariant>(variants) > 1) {
                             semantic_error(&string("nested enum patterns must all be irrefutable"));
                         }
@@ -2779,7 +2808,7 @@ fn semantic_check_pattern(
                 }
                 i = i + 1;
             }
-            RType::Enum(string_clone(enum_name), Option::None)
+            enum_type
         },
     };
     semantic_expect_type_match(semantic, &pattern_type, scrutinee_match_type(&scrutinee));
