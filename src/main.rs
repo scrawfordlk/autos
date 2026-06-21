@@ -882,7 +882,7 @@ fn rAstEnum_size(codegen: &Codegen, icg: &ICodegen, e: &RAstEnum, generic: &Opti
         let mut size: usize = 0;
         while j < vec_len::<RType>(field_types) {
             let ty: &RType = vec_at::<RType>(field_types, j);
-            let field: RType = rType_instantiate_generic(ty, generic);
+            let field: RType = rType_instantiate_generic(ty, generic, iCodegen_globals(icg));
             size = size + rType_size(codegen, icg, &field);
             j = j + 1;
         }
@@ -1010,19 +1010,24 @@ fn rType_has_value(ty: &RType) -> bool {
 }
 
 /// If the given type is generic and the generic mapping is not None, return the mapped type.
-fn rType_instantiate_generic(ty: &RType, mapping: &Option<RType>) -> RType {
+fn rType_instantiate_generic(ty: &RType, mapping: &Option<RType>, items: &StringMap<Item>) -> RType {
     match ty {
         RType::Generic => match mapping {
             Option::Some(instance) => rType_clone(instance),
             _ => rType_clone(ty),
         },
         RType::Reference(inner, mutable) => RType::Reference(
-            box_new::<RType>(rType_instantiate_generic(box_deref::<RType>(inner), mapping)),
+            box_new::<RType>(rType_instantiate_generic(
+                box_deref::<RType>(inner),
+                mapping,
+                items,
+            )),
             *mutable,
         ),
         RType::RawPointerMut(inner) => RType::RawPointerMut(box_new::<RType>(rType_instantiate_generic(
             box_deref::<RType>(inner),
             mapping,
+            items,
         ))),
         RType::Enum(name, generic) => match generic {
             Option::Some(instance) => RType::Enum(
@@ -1030,13 +1035,26 @@ fn rType_instantiate_generic(ty: &RType, mapping: &Option<RType>) -> RType {
                 Option::Some(box_new::<RType>(rType_instantiate_generic(
                     box_deref::<RType>(instance),
                     mapping,
+                    items,
                 ))),
             ),
             _ => match mapping {
-                Option::Some(instance) => RType::Enum(
-                    string_clone(name),
-                    Option::Some(box_new::<RType>(rType_clone(instance))),
-                ),
+                Option::Some(instance) => match stringMap_get::<Item>(items, string_clone(name)) {
+                    Option::Some(item) => match item {
+                        Item::Enum(RAstEnum::Enum(_, _, is_generic)) => {
+                            if *is_generic {
+                                RType::Enum(
+                                    string_clone(name),
+                                    Option::Some(box_new::<RType>(rType_clone(instance))),
+                                )
+                            } else {
+                                rType_clone(ty)
+                            }
+                        },
+                        _ => rType_clone(ty),
+                    },
+                    _ => rType_clone(ty),
+                },
                 _ => rType_clone(ty),
             },
         },
@@ -2586,7 +2604,7 @@ fn semantic_check_call(
     let mut i: usize = 0;
     while i < vec_len::<RAstExpr>(values) {
         let param_type: &RType = vec_at::<RType>(parameter_types, i);
-        let param_type: RType = rType_instantiate_generic(param_type, generic);
+        let param_type: RType = rType_instantiate_generic(param_type, generic, globals);
 
         let arg: &RAstExpr = vec_at::<RAstExpr>(values, i);
         let arg_type: RType = semantic_check_expression(semantic, arg, globals);
@@ -2594,7 +2612,7 @@ fn semantic_check_call(
         semantic_expect_coerced_type_match(semantic, &arg_type, &param_type);
         i = i + 1;
     }
-    rType_instantiate_generic(return_type, generic)
+    rType_instantiate_generic(return_type, generic, globals)
 }
 
 fn semantic_check_enum(
@@ -2629,7 +2647,7 @@ fn semantic_check_enum(
     let mut i: usize = 0;
     while i < vec_len::<RType>(&fields) {
         let field_type: &RType = vec_at::<RType>(&fields, i);
-        let field_type: RType = rType_instantiate_generic(field_type, &generic);
+        let field_type: RType = rType_instantiate_generic(field_type, &generic, globals);
         let expr: &RAstExpr = vec_at::<RAstExpr>(values, i);
         let expr_type: RType = semantic_check_expression(semantic, expr, globals);
         semantic_expect_coerced_type_match(semantic, &expr_type, &field_type);
@@ -2781,7 +2799,7 @@ fn semantic_check_pattern(
                 Option::Some(item) => match item {
                     Item::Enum(RAstEnum::Enum(_, variants, is_generic)) => {
                         if *is_generic {
-                            enum_type = rType_instantiate_generic(&enum_type, &generic);
+                            enum_type = rType_instantiate_generic(&enum_type, &generic, globals);
                         }
                         if and(not(refutable_ok), vec_len::<RAstVariant>(variants) > 1) {
                             semantic_error(&string("nested enum patterns must all be irrefutable"));
@@ -2801,7 +2819,8 @@ fn semantic_check_pattern(
             let mut i: usize = 0;
             while i < vec_len::<RAstPattern>(inner_patterns) {
                 let pattern: &RAstPattern = vec_at::<RAstPattern>(inner_patterns, i);
-                let mut field_type: RType = rType_instantiate_generic(vec_at::<RType>(&fields, i), &generic);
+                let mut field_type: RType =
+                    rType_instantiate_generic(vec_at::<RType>(&fields, i), &generic, globals);
                 field_type = scrutinee_inherit_borrow(&scrutinee, &field_type);
                 match pattern {
                     RAstPattern::Identifier(mutable, name) => {
@@ -3448,7 +3467,7 @@ fn codegen_call(
                 return STPair::ST(integer_to_string(size), RType::Usize);
             }
 
-            return_type = rType_instantiate_generic(&return_type, generic);
+            return_type = rType_instantiate_generic(&return_type, generic, iCodegen_globals(icg));
             do_generate
         },
         _ => false,
@@ -3849,7 +3868,8 @@ fn codegen_enum_destructure(
     let mut offset = codegen_emit_pointer_add(codegen, icg, initial_offset, &RType::Usize, 1); // skip discriminant
     let mut i: usize = 0;
     while i < vec_len::<RType>(&fields) {
-        let ty: RType = rType_instantiate_generic(vec_at::<RType>(&fields, i), &generic);
+        let ty: RType =
+            rType_instantiate_generic(vec_at::<RType>(&fields, i), &generic, iCodegen_globals(icg));
         let pattern: &RAstPattern = vec_at::<RAstPattern>(patterns, i);
         match pattern {
             RAstPattern::Identifier(_, name) => {
