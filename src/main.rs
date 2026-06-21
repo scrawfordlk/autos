@@ -809,7 +809,7 @@ fn rAstLiteral_type(literal: &RLiteral) -> RType {
         RLiteral::Int(_) => RType::Usize,
         RLiteral::Char(_) => RType::Char,
         RLiteral::Bool(_) => RType::Bool,
-        RLiteral::String(_) => RType::Enum(string("&str"), Option::None),
+        RLiteral::String(_) => RType::Enum(string("&str"), Option::<Box<RType>>::None),
     }
 }
 
@@ -852,8 +852,8 @@ fn rType_size(codegen: &Codegen, icg: &ICodegen, ty: &RType) -> usize {
         RType::Unit | RType::Never => 0,
         RType::Enum(name, generic) => {
             let generic: Option<RType> = match generic {
-                Option::Some(instance) => Option::Some(rType_clone(box_deref::<RType>(instance))),
-                _ => Option::None,
+                Option::Some(instance) => Option::<RType>::Some(rType_clone(box_deref::<RType>(instance))),
+                _ => Option::<RType>::None,
             };
             match iCodegen_search_global(icg, string_clone(name)) {
                 Option::Some(item) => match item {
@@ -899,11 +899,11 @@ fn rAstEnum_get_variant_fields(variants: &Vec<RAstVariant>, variant: &String) ->
     while i < vec_len::<RAstVariant>(variants) {
         let RAstVariant::Variant(name, types): &RAstVariant = vec_at::<RAstVariant>(variants, i);
         if string_eq(name, variant) {
-            return Option::Some(types_clone(types));
+            return Option::<Vec<RType>>::Some(types_clone(types));
         }
         i = i + 1;
     }
-    Option::None
+    Option::<Vec<RType>>::None
 }
 
 /// Get an identifying discriminator for a given variant of variants.
