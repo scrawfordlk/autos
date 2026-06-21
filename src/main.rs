@@ -4364,14 +4364,8 @@ fn codegen_emit_call_void(
 
 /// Mangles a function name by replacing all `::` with `..`  and appending `.<type>` if the function is generic.
 fn codegen_mangle_name(codegen: &Codegen, callee: &String) -> String {
-    let mut name: String = string_with_capacity(string_len(callee));
-    let mut i: usize = 0;
-    while i < string_len(callee) {
-        let mut c: char = string_at(callee, i);
-        c = if c == ':' { '.' } else { c };
-        string_push(&mut name, c);
-        i = i + 1;
-    }
+    let mut name: String = string_clone(callee);
+    string_replace_all(&mut name, ':', '.');
     match codegen_generic_instance(codegen, callee) {
         Option::Some(ty) => {
             string_push(&mut name, '.'); // mangle name to avoid name collisions
@@ -4383,8 +4377,11 @@ fn codegen_mangle_name(codegen: &Codegen, callee: &String) -> String {
                     }
                 },
                 _ => {},
-            }
-            string_push_string(&mut name, &rType_to_string(&ty));
+            };
+            let mut mangled: String = rType_to_string(&ty);
+            string_replace_all(&mut mangled, '<', '.');
+            string_replace_all(&mut mangled, '>', '.');
+            string_push_string(&mut name, &mangled);
         },
         _ => {},
     }
@@ -7893,6 +7890,17 @@ fn string_push_str(String::Inner(bytes): &mut String, str: &str) {
 /// Push a string onto another string.
 fn string_push_string(String::Inner(bytes): &mut String, String::Inner(other_bytes): &String) {
     vec_extend::<u8>(bytes, other_bytes);
+}
+
+/// Replace all characters `old` with `new`.
+fn string_replace_all(string: &mut String, old: char, new: char) {
+    let mut i: usize = 0;
+    while i < string_len(string) {
+        if string_at(string, i) == old {
+            string_set(string, i, new);
+        }
+        i = i + 1;
+    }
 }
 
 /// Converts a string into an integer given the base.
