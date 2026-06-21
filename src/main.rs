@@ -8259,8 +8259,8 @@ fn eprintln() {
 unsafe fn io_write_report_error(path: &str, buffer_ptr: *mut u8, len: usize) {
     let path_ptr: *mut u8 = str::as_ptr(path) as *mut u8;
     match unsafe { io_write(path_ptr, buffer_ptr, len) } {
-        IOResult::OpenFailure => eprint_str("Could not open \n"),
-        IOResult::WriteFailure => eprint_str("Could not write to \n"),
+        IOResult::OpenFailure => eprint_str("Could not open "),
+        IOResult::WriteFailure => eprint_str("Could not write to "),
         _ => return,
     };
     eprint_str(path);
