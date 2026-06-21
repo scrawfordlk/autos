@@ -1025,14 +1025,20 @@ fn rType_instantiate_generic(ty: &RType, mapping: &Option<RType>) -> RType {
             mapping,
         ))),
         RType::Enum(name, generic) => match generic {
-            Option::None => match mapping {
+            Option::Some(instance) => RType::Enum(
+                string_clone(name),
+                Option::Some(box_new::<RType>(rType_instantiate_generic(
+                    box_deref::<RType>(instance),
+                    mapping,
+                ))),
+            ),
+            _ => match mapping {
                 Option::Some(instance) => RType::Enum(
                     string_clone(name),
                     Option::Some(box_new::<RType>(rType_clone(instance))),
                 ),
                 _ => rType_clone(ty),
             },
-            _ => rType_clone(ty), // already instantiated
         },
         _ => rType_clone(ty),
     }
