@@ -6757,6 +6757,7 @@ fn vec_with_capacity<T>(initial_capacity: usize) -> Vec<T> {
 /// Create a vector with a fixed initial length.
 fn vec_with_len<T>(len: usize) -> Vec<T> {
     let Vec::Vec(ptr, _, capacity) = vec_with_capacity(len);
+    unsafe { memset(ptr as *mut u8, size_of::<T>() * len, 0 as u8) };
     Vec::Vec(ptr, len, capacity)
 }
 
@@ -8266,10 +8267,9 @@ unsafe fn io_write(path: *mut u8, buffer: *mut u8, len: usize) -> IOResult {
 
 // ------------------------- Memory -------------------------------
 
-/// Copy n bytes from src to dest.
-///
-/// It must hold: forall 0 <= i < n, dest[i] can be written
-/// and src[i] can be read safely.
+/// Copy `n` bytes from `src` to `dest`.
+/// The caller must ensure that memory ranging from `dest[0]` to `dest[n - 1]`
+/// can be written safely and from `src[0]` to `src[n - 1]` can be read safely.
 unsafe fn memcopy<T>(dest: *mut T, src: *mut T, n: usize) {
     let byte_count: usize = n * size_of::<T>();
     let dest_u8: *mut u8 = dest as *mut u8;
@@ -8277,6 +8277,16 @@ unsafe fn memcopy<T>(dest: *mut T, src: *mut T, n: usize) {
     let mut i: usize = 0;
     while i < byte_count {
         unsafe { *ptr_add::<u8>(dest_u8, i) = *ptr_add::<u8>(src_u8, i) };
+        i = i + 1;
+    }
+}
+
+/// Set `n` bytes starting from `src` to the integer `value`.
+/// The caller must ensure that memory ranging from `src[0]` to `src[n - 1] can be read safely.
+unsafe fn memset(target: *mut u8, n: usize, value: u8) {
+    let mut i: usize = 0;
+    while i < n {
+        unsafe { *ptr_add::<u8>(target, i) = value };
         i = i + 1;
     }
 }
