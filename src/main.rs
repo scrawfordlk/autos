@@ -6024,14 +6024,21 @@ fn emu_allocate_stack(emulator: &mut Emu, size: usize) -> Option<usize> {
 fn emu_allocate_heap(emulator: &mut Emu, size: usize) -> Option<usize> {
     let size: usize = max(size, size_of::<usize>());
     let aligned_size: usize = round_to_next_multiple(size, size_of::<usize>());
-    let heap_pointer: usize = emu_get_heap_pointer(emulator);
+    let mut heap_pointer: usize = emu_get_heap_pointer(emulator);
     let new_heap_pointer: usize = heap_pointer + aligned_size;
     let stack_pointer: usize = emu_get_sp(emulator);
 
     if new_heap_pointer >= stack_pointer {
         Option::None
     } else {
-        emu_set_heap_pointer(emulator, new_heap_pointer);
+        if heap_pointer == 0 {
+            // HACK: allocate slightly more and return the address beginning from 8 to avoid
+            // returning 0 (0 is a sentinel value for malloc())
+            emu_set_heap_pointer(emulator, new_heap_pointer + size_of::<usize>());
+            heap_pointer = heap_pointer + size_of::<usize>();
+        } else {
+            emu_set_heap_pointer(emulator, new_heap_pointer);
+        }
         Option::Some(heap_pointer)
     }
 }
@@ -6234,7 +6241,7 @@ fn emu_execute_builtin(emulator: &mut Emu, builtin: &BuiltIn, arguments: &Vec<Va
             let value: usize = value_get_int(vec_at::<Value>(arguments, 0));
             match emu_allocate_heap(emulator, value) {
                 Option::Some(address) => address,
-                Option::None => panic("heap overflow of emu"),
+                Option::None => 0, // = NULL
             }
         },
         BuiltIn::Exit => {
