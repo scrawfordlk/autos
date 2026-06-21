@@ -6872,9 +6872,8 @@ fn vec_set<T>(vec: &mut Vec<T>, index: usize, value: T) -> bool {
     if index >= vec_len::<T>(vec) {
         false
     } else {
-        let ptr: *mut T = vec_ptr::<T>(vec);
-        let ptr: *mut T = ptr_add::<T>(ptr, index);
-        unsafe { *ptr = value };
+        let elem: &mut T = vec_at_mut(vec, index);
+        *elem = value;
         true
     }
 }
