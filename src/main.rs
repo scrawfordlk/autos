@@ -5934,7 +5934,7 @@ enum Emu {
 /// with the globals found in the AST.
 fn emu_new(memory_size: usize, ast: &LAst) -> Emu {
     let stack_pointer: usize = memory_size;
-    let memory: Vec<u8> = vec_with_len::<u8>(memory_size);
+    let memory: Vec<u8> = unsafe { vec_with_len::<u8>(memory_size) };
     let globals: StringMap<usize> = stringMap_new::<usize>();
     let mut emulator: Emu = Emu::Emu(globals, memory, stack_pointer, 0, 0, Option::None);
     let heap_start: usize = emu_initialise_global_data(&mut emulator, &ast);
@@ -6024,7 +6024,6 @@ fn emu_allocate_heap(emulator: &mut Emu, mut size: usize) -> Option<usize> {
     if bump_pointer == 0 {
         // HACK: allocate 8 extra bytes and return the address 8 to avoid
         // returning 0 (0 is a sentinel value for malloc(), indicating failure)
-        print_str(" (HACK) ");
         aligned_size = aligned_size + size_of::<usize>();
         bump_pointer = size_of::<usize>();
     }
@@ -6774,10 +6773,9 @@ fn vec_with_capacity<T>(initial_capacity: usize) -> Vec<T> {
 }
 
 /// Create a vector with a fixed initial length.
-/// TODO: make this unsafe to not map all memory and leave it uninitialised
-fn vec_with_len<T>(len: usize) -> Vec<T> {
+/// The caller must ensure to not read the vector's elements before initialising them.
+unsafe fn vec_with_len<T>(len: usize) -> Vec<T> {
     let Vec::Vec(ptr, _, capacity) = vec_with_capacity(len);
-    unsafe { memset(ptr as *mut u8, size_of::<T>() * len, 0 as u8) };
     Vec::Vec(ptr, len, capacity)
 }
 
@@ -8293,16 +8291,6 @@ unsafe fn memcopy<T>(dest: *mut T, src: *mut T, n: usize) {
     let mut i: usize = 0;
     while i < byte_count {
         unsafe { *ptr_add::<u8>(dest_u8, i) = *ptr_add::<u8>(src_u8, i) };
-        i = i + 1;
-    }
-}
-
-/// Set `n` bytes starting from `src` to the integer `value`.
-/// The caller must ensure that memory ranging from `src[0]` to `src[n - 1] can be read safely.
-unsafe fn memset(target: *mut u8, n: usize, value: u8) {
-    let mut i: usize = 0;
-    while i < n {
-        unsafe { *ptr_add::<u8>(target, i) = value };
         i = i + 1;
     }
 }
