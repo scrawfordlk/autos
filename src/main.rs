@@ -1,92 +1,68 @@
 #![allow(clippy::assign_op_pattern, while_true, non_snake_case)]
-
-fn main() {
-    use std::io::Write as StdWrite;
-    use std::option::Option as StdOption;
-    use std::path::Path as StdPath;
-    use std::string::String as StdString;
-    use std::vec::Vec as StdVec;
-
-    let args: StdVec<StdString> = std::env::args().collect();
-    if args.len() <= 1 {
+#![no_main]
+#[unsafe(no_mangle)]
+fn main(argc: usize, argv: *mut *mut u8) {
+    let args: Args = args_new(argc, argv);
+    if args_len(&args) <= 1 {
         print_help_exit();
     }
 
-    if args[1] == "-c" {
-        if args.len() < 3 {
-            print_help_exit();
+    if string_eq(args_at(&args, 1), &string("-c")) {
+        if args_len(&args) <= 2 {
+            print_help_exit()
         }
-        let input = args[2].clone();
-        let mut file: StdOption<StdString> = StdOption::None;
-        let mut emulate_after = false;
-        let mut run_semantic = true;
+        let input_name: &String = args_at(&args, 2);
+        let source: String = read_file(string_clone(input_name));
+        let mut emulate: bool = false;
+        let mut do_semantic_analysis: bool = true;
+        let mut output_file: Option<String> = Option::<String>::None;
 
-        let mut i = 3;
-        while i < args.len() {
-            if args[i] == "-o" {
-                if i + 1 >= args.len() {
+        let mut i: usize = 0;
+        while i < args_len(&args) {
+            let arg: &String = args_at(&args, i);
+            if string_eq(arg, &string("-o")) {
+                if i + 1 >= args_len(&args) {
                     print_help_exit();
                 }
-                file = StdOption::Some(args[i + 1].clone());
-                i += 2;
-            } else if args[i] == "-e" {
-                emulate_after = true;
-                i += 1;
-            } else if args[i] == "--unsafe" {
-                run_semantic = false;
-                i += 1;
-            } else {
-                // ignore unknown arguments
-                i += 1;
+                output_file = Option::<String>::Some(string_clone(args_at(&args, i + 1)));
+                i = i + 1;
+            } else if string_eq(arg, &string("-e")) {
+                emulate = true;
+            } else if string_eq(arg, &string("--unsafe")) {
+                do_semantic_analysis = false;
             }
+            i = i + 1;
         }
 
-        let code: String = compile(
-            &std::fs::read_to_string(&input).expect("no program found"),
-            run_semantic,
-        );
-        let code_clone: String = string_clone(&code);
-
-        let output_name: StdString = match file {
-            StdOption::Some(s) => s,
-            StdOption::None => {
-                let mut base = StdPath::new(&input)
-                    .file_stem()
-                    .expect("can use base name of input")
-                    .to_string_lossy()
-                    .to_string();
-                base.push_str(".ll");
-                base
-            },
+        let output_code: String = compile(source, do_semantic_analysis);
+        let output_name: String = match output_file {
+            Option::<String>::Some(name) => name,
+            _ => string("default.ll"),
         };
-
-        let String::Inner(vec): String = code;
-        let mut file = std::fs::File::create(&output_name).expect("can create file");
-        let slice = unsafe { core::slice::from_raw_parts(vec_ptr(&vec), vec_len(&vec)) };
-        file.write_all(slice).expect("can write all code");
-
-        if emulate_after {
-            let exit_code: usize = emu_execute_llvm(code_clone);
+        write_file(output_name, &output_code);
+        if emulate {
+            let exit_code: usize = emu_execute_llvm(output_code);
             exit_process(exit_code);
         }
-
         return;
     }
 
-    if args[1] == "-e" {
-        if args.len() < 3 {
-            print_help_exit();
+    if string_eq(args_at(&args, 1), &string("-e")) {
+        if args_len(&args) <= 2 {
+            print_help_exit()
         }
-        let llvm_ir: StdString = std::fs::read_to_string(&args[2]).expect("no llvm file found");
-        let exit_code: usize = emu_execute_llvm(string(&llvm_ir));
+        let input_name: &String = args_at(&args, 2);
+        let llvm: String = read_file(string_clone(input_name));
+        let exit_code: usize = emu_execute_llvm(llvm);
         exit_process(exit_code);
     }
 
-    print_help_exit();
+    print_help_exit()
 }
 
 fn print_help_exit() -> ! {
     eprint_str("Usage: <program> ( -c <input> [ -o <output> ] [ -e ] [ --unsafe ] | -e <inputllvm> )");
+    eprintln();
     exit_process(1);
 }
 
@@ -97,8 +73,8 @@ fn print_help_exit() -> ! {
 // -----------------------------------------------------------------
 
 /// Compile source code into LLVM-IR.
-fn compile(source: &str, do_semantic_analysis: bool) -> String {
-    let mut lexer: RLexer = rLexer_new(string(source));
+fn compile(source: String, do_semantic_analysis: bool) -> String {
+    let mut lexer: RLexer = rLexer_new(source);
     let ast: RAst = parse_language(&mut lexer);
 
     let items: StringMap<Item> = collect_items(&ast);
@@ -6506,6 +6482,41 @@ fn round_to_next_multiple(n: usize, multiple: usize) -> usize {
     }
 }
 
+// -------------------------- Args ---------------------------------
+
+enum Args {
+    /// arguments, cursor
+    Args(Vec<String>),
+}
+
+fn args_new(argc: usize, argv: *mut *mut u8) -> Args {
+    let mut args: Vec<String> = vec_new::<String>();
+    unsafe {
+        let mut i: usize = 0;
+        while i < argc {
+            let arg: *mut u8 = *ptr_add::<*mut u8>(argv, i);
+            let mut nul_index: usize = 0;
+            while *ptr_add(arg, nul_index) != 0 as u8 {
+                nul_index = nul_index + 1;
+            }
+            let length: usize = nul_index; // do not include the NULL-termination
+            let arg: String = String::Inner(Vec::Vec(arg, length, length));
+            vec_push::<String>(&mut args, arg);
+            i = i + 1;
+        }
+    }
+    Args::Args(args)
+}
+
+fn args_len(Args::Args(args): &Args) -> usize {
+    vec_len::<String>(args)
+}
+
+/// Get the argument at index `index`.
+fn args_at(Args::Args(args): &Args, index: usize) -> &String {
+    vec_at(args, index)
+}
+
 // -------------------------- Error --------------------------------
 
 /// Panic by printing a message and exiting the program.
@@ -8189,37 +8200,64 @@ fn rLiteral_to_string(literal: &RLiteral) -> String {
 // --------------------------- I/O ---------------------------------
 
 enum IOResult {
-    Success,
     OpenFailure,
     WriteFailure,
+    ReadFailure,
+    Success,
+}
+
+/// Check for errors and report if there is one.
+fn io_check_error_str(result: &IOResult, filename: &str) {
+    match result {
+        IOResult::OpenFailure => eprint_str("Could not open "),
+        IOResult::WriteFailure => eprint_str("Could not write to "),
+        IOResult::ReadFailure => eprint_str("Could not read "),
+        _ => return,
+    }
+    eprint_str(filename);
+    eprintln();
+    exit_process(1);
+}
+
+/// Check for errors and report if there is one.
+fn io_check_error_string(result: &IOResult, filename: &String) {
+    match result {
+        IOResult::OpenFailure => eprint_str("Could not open "),
+        IOResult::WriteFailure => eprint_str("Could not write to "),
+        IOResult::ReadFailure => eprint_str("Could not read "),
+        _ => return,
+    }
+    eprint_string(filename);
+    eprintln();
+    exit_process(1);
 }
 
 /// Print a string to stdout.
 fn print_string(String::Inner(bytes): &String) {
     let len: usize = vec_len::<u8>(bytes);
     let ptr: *mut u8 = vec_ptr::<u8>(bytes);
-    unsafe { io_write_report_error("/dev/stdout\0", ptr, len) };
+    unsafe { io_write_report_error_str("/dev/stdout\0", ptr, len) };
 }
 
 /// Print a string to stderr.
 fn eprint_string(String::Inner(bytes): &String) {
     let len: usize = vec_len::<u8>(bytes);
     let ptr: *mut u8 = vec_ptr::<u8>(bytes);
-    unsafe { io_write_report_error("/dev/stderr\0", ptr, len) };
+    unsafe { io_write_report_error_str("/dev/stderr\0", ptr, len) };
 }
 
 /// Print a string slice to stdout.
 fn print_str(text: &str) {
     let len: usize = str::len(text);
     let ptr: *mut u8 = str::as_ptr(text) as *mut u8;
-    unsafe { io_write_report_error("/dev/stdout\0", ptr, len) };
+    unsafe { io_write_report_error_str("/dev/stdout\0", ptr, len) };
 }
 
 /// Print a string slice to stderr.
 fn eprint_str(text: &str) {
     let len: usize = str::len(text);
     let ptr: *mut u8 = str::as_ptr(text) as *mut u8;
-    unsafe { io_write_report_error("/dev/stderr\0", ptr, len) };
+    unsafe { io_write_report_error_str("/dev/stderr\0", ptr, len) };
 }
 
 fn println() {
@@ -8230,24 +8268,69 @@ fn eprintln() {
     eprint_str("\n");
 }
 
+/// Write the entire contents of a string into a file. Creates missing and truncates existing files.
+fn write_file(mut filename: String, String::Inner(Vec::Vec(buf_ptr, len, _)): &String) {
+    string_push(&mut filename, 0 as char); // NULL-terminate the string
+    unsafe { io_write_report_error_string(&filename, *buf_ptr, *len) };
+}
+
+/// Read the entire contents of a file and return it as a String.
+fn read_file(mut filename: String) -> String {
+    string_push(&mut filename, 0 as char); // NULL-terminate the string
+    let String::Inner(Vec::Vec(path_ptr, _, _)): &String = &filename;
+    let O_RDONLY: usize = 0;
+
+    unsafe {
+        let fd: usize = open(*path_ptr, O_RDONLY, 0);
+        if is_negative(fd) {
+            io_check_error_string(&IOResult::OpenFailure, &filename);
+        }
+
+        let mut content: String = string_new();
+        let buffer: Vec<u8> = vec_with_len::<u8>(2048);
+        let buffer_ptr: *mut u8 = vec_ptr::<u8>(&buffer);
+        while true {
+            let bytes_read: usize = read(fd, buffer_ptr, 2048);
+            if is_negative(bytes_read) {
+                io_check_error_string(&IOResult::ReadFailure, &filename);
+            }
+            if bytes_read == 0 {
+                return content;
+            }
+            let mut i: usize = 0;
+            while i < bytes_read {
+                let character: char = *vec_at::<u8>(&buffer, i) as char;
+                string_push(&mut content, character);
+                i = i + 1;
+            }
+        }
+    }
+    string_new() // satisfy compiler
+}
+
 /// Write the given `buffer` to `path` and report an error if there was one.
-/// `path` must be a NULL-terminated string.
-unsafe fn io_write_report_error(path: &str, buffer_ptr: *mut u8, len: usize) {
+/// The caller must ensure that `path` is a NULL-terminated string.
+unsafe fn io_write_report_error_str(path: &str, buffer_ptr: *mut u8, len: usize) {
     let path_ptr: *mut u8 = str::as_ptr(path) as *mut u8;
-    match unsafe { io_write(path_ptr, buffer_ptr, len) } {
-        IOResult::OpenFailure => eprint_str("Could not open "),
-        IOResult::WriteFailure => eprint_str("Could not write to "),
-        _ => return,
-    };
-    eprint_str(path);
-    eprint_str("\n");
-    exit_process(1);
+    let result: IOResult = unsafe { io_write(path_ptr, buffer_ptr, len) };
+    io_check_error_str(&result, path);
+}
+
+/// Write the given `buffer` to `path` and report an error if there was one.
+/// The caller must ensure that `path` is a NULL-terminated string.
+unsafe fn io_write_report_error_string(path: &String, buffer_ptr: *mut u8, len: usize) {
+    let String::Inner(Vec::Vec(path_ptr, _, _)): &String = path;
+    let result: IOResult = unsafe { io_write(*path_ptr, buffer_ptr, len) };
+    io_check_error_string(&result, path);
 }
 
 /// Write the given `buffer` to `path` and return an IOResult.
 /// `path` must be a NULL-terminated string.
 unsafe fn io_write(path: *mut u8, buffer: *mut u8, len: usize) -> IOResult {
-    let fd: usize = unsafe { open(path, 1, 0) };
+    let O_WRONLY_CREAT_TRUNC: usize = 321; // O_WRONLY = 1, O_CREAT = 64, O_TRUNC = 256
+    let mode: usize = 420; // = 0o0644
+
+    let fd: usize = unsafe { open(path, O_WRONLY_CREAT_TRUNC, mode) };
     if is_negative(fd) {
         return IOResult::OpenFailure;
     }
@@ -8261,7 +8344,6 @@ unsafe fn io_write(path: *mut u8, buffer: *mut u8, len: usize) -> IOResult {
         }
         offset = offset + written;
     }
-
     IOResult::Success
 }
 
