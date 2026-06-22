@@ -602,6 +602,8 @@ fn rLexer_skip_attributes(lexer: &mut RLexer) {
     while true {
         if rLexer_try_consume_char(lexer, '#') {
             rLexer_skip_whitespace(lexer);
+            rLexer_try_consume_char(lexer, '!');
+            rLexer_skip_whitespace(lexer);
 
             if rLexer_try_consume_char(lexer, '[') {
                 let mut skipping: bool = true;
