@@ -37,7 +37,7 @@ fn main(argc: usize, argv: *mut *mut u8) {
 
         let output_code: String = compile(source, do_semantic_analysis);
         let output_name: String = match output_file {
-            Option::<String>::Some(name) => name,
+            Option::Some(name) => name,
             _ => {
                 let mut name: String = string_with_capacity(string_len(input_name));
                 let mut i: usize = string_len(input_name) - 1;
@@ -247,7 +247,7 @@ fn rLexer_consume_char(lexer: &mut RLexer) -> Option<char> {
     *index = *index + 1;
 
     match current {
-        Option::<char>::Some(character) => {
+        Option::Some(character) => {
             if character == '\n' {
                 *line = *line + 1;
                 *last_newline_idx = *index;
@@ -261,7 +261,7 @@ fn rLexer_consume_char(lexer: &mut RLexer) -> Option<char> {
 /// Peek at the next character and consume/return true if it matches the given character.
 fn rLexer_try_consume_char(lexer: &mut RLexer, expected: char) -> bool {
     match rLexer_peek_char(lexer) {
-        Option::<char>::Some(c) => {
+        Option::Some(c) => {
             if c == expected {
                 rLexer_consume_char(lexer);
                 true
@@ -286,7 +286,7 @@ fn rLexer_try_consume(lexer: &mut RLexer, token: &RToken) -> bool {
 /// Consume the next character, erroring if it doesn't match expected.
 fn rLexer_expect_char(lexer: &mut RLexer, expected: char) {
     match rLexer_consume_char(lexer) {
-        Option::<char>::Some(c) => {
+        Option::Some(c) => {
             if c != expected {
                 let mut message: String = string("unexpected character: ");
                 string_push_string(&mut message, &rLiteral_to_string(&RLiteral::Char(c)));
@@ -305,7 +305,7 @@ fn rLexer_next_token(lexer: &mut RLexer) -> RToken {
     rLexer_skip_whitespace(lexer);
 
     let token: RToken = match rLexer_peek_char(lexer) {
-        Option::<char>::Some(c) => {
+        Option::Some(c) => {
             if is_alpha(c) {
                 let ident: String = rLexer_scan_identifier(lexer);
                 rust_identifier_to_token(ident)
@@ -334,7 +334,7 @@ fn rLexer_scan_identifier(lexer: &mut RLexer) -> String {
     let mut ident: String = string_new();
     while true {
         match rLexer_peek_char(lexer) {
-            Option::<char>::Some(c) => {
+            Option::Some(c) => {
                 if is_alphanumeric(c) {
                     rLexer_consume_char(lexer);
                     string_push(&mut ident, c);
@@ -397,7 +397,7 @@ fn rLexer_scan_integer(lexer: &mut RLexer) -> usize {
     let mut done: bool = false;
     while not(done) {
         match rLexer_peek_char(lexer) {
-            Option::<char>::Some(c) => {
+            Option::Some(c) => {
                 if is_digit(c) {
                     string_push(&mut value, c);
                     rLexer_consume_char(lexer);
@@ -409,7 +409,7 @@ fn rLexer_scan_integer(lexer: &mut RLexer) -> usize {
         }
     }
     match string_to_integer(&value, 10) {
-        Option::<usize>::Some(int) => int,
+        Option::Some(int) => int,
         _ => {
             let mut message: String = string("invalid integer literal: ");
             string_push_string(&mut message, &value);
@@ -421,7 +421,7 @@ fn rLexer_scan_integer(lexer: &mut RLexer) -> usize {
 fn rLexer_scan_char_literal(lexer: &mut RLexer) -> char {
     rLexer_expect_char(lexer, '\'');
     let c: char = match rLexer_consume_char(lexer) {
-        Option::<char>::Some(ch) => {
+        Option::Some(ch) => {
             if ch == '\\' {
                 rLexer_scan_escape_char(lexer)
             } else {
@@ -439,7 +439,7 @@ fn rLexer_scan_string_literal(lexer: &mut RLexer) -> String {
     let mut s: String = string_new();
     while true {
         match rLexer_consume_char(lexer) {
-            Option::<char>::Some(c) => {
+            Option::Some(c) => {
                 if c == '"' {
                     return s;
                 } else if c == '\\' {
@@ -457,7 +457,7 @@ fn rLexer_scan_string_literal(lexer: &mut RLexer) -> String {
 /// Scan an escape sequence after backslash.
 fn rLexer_scan_escape_char(lexer: &mut RLexer) -> char {
     match rLexer_consume_char(lexer) {
-        Option::<char>::Some(c) => match c {
+        Option::Some(c) => match c {
             'n' => '\n',
             't' => '\t',
             'r' => '\r',
@@ -559,7 +559,7 @@ fn rLexer_scan_greater(lexer: &mut RLexer) -> RToken {
 fn rLexer_skip_whitespace(lexer: &mut RLexer) {
     while true {
         match rLexer_peek_char(lexer) {
-            Option::<char>::Some(c) => {
+            Option::Some(c) => {
                 if is_whitespace(c) {
                     rLexer_consume_char(lexer);
                 } else {
@@ -574,7 +574,7 @@ fn rLexer_skip_whitespace(lexer: &mut RLexer) {
 fn rLexer_skip_line_comment(lexer: &mut RLexer) {
     while true {
         match rLexer_consume_char(lexer) {
-            Option::<char>::Some(c) => {
+            Option::Some(c) => {
                 if c == '\n' {
                     return;
                 }
@@ -597,7 +597,7 @@ fn rLexer_skip_attributes(lexer: &mut RLexer) {
                 let mut skipping: bool = true;
                 while skipping {
                     match rLexer_consume_char(lexer) {
-                        Option::<char>::Some(c) => {
+                        Option::Some(c) => {
                             if c == ']' {
                                 skipping = false
                             }
