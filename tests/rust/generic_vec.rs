@@ -22,7 +22,7 @@ fn test() -> usize {
             if row_idx != col_idx {
                 let Value::Value(Coords::Coords(x, y), c): &Value<char> = vec_at::<Value<char>>(row, col_idx);
                 if or(*x != row_idx, *y != col_idx) {
-                    unsafe { exit(11) } // row=0, col=1, x=1, y=1
+                    unsafe { exit(11) }
                 }
                 non_diagonal = non_diagonal + *c as usize;
             }
