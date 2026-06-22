@@ -5134,44 +5134,44 @@ fn parser_is_instruction_start(parser: &mut Parser) -> bool {
 
 /// Abstract syntax tree of a LLVM-IR module.
 enum LAst {
-    AST(Vec<LGlobal>, StringMap<LFunction>),
+    AST(Vec<CString>, StringMap<LFunction>),
 }
 
 /// Top-level LLVM global data.
-enum LGlobal {
+enum CString {
     /// name, bytes
     String(String, String),
 }
 
 /// Create an empty LLVM AST.
 fn lAst_new() -> LAst {
-    LAst::AST(vec_new::<LGlobal>(), stringMap_new::<LFunction>())
+    LAst::AST(vec_new::<CString>(), stringMap_new::<LFunction>())
 }
 
 /// Get immutable access to the top-level globals list.
-fn lAst_globals(LAst::AST(globals, _): &LAst) -> &Vec<LGlobal> {
-    globals
+fn lAst_globals(LAst::AST(cstrings, _): &LAst) -> &Vec<CString> {
+    cstrings
 }
 
 /// Get mutable access to the top-level globals list.
-fn lAst_globals_mut(LAst::AST(globals, _): &mut LAst) -> &mut Vec<LGlobal> {
-    globals
+fn lAst_globals_mut(LAst::AST(cstrings, _): &mut LAst) -> &mut Vec<CString> {
+    cstrings
 }
 
 /// Insert a global entry into the AST. Returns false on duplicate name.
-fn lAst_insert_global(ast: &mut LAst, name: String, global: LGlobal) -> bool {
-    let globals: &Vec<LGlobal> = lAst_globals(ast);
+fn lAst_insert_global(ast: &mut LAst, name: String, global: CString) -> bool {
+    let globals: &Vec<CString> = lAst_globals(ast);
 
     let mut i: usize = 0;
-    while i < vec_len::<LGlobal>(globals) {
-        let LGlobal::String(existing_name, _): &LGlobal = vec_at::<LGlobal>(globals, i);
+    while i < vec_len::<CString>(globals) {
+        let CString::String(existing_name, _): &CString = vec_at::<CString>(globals, i);
         if string_eq(existing_name, &name) {
             return false;
         }
         i = i + 1;
     }
 
-    vec_push::<LGlobal>(lAst_globals_mut(ast), global);
+    vec_push::<CString>(lAst_globals_mut(ast), global);
     true
 }
 
@@ -5457,7 +5457,7 @@ fn parser_parse_string(parser: &mut Parser) {
             if not(lAst_insert_global(
                 parser_ast_mut(parser),
                 string_clone(&name),
-                LGlobal::String(name, string_value),
+                CString::String(name, string_value),
             )) {
                 parser_error(parser, &string("duplicate LLVM global string"));
             }
@@ -5917,26 +5917,30 @@ enum Emu {
     Emu(
         /// map of global names to their addresses
         StringMap<usize>,
-        /// byte-addressed, double-word-aligned and big-endian memory (data, heap, stack)
+        /// byte-addressed memory (data, heap, stack)
         Vec<u8>,
         /// stack pointer
         usize,
         /// current frame size,
         usize,
-        /// global pointer (end of data segment, start of heap)
+        /// bump pointer (points to top of heap)
         usize,
         /// exit code, if the program exited
         Option<usize>,
     ),
 }
 
-/// Create a new emulator state with `memory_size` bytes of main memory.
-fn emu_new(memory_size: usize) -> Emu {
+/// Create a new emulator state with `memory_size` bytes of main memory and data segment initialised
+/// with the globals found in the AST.
+fn emu_new(memory_size: usize, ast: &LAst) -> Emu {
     let stack_pointer: usize = memory_size;
-    let global_pointer: usize = 0;
     let memory: Vec<u8> = vec_with_len::<u8>(memory_size);
     let globals: StringMap<usize> = stringMap_new::<usize>();
-    Emu::Emu(globals, memory, stack_pointer, 0, global_pointer, Option::None)
+    let mut emulator: Emu = Emu::Emu(globals, memory, stack_pointer, 0, 0, Option::None);
+    let heap_start: usize = emu_initialise_global_data(&mut emulator, &ast);
+    let Emu::Emu(_, _, _, _, bump_pointer, _): &mut Emu = &mut emulator;
+    *bump_pointer = heap_start;
+    emulator
 }
 
 /// Get a shared reference to the global values.
@@ -5969,30 +5973,14 @@ fn emu_set_frame_size(Emu::Emu(_, _, _, frame_size, _, _): &mut Emu, value: usiz
     *frame_size = value;
 }
 
-/// Get the global pointer (end of data segment).
-fn emu_get_gp(Emu::Emu(_, _, _, _, gp, _): &Emu) -> usize {
-    *gp
+/// Get the current value of the allocator's bump pointer.
+fn emu_get_bump_pointer(Emu::Emu(_, _, _, _, bump_pointer, _): &Emu) -> usize {
+    *bump_pointer
 }
 
-/// Set the global pointer (end of data segment).
-fn emu_set_gp(Emu::Emu(_, _, _, _, gp, _): &mut Emu, value: usize) {
-    *gp = value;
-}
-
-/// Get the address of the top of the heap.
-fn emu_get_heap_pointer(emulator: &Emu) -> usize {
-    let gp: usize = emu_get_gp(emulator);
-    match emu_load_bytes(emulator, gp - size_of::<usize>(), size_of::<usize>()) {
-        Value::Int(value) => value,
-        _ => gp,
-    }
-}
-
-/// Allocate and set the heap pointer (which is used by the bump allocator).
-fn emu_set_heap_pointer(emulator: &mut Emu, value: usize) {
-    let gp: usize = emu_get_gp(emulator);
-    emu_store_bytes(emulator, gp, &Value::Int(value), size_of::<usize>());
-    emu_set_gp(emulator, gp + size_of::<usize>());
+/// Increases the allocator's bump pointer by `value`.
+fn emu_increase_bump_pointer(Emu::Emu(_, _, _, _, bump_pointer, _): &mut Emu, value: usize) {
+    *bump_pointer = *bump_pointer + value;
 }
 
 /// Return true if exit was requested and return the code.
@@ -6008,55 +5996,57 @@ fn emu_set_exit_code(Emu::Emu(_, _, _, _, _, exit_code): &mut Emu, code: usize) 
     *exit_code = Option::Some(code);
 }
 
-/// Allocate `size` many double words on the stack and return the address.
+/// Allocate `size` many bytes on the stack and return the address.
 fn emu_allocate_stack(emulator: &mut Emu, size: usize) -> Option<usize> {
-    let bytes: usize = size * size_of::<usize>();
+    let bytes: usize = round_to_next_multiple(size, size_of::<usize>());
     let stack_pointer: usize = emu_get_sp(emulator);
     let frame_size: usize = emu_get_frame_size(emulator);
 
-    let new_sp: usize = stack_pointer - size * size_of::<usize>();
-    emu_set_sp(emulator, new_sp);
-    emu_set_frame_size(emulator, frame_size + bytes);
-    Option::Some(new_sp)
-}
-
-/// Allocate `size` bytes on the heap and return the address.
-fn emu_allocate_heap(emulator: &mut Emu, size: usize) -> Option<usize> {
-    let size: usize = max(size, size_of::<usize>());
-    let aligned_size: usize = round_to_next_multiple(size, size_of::<usize>());
-    let mut heap_pointer: usize = emu_get_heap_pointer(emulator);
-    let new_heap_pointer: usize = heap_pointer + aligned_size;
-    let stack_pointer: usize = emu_get_sp(emulator);
-
-    if new_heap_pointer >= stack_pointer {
-        Option::None
+    let new_sp: usize = stack_pointer - bytes;
+    if new_sp <= emu_get_bump_pointer(emulator) {
+        Option::<usize>::None
     } else {
-        if heap_pointer == 0 {
-            // HACK: allocate slightly more and return the address beginning from 8 to avoid
-            // returning 0 (0 is a sentinel value for malloc())
-            emu_set_heap_pointer(emulator, new_heap_pointer + size_of::<usize>());
-            heap_pointer = heap_pointer + size_of::<usize>();
-        } else {
-            emu_set_heap_pointer(emulator, new_heap_pointer);
-        }
-        Option::Some(heap_pointer)
+        emu_set_sp(emulator, new_sp);
+        emu_set_frame_size(emulator, frame_size + bytes);
+        Option::<usize>::Some(new_sp)
     }
 }
 
-/// Load top-level LLVM string globals into the data segment.
-fn emu_load_globals(emulator: &mut Emu, ast: &LAst) {
-    let mut data_pointer: usize = emu_get_gp(emulator);
+/// Allocate `size` bytes on the heap and return the address.
+fn emu_allocate_heap(emulator: &mut Emu, mut size: usize) -> Option<usize> {
+    size = max(size, 1);
+    let mut aligned_size: usize = round_to_next_multiple(size, size_of::<usize>());
+    let mut bump_pointer: usize = emu_get_bump_pointer(emulator);
 
+    if bump_pointer + aligned_size >= emu_get_sp(emulator) {
+        return Option::None;
+    }
+    if bump_pointer == 0 {
+        // HACK: allocate 8 extra bytes and return the address 8 to avoid
+        // returning 0 (0 is a sentinel value for malloc(), indicating failure)
+        print_str(" (HACK) ");
+        aligned_size = aligned_size + size_of::<usize>();
+        bump_pointer = size_of::<usize>();
+    }
+
+    emu_increase_bump_pointer(emulator, aligned_size);
+    Option::Some(bump_pointer)
+}
+
+/// Load LLVM-IR C-Strings into the data segment and return the next available address (= start of the
+/// heap). Assumes that the data segment starts at address 0 (since the AST serves as the code).
+fn emu_initialise_global_data(emulator: &mut Emu, ast: &LAst) -> usize {
+    let mut data_pointer: usize = 0;
     let mut i: usize = 0;
-    while i < vec_len::<LGlobal>(lAst_globals(ast)) {
-        let LGlobal::String(name, value): &LGlobal = vec_at::<LGlobal>(lAst_globals(ast), i);
+    while i < vec_len::<CString>(lAst_globals(ast)) {
+        let CString::String(name, value): &CString = vec_at::<CString>(lAst_globals(ast), i);
 
         let alloc_size: usize = round_to_next_multiple(string_len(value), size_of::<usize>());
         let address: usize = data_pointer;
 
         let mut j: usize = 0;
         while j < string_len(value) {
-            let character: usize = unwrap::<char>(string_get(value, j)) as usize;
+            let character: usize = string_at(value, j) as usize;
             emu_store_bytes(emulator, address + j, &Value::Int(character), 1);
             j = j + 1;
         }
@@ -6065,9 +6055,7 @@ fn emu_load_globals(emulator: &mut Emu, ast: &LAst) {
         data_pointer = data_pointer + alloc_size;
         i = i + 1;
     }
-
-    emu_set_gp(emulator, data_pointer);
-    emu_set_heap_pointer(emulator, data_pointer);
+    data_pointer
 }
 
 /// Deallocates the top stack frame by resetting the frame size to 0 and moving the stack pointer up
@@ -6080,8 +6068,8 @@ fn emu_deallocate_stack_frame(emulator: &mut Emu) {
 }
 
 /// Get a raw pointer to the memory the given address points to.
-fn emu_get_memory_pointer(Emu::Emu(_, memory, _, _, _, _): &mut Emu, index: usize) -> Option<*mut u8> {
-    match vec_get_mut::<u8>(memory, index) {
+fn emu_get_memory_pointer(Emu::Emu(_, memory, _, _, _, _): &mut Emu, address: usize) -> Option<*mut u8> {
+    match vec_get_mut::<u8>(memory, address) {
         Option::Some(address) => Option::Some(address as *mut u8),
         Option::None => Option::None,
     }
@@ -6153,7 +6141,7 @@ fn emu_load_bytes(emulator: &Emu, address: usize, byte_count: usize) -> Value {
     }
 }
 
-/// Parse and emulate LLVM source and return the return value of @main.
+/// Parse and emulate LLVM source and return the return value of `@main`.
 fn emu_execute_llvm(source: String) -> usize {
     let ast: LAst = parser_parse_to_ast(source);
 
@@ -6161,11 +6149,10 @@ fn emu_execute_llvm(source: String) -> usize {
     let empty_args: Vec<Value> = vec_new::<Value>();
 
     // TODO: parameterise memory size
-    let mut emulator: Emu = emu_new(3000000);
-    emu_load_globals(&mut emulator, &ast);
+    let mut emulator: Emu = emu_new(3000000, &ast);
     match emu_execute_function_named(&mut emulator, &ast, &main_name, &empty_args) {
         Value::Int(value) => value,
-        Value::Array(array) => *vec_at::<usize>(&array, 0),
+        _ => panic("unexpected return value for main"),
     }
 }
 
@@ -6787,6 +6774,7 @@ fn vec_with_capacity<T>(initial_capacity: usize) -> Vec<T> {
 }
 
 /// Create a vector with a fixed initial length.
+/// TODO: make this unsafe to not map all memory and leave it uninitialised
 fn vec_with_len<T>(len: usize) -> Vec<T> {
     let Vec::Vec(ptr, _, capacity) = vec_with_capacity(len);
     unsafe { memset(ptr as *mut u8, size_of::<T>() * len, 0 as u8) };
