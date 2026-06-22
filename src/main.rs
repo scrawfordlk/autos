@@ -7622,18 +7622,16 @@ fn string_eq(s1: &String, s2: &String) -> bool {
     if len != string_len(s2) {
         return false;
     }
-
     let mut i: usize = 0;
     while i < len {
-        let c1: char = unwrap::<char>(string_get(s1, i));
-        let c2: char = unwrap::<char>(string_get(s2, i));
+        let c1: char = string_at(s1, i);
+        let c2: char = string_at(s2, i);
         if c1 != c2 {
             return false;
         }
 
         i = i + 1;
     }
-
     true
 }
 
@@ -7834,11 +7832,10 @@ fn value_clone(value: &Value) -> Value {
 /// Clone a string.
 fn string_clone(string: &String) -> String {
     let len: usize = string_len(string);
-
     let mut clone: String = string_with_capacity(len);
     let mut i: usize = 0;
     while i < len {
-        let character: char = unwrap::<char>(string_get(string, i));
+        let character: char = string_at(string, i);
         string_push(&mut clone, character);
         i = i + 1;
     }
@@ -7934,7 +7931,7 @@ fn string_to_integer(string: &String, base: usize) -> Option<usize> {
 
     let mut i: usize = 0;
     while i < string_len(string) {
-        let digit: char = unwrap::<char>(string_get(string, i));
+        let digit: char = string_at(string, i);
 
         let digit_value: usize = if is_digit(digit) {
             digit as usize - '0' as usize
@@ -7977,8 +7974,8 @@ fn string_reverse(string: &mut String) {
     let len: usize = string_len(string);
     let mut i: usize = 0;
     while i < len / 2 {
-        let a: char = unwrap::<char>(string_get(string, i));
-        let b: char = unwrap::<char>(string_get(string, len - 1 - i));
+        let a: char = string_at(string, i);
+        let b: char = string_at(string, len - 1 - i);
         string_set(string, i, b);
         string_set(string, len - 1 - i, a);
         i = i + 1;
@@ -7994,7 +7991,7 @@ fn string_hash(string: &String, bucket_count: usize) -> usize {
     let mut hash: usize = 0;
     let mut i: usize = 0;
     while i < string_len(string) {
-        let character: usize = unwrap::<char>(string_get(string, i)) as usize;
+        let character: usize = string_at(string, i) as usize;
         hash = hash * 67 + character;
         i = i + 1;
     }
