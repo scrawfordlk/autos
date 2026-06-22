@@ -9,14 +9,12 @@ fn main() {
 
     let args: StdVec<StdString> = std::env::args().collect();
     if args.len() <= 1 {
-        eprintln!("Usage: <program> ( -c <input> [ -o <output> ] [ -e ] [ --unsafe ] | -e <inputllvm> )");
-        exit_process(1);
+        print_help_exit();
     }
 
     if args[1] == "-c" {
         if args.len() < 3 {
-            eprintln!("Usage: <program> ( -c <input> [ -o <output> ] [ -e ] [ --unsafe ] | -e <inputllvm> )");
-            exit_process(1);
+            print_help_exit();
         }
         let input = args[2].clone();
         let mut file: StdOption<StdString> = StdOption::None;
@@ -27,10 +25,7 @@ fn main() {
         while i < args.len() {
             if args[i] == "-o" {
                 if i + 1 >= args.len() {
-                    eprintln!(
-                        "Usage: <program> ( -c <input> [ -o <output> ] [ -e ] [ --unsafe ] | -e <inputllvm> )"
-                    );
-                    exit_process(1);
+                    print_help_exit();
                 }
                 file = StdOption::Some(args[i + 1].clone());
                 i += 2;
@@ -80,21 +75,24 @@ fn main() {
 
     if args[1] == "-e" {
         if args.len() < 3 {
-            eprintln!("Usage: <program> ( -c <input> [ -o <output> ] [ -e ] [ --unsafe ] | -e <inputllvm> )");
-            exit_process(1);
+            print_help_exit();
         }
         let llvm_ir: StdString = std::fs::read_to_string(&args[2]).expect("no llvm file found");
         let exit_code: usize = emu_execute_llvm(string(&llvm_ir));
         exit_process(exit_code);
     }
 
-    eprintln!("Usage: <program> ( -c <input> [ -o <output> ] [ -e ] [ --unsafe ] | -e <inputllvm> )");
+    print_help_exit();
+}
+
+fn print_help_exit() -> ! {
+    eprint_str("Usage: <program> ( -c <input> [ -o <output> ] [ -e ] [ --unsafe ] | -e <inputllvm> )");
     exit_process(1);
 }
 
 // -----------------------------------------------------------------
 // -----------------------------------------------------------------
-// ------------------------- Compiler ------------------------------
+// --------------------- RawRust Compiler --------------------------
 // -----------------------------------------------------------------
 // -----------------------------------------------------------------
 
@@ -626,7 +624,9 @@ fn rLexer_skip_attributes(lexer: &mut RLexer) {
     }
 }
 
+// -----------------------------------------------------------------
 // -------------------------- Parser -------------------------------
+// -----------------------------------------------------------------
 
 /// Abstract Syntax Tree of a parsed Rust source.
 enum RAst {
@@ -4592,7 +4592,7 @@ fn codegen_fixup_alloca(codegen: &mut Codegen, icg: &ICodegen, index: usize, new
 
 // -----------------------------------------------------------------
 // -----------------------------------------------------------------
-// ------------------------ LLVM Emulator -------------------------
+// ---------------------- LLLVM-IR Emulator ------------------------
 // -----------------------------------------------------------------
 // -----------------------------------------------------------------
 
@@ -5890,7 +5890,9 @@ fn parser_parse_integer(parser: &mut Parser) -> usize {
     }
 }
 
+// -------------------------------------------------------------------
 // ------------------------- Interpreter -----------------------------
+// -------------------------------------------------------------------
 
 /// Execution control flow after one LLVM-IR instruction.
 enum ExecFlow {
@@ -6630,9 +6632,7 @@ fn parser_expected_message(parser: &Parser, expected: &String) -> String {
     message
 }
 
-// -----------------------------------------------------------------
 // -------------------------- bool ---------------------------------
-// -----------------------------------------------------------------
 
 /// Logical AND of two booleans.
 fn and(a: bool, b: bool) -> bool {
@@ -6649,9 +6649,7 @@ fn not(a: bool) -> bool {
     a as u8 == 0
 }
 
-// -----------------------------------------------------------------
 // -------------------------- char ---------------------------------
-// -----------------------------------------------------------------
 
 /// Check whether a character is whitespace.
 fn is_whitespace(c: char) -> bool {
@@ -6695,6 +6693,7 @@ fn is_alphanumeric(c: char) -> bool {
     or(is_alpha(c), is_digit(c))
 }
 
+/// Check whether the given character can be used in an LLLVM-IR identifier.
 fn is_llvm_identifier(ch: char) -> bool {
     or(is_alphanumeric(ch), or(ch == '.', ch == '$'))
 }
@@ -6709,9 +6708,7 @@ fn to_uppercase(c: char) -> char {
     }
 }
 
-// -----------------------------------------------------------------
 // ------------------------ Option<T> ------------------------------
-// -----------------------------------------------------------------
 
 /// Optional type that can contain some value with type T or no value.
 #[derive(Debug)]
@@ -6729,9 +6726,7 @@ fn unwrap<T>(opt: Option<T>) -> T {
     }
 }
 
-// ----------------------------------------------------------------
-// --------------------------- Box --------------------------------
-// ----------------------------------------------------------------
+// -------------------------- Box<T> ------------------------------
 
 /// Pointer to heap that owns its value.
 #[derive(Debug)]
@@ -6751,9 +6746,7 @@ fn box_deref<T>(Box::Ptr(ptr): &Box<T>) -> &T {
     unsafe { &**ptr }
 }
 
-// ----------------------------------------------------------------
-// --------------------------- Vec --------------------------------
-// ----------------------------------------------------------------
+// -------------------------- Vec<T> ------------------------------
 
 /// Generic contiguous growable buffer.
 #[derive(Debug)]
@@ -6900,9 +6893,7 @@ fn vec_remove<T>(Vec::Vec(ptr, len, _): &mut Vec<T>, index: usize) -> bool {
     true
 }
 
-// ----------------------------------------------------------------
-// ------------------------ StringMap -----------------------------
-// ----------------------------------------------------------------
+// ----------------------- StringMap<T> ---------------------------
 
 /// Bucket entry for StringMap.
 enum StringMapEntry<T> {
@@ -7039,10 +7030,9 @@ fn stringMap_bucket_mut<T>(StringMap::Map(b): &mut StringMap<T>, k: String) -> &
     unwrap::<&mut Vec<StringMapEntry<T>>>(vec_get_mut::<Vec<StringMapEntry<T>>>(b, bucket_index))
 }
 
-// ----------------------------------------------------------------
-// ---------------------- StringMapStack --------------------------
-// ----------------------------------------------------------------
-// A stack of StringMap<T> which inserts/looks-up by stack order.
+// ---------------------- StringMapStack<T> -----------------------
+//
+// -> A stack of StringMap<T> which inserts/looks-up by stack order.
 
 /// Stack of StringMap scopes.
 enum StringMapStack<T> {
@@ -7104,9 +7094,7 @@ fn stringMapStack_lookup<T>(stack: &StringMapStack<T>, name: String) -> Option<&
     Option::None
 }
 
-// ----------------------------------------------------------------
 // --------------------------- Eq ---------------------------------
-// ----------------------------------------------------------------
 
 fn llvmType_eq(left: &LType, right: &LType) -> bool {
     match left {
@@ -7406,7 +7394,6 @@ fn rType_eq(a: &RType, b: &RType) -> bool {
             RType::Generic => true,
             _ => false,
         },
-        _ => false,
     }
 }
 
@@ -7623,9 +7610,7 @@ fn string_eq(s1: &String, s2: &String) -> bool {
     true
 }
 
-// ----------------------------------------------------------------
 // ------------------------- Clone --------------------------------
-// ----------------------------------------------------------------
 
 /// Clone a Rust token.
 fn rToken_clone(token: &RToken) -> RToken {
@@ -7718,14 +7703,14 @@ fn rType_clone(t: &RType) -> RType {
 
 /// Clone a vector of Rust types.
 fn types_clone(types: &Vec<RType>) -> Vec<RType> {
-    let mut copy: Vec<RType> = vec_new::<RType>();
+    let mut clone: Vec<RType> = vec_new::<RType>();
     let mut i: usize = 0;
     while i < vec_len::<RType>(types) {
         let ty: RType = rType_clone(vec_at::<RType>(types, i));
-        vec_push::<RType>(&mut copy, ty);
+        vec_push::<RType>(&mut clone, ty);
         i = i + 1;
     }
-    copy
+    clone
 }
 
 /// Clone a STPair
@@ -7975,7 +7960,6 @@ fn string_hash(string: &String, bucket_count: usize) -> usize {
     if bucket_count == 0 {
         return 0;
     }
-
     let mut hash: usize = 0;
     let mut i: usize = 0;
     while i < string_len(string) {
