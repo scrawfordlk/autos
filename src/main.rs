@@ -1,5 +1,6 @@
 #![allow(clippy::assign_op_pattern, while_true, non_snake_case)]
-#![no_main]
+#![cfg_attr(not(test), no_main)]
+#[cfg(not(test))]
 #[unsafe(no_mangle)]
 fn main(argc: usize, argv: *mut *mut u8) {
     let args: Args = args_new(argc, argv);
