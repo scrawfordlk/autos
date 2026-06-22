@@ -92,13 +92,7 @@ fn unique_path(label: &str, extension: &str) -> PathBuf {
         .duration_since(UNIX_EPOCH)
         .expect("system clock before UNIX_EPOCH")
         .as_nanos();
-    path.push(format!(
-        "thesis-system-{}-{}-{}.{}",
-        label,
-        id(),
-        nanos,
-        extension
-    ));
+    path.push(format!("system-{}-{}-{}.{}", label, id(), nanos, extension));
     path
 }
 
