@@ -37,7 +37,20 @@ fn main(argc: usize, argv: *mut *mut u8) {
         let output_code: String = compile(source, do_semantic_analysis);
         let output_name: String = match output_file {
             Option::<String>::Some(name) => name,
-            _ => string("default.ll"),
+            _ => {
+                let mut name: String = string_with_capacity(string_len(input_name));
+                let mut i: usize = string_len(input_name) - 1;
+                while and(i > 0, string_at(input_name, i) != '/') {
+                    i = i - 1;
+                }
+                i = i + 1; // skip the last '/'
+                while and(i < string_len(input_name), string_at(input_name, i) != '.') {
+                    string_push(&mut name, string_at(input_name, i));
+                    i = i + 1;
+                }
+                string_push_str(&mut name, ".ll");
+                name
+            },
         };
         write_file(output_name, &output_code);
         if emulate {
