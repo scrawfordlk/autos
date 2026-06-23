@@ -254,7 +254,7 @@ fn rLexer_consume_char(lexer: &mut RLexer) -> Option<char> {
             }
         },
         _ => {},
-    }
+    };
     current
 }
 
@@ -1239,7 +1239,7 @@ fn parse_extern_block(lexer: &mut RLexer) -> Vec<RAstExternFn> {
             string_push_string(&mut message, &rToken_to_string(rLexer_current_token(lexer)));
             parse_error(lexer, &message);
         },
-    }
+    };
 
     expect_token(lexer, &RToken::LBrace);
 
@@ -1938,7 +1938,7 @@ fn semantic_push_unsafe_context(Semantic::Semantic(_, _, current_depth, _): &mut
 fn semantic_pop_unsafe_context(Semantic::Semantic(_, _, current_depth, _): &mut Semantic) {
     if *current_depth == 0 {
         panic("unexpected leaving of unsafe block - this is a compiler bug")
-    }
+    };
     *current_depth = *current_depth - 1;
 }
 
@@ -1958,7 +1958,7 @@ fn semantic_current_function_is_generic(Semantic::Semantic(_, _, _, is_generic):
 /// Run semantic analysis and return collected items.
 fn semantic_check_run(ast: &RAst, items: &StringMap<Item>) {
     let mut semantic: Semantic = semantic_new();
-    semantic_check_language(&mut semantic, ast, &items);
+    semantic_check_language(&mut semantic, ast, items);
 }
 
 fn semantic_check_generic_usage(semantic: &Semantic, ty: &RType) {
@@ -2163,7 +2163,7 @@ fn semantic_check_language(semantic: &mut Semantic, ast: &RAst, globals: &String
             RAstItem::Function(function) => semantic_check_function(semantic, function, globals),
             RAstItem::Enum(e) => semantic_check_enum_def(semantic, e, globals),
             RAstItem::ExternBlock(declarations) => semantic_check_extern(semantic, declarations),
-        }
+        };
         i = i + 1;
     }
 }
@@ -2203,7 +2203,7 @@ fn semantic_check_variant(
     let mut i: usize = 0;
     while i < vec_len::<RType>(fields) {
         let field: &RType = vec_at::<RType>(fields, i);
-        semantic_check_variant_field(semantic, &enum_type, field, is_generic, globals);
+        semantic_check_variant_field(semantic, enum_type, field, is_generic, globals);
         i = i + 1;
     }
 }
@@ -2237,14 +2237,14 @@ fn semantic_check_variant_field(
                     semantic_check_variant_field(semantic, enum_ty, ty, is_generic, globals);
                 },
                 _ => {},
-            }
+            };
             match stringMap_get::<Item>(globals, string_clone(name)) {
                 Option::Some(item) => match item {
                     Item::Enum(_) => {},
                     _ => semantic_error(&string("cannot use an undefined enum in enum definition")),
                 },
                 _ => semantic_error(&string("cannot use an undefined enum in enum definition")),
-            }
+            };
         },
         RType::Unit | RType::Never => semantic_error(&string("cannot use value-less type as enum field")),
         _ => {},
@@ -2259,7 +2259,12 @@ fn semantic_check_extern(semantic: &mut Semantic, declarations: &Vec<RAstExternF
 
 /// Analyze one function and validate body against its signature.
 fn semantic_check_function(semantic: &mut Semantic, function: &RAstFunction, globals: &StringMap<Item>) {
-    let RAstFunction::Fn(is_generic, is_unsafe, _, parameters, return_type, body): &RAstFunction = function;
+    let RAstFunction::Fn(is_generic, is_unsafe, name, parameters, return_type, body): &RAstFunction =
+        function;
+
+    print_str("Checking function ");
+    print_string(name);
+    println();
 
     semantic_set_is_generic(semantic, *is_generic);
     semantic_set_current_fn_return_type(semantic, rType_clone(return_type));
@@ -2311,7 +2316,7 @@ fn semantic_check_block(
                     statement_flow_type = RType::Never;
                 }
             },
-        }
+        };
         i = i + 1;
     }
 
@@ -2401,7 +2406,7 @@ fn semantic_check_return(
         Option::None => {
             semantic_expect_type_match(semantic, semantic_current_fn_return_type(semantic), &RType::Unit);
         },
-    }
+    };
     RType::Never
 }
 
@@ -2588,7 +2593,7 @@ fn semantic_check_path(
                 _ => {},
             }
         },
-    }
+    };
     let mut message: String = string("undefined function or enum: ");
     string_push_string(&mut message, &rAstPath_to_string(path));
     semantic_error(&message);
@@ -2622,8 +2627,8 @@ fn semantic_check_call(
                 semantic_error(&msg)
             }
         },
-    }
-    if vec_len::<RType>(&parameter_types) != vec_len::<RAstExpr>(values) {
+    };
+    if vec_len::<RType>(parameter_types) != vec_len::<RAstExpr>(values) {
         semantic_error(&string("function call does not have correct amount of arguments"));
     }
     let mut i: usize = 0;
@@ -2672,7 +2677,7 @@ fn semantic_check_enum(
     let mut i: usize = 0;
     while i < vec_len::<RType>(&fields) {
         let field_type: &RType = vec_at::<RType>(&fields, i);
-        let field_type: RType = rType_instantiate_generic(field_type, &generic, globals);
+        let field_type: RType = rType_instantiate_generic(field_type, generic, globals);
         let expr: &RAstExpr = vec_at::<RAstExpr>(values, i);
         let expr_type: RType = semantic_check_expression(semantic, expr, globals);
         semantic_expect_coerced_type_match(semantic, &expr_type, &field_type);
@@ -2762,7 +2767,7 @@ fn semantic_check_match(
                     _ => {
                         semantic_error(&string("multi-pattern match arms only support literal patterns"));
                     },
-                }
+                };
             }
 
             semantic_check_pattern(semantic, pattern, &expr_type, true, globals);
@@ -3051,7 +3056,7 @@ fn codegen_language(codegen: &mut Codegen, icg: &ICodegen) {
             RAstItem::ExternBlock(block) => codegen_extern_block(codegen, icg, block),
             RAstItem::Function(function) => codegen_function(codegen, icg, function),
             _ => {}, // enum definitions do not generate code
-        }
+        };
         i = i + 1;
     }
     codegen_builtin_functions(codegen, icg);
@@ -3090,13 +3095,13 @@ fn codegen_function(codegen: &mut Codegen, icg: &ICodegen, function: &RAstFuncti
     }
 
     let llvm_return_type: String = if codegen_is_main(codegen) {
-        if rType_eq(&return_type, &RType::Unit) {
+        if rType_eq(return_type, &RType::Unit) {
             string("i64")
         } else {
-            rType_to_llvm_name(codegen, icg, &return_type)
+            rType_to_llvm_name(codegen, icg, return_type)
         }
     } else {
-        rType_to_llvm_name(codegen, icg, &return_type)
+        rType_to_llvm_name(codegen, icg, return_type)
     };
     codegen_emit_fn_signature(codegen, icg, name, &llvm_return_type, parameters);
 
@@ -3113,7 +3118,7 @@ fn codegen_function(codegen: &mut Codegen, icg: &ICodegen, function: &RAstFuncti
     }
 
     let STPair::ST(mut value_name, block_type): STPair = codegen_block(codegen, icg, body);
-    match &return_type {
+    match return_type {
         RType::Unit | RType::Never => {
             if codegen_is_main(codegen) {
                 // exit with success
@@ -3125,16 +3130,16 @@ fn codegen_function(codegen: &mut Codegen, icg: &ICodegen, function: &RAstFuncti
         _ => {
             if rType_eq(&block_type, &RType::Never) {
                 // there is not value, so dummy return value that is never reached anyway
-                value_name = if rType_is_enum(codegen, &return_type) {
-                    codegen_emit_alloca(codegen, icg, &return_type)
+                value_name = if rType_is_enum(codegen, return_type) {
+                    codegen_emit_alloca(codegen, icg, return_type)
                 } else {
                     string("0")
                 };
             }
-            value_name = codegen_emit_load_if_enum(codegen, icg, value_name, &return_type);
-            codegen_emit_ret_value(codegen, icg, &return_type, &value_name);
+            value_name = codegen_emit_load_if_enum(codegen, icg, value_name, return_type);
+            codegen_emit_ret_value(codegen, icg, return_type, &value_name);
         },
-    }
+    };
     codegen_pop_scope(codegen);
     codegen_emit_function_end(codegen);
 }
@@ -3163,7 +3168,7 @@ fn codegen_block(codegen: &mut Codegen, icg: &ICodegen, block: &RAstBlock) -> ST
                     block_type = RType::Never;
                 }
             },
-        }
+        };
         i = i + 1;
     }
 
@@ -3225,15 +3230,12 @@ fn codegen_expression(codegen: &mut Codegen, icg: &ICodegen, expression: &RAstEx
 /// `return` always evaluates to type Never.
 fn codegen_return(codegen: &mut Codegen, icg: &ICodegen, returned: &Option<Box<RAstExpr>>) -> STPair {
     match returned {
-        // return <expression>
         Option::Some(expression) => {
             let STPair::ST(mut name, ty): STPair =
                 codegen_expression(codegen, icg, box_deref::<RAstExpr>(expression));
             name = codegen_emit_load_if_enum(codegen, icg, name, &ty);
             codegen_emit_ret_value(codegen, icg, &ty, &name);
         },
-
-        // return;
         Option::None => {
             if codegen_is_main(codegen) {
                 codegen_emit_ret_value(codegen, icg, &RType::Usize, &string("0"));
@@ -3241,7 +3243,7 @@ fn codegen_return(codegen: &mut Codegen, icg: &ICodegen, returned: &Option<Box<R
                 codegen_emit_ret_void(codegen);
             }
         },
-    }
+    };
 
     STPair::ST(string_new(), RType::Never)
 }
@@ -3259,21 +3261,24 @@ fn codegen_assignment_lvalue(codegen: &mut Codegen, icg: &ICodegen, expression: 
     match expression {
         RAstExpr::Variable(name) => codegen_scope_lookup(codegen, name),
 
-        RAstExpr::Unary(RAstUnaryOp::Dereference, value) => {
-            let STPair::ST(pointer_name, pointer_type): STPair =
-                codegen_expression(codegen, icg, box_deref::<RAstExpr>(value));
+        RAstExpr::Unary(op, value) => match op {
+            RAstUnaryOp::Dereference => {
+                let STPair::ST(pointer_name, pointer_type): STPair =
+                    codegen_expression(codegen, icg, box_deref::<RAstExpr>(value));
 
-            match pointer_type {
-                RType::Reference(inner, _) => {
-                    let ty: RType = rType_clone(box_deref::<RType>(&inner));
-                    STPair::ST(pointer_name, ty)
-                },
-                RType::RawPointerMut(inner) => {
-                    let ty: RType = rType_clone(box_deref::<RType>(&inner));
-                    STPair::ST(pointer_name, ty)
-                },
-                _ => STPair::ST(string_new(), RType::Unit), // should not be reachable
-            }
+                match pointer_type {
+                    RType::Reference(inner, _) => {
+                        let ty: RType = rType_clone(box_deref::<RType>(&inner));
+                        STPair::ST(pointer_name, ty)
+                    },
+                    RType::RawPointerMut(inner) => {
+                        let ty: RType = rType_clone(box_deref::<RType>(&inner));
+                        STPair::ST(pointer_name, ty)
+                    },
+                    _ => STPair::ST(string_new(), RType::Unit), // should not be reachable
+                }
+            },
+            _ => STPair::ST(string_new(), RType::Unit),
         },
         _ => STPair::ST(string_new(), RType::Unit), // should not be reachable
     }
@@ -3436,7 +3441,7 @@ fn codegen_enum(
     let tag: String = integer_to_string(variants_get_discriminator(variants, variant));
 
     let mapping: Option<Box<RType>> = match generic {
-        Option::Some(instance) => Option::Some(box_new::<RType>(rType_clone(instance))),
+        Option::Some(instance) => Option::<Box<RType>>::Some(box_new::<RType>(rType_clone(instance))),
         _ => Option::<Box<RType>>::None,
     };
     let enum_type: RType = RType::Enum(string_clone(enum_name), mapping);
@@ -3766,11 +3771,11 @@ fn codegen_arm(
     let STPair::ST(mut arm_value, arm_type): STPair = codegen_expression(codegen, icg, arm_expr);
     if rType_has_value(&arm_type) {
         arm_value = codegen_emit_load_if_enum(codegen, icg, arm_value, &arm_type);
-        codegen_emit_store(codegen, icg, &arm_type, &arm_value, &result_pointer);
+        codegen_emit_store(codegen, icg, &arm_type, &arm_value, result_pointer);
     }
 
     // arm evaluated, so jump to end
-    codegen_emit_br(codegen, &end_label);
+    codegen_emit_br(codegen, end_label);
 
     if not(is_last_arm) {
         codegen_emit_label(codegen, &else_label);
@@ -3804,19 +3809,22 @@ fn codegen_arm_match(
         RAstPattern::Literal(literal) => {
             let value: String = integer_to_string(rAstPatternLiteral_value(literal));
             let cond: String = codegen_emit_icmp(codegen, icg, &eq, expr_type, &expr_name, &value);
-            codegen_emit_br_conditional(codegen, &cond, arm_label, &fail_label);
+            codegen_emit_br_conditional(codegen, &cond, arm_label, fail_label);
         },
         RAstPattern::EnumVariant(name, variant, _) => {
             let tag: usize = match iCodegen_search_global(icg, string_clone(name)) {
-                Option::Some(Item::Enum(RAstEnum::Enum(_, variants, _))) => {
-                    variants_get_discriminator(variants, variant)
+                Option::Some(item) => match item {
+                    Item::Enum(RAstEnum::Enum(_, variants, _)) => {
+                        variants_get_discriminator(variants, variant)
+                    },
+                    _ => 0, // assume this case does not occur
                 },
                 _ => 0, // assume this case does not occur
             };
             let tag: String = integer_to_string(tag);
             let expr_tag: String = codegen_emit_load(codegen, icg, &RType::Usize, &expr_name);
             let cond: String = codegen_emit_icmp(codegen, icg, &eq, &RType::Usize, &tag, &expr_tag);
-            codegen_emit_br_conditional(codegen, &cond, &arm_label, &fail_label);
+            codegen_emit_br_conditional(codegen, &cond, arm_label, fail_label);
         },
         _ => {}, // catch-all patterns do not branch conditionally
     }
@@ -3824,7 +3832,7 @@ fn codegen_arm_match(
         rAstPattern_is_refutable(iCodegen_globals(icg), pattern),
         not(is_last_pattern),
     ) {
-        codegen_emit_label(codegen, &fail_label); // next pattern of arm
+        codegen_emit_label(codegen, fail_label); // next pattern of arm
     }
 }
 
@@ -3967,7 +3975,7 @@ fn generic_instantiate(generic: &mut Generic, name: &String, ty: &RType) -> bool
 /// Get the generic parameter's actual type for a given item.
 fn generic_get_type(Generic::Manager(mappings, _): &Generic, name: &String) -> Option<RType> {
     match stringMap_get::<RType>(mappings, string_clone(name)) {
-        Option::Some(ty) => Option::Some(rType_clone(ty)),
+        Option::Some(ty) => Option::<RType>::Some(rType_clone(ty)),
         _ => Option::<RType>::None,
     }
 }
@@ -4348,7 +4356,7 @@ fn codegen_emit_pointer_add(
     ty: &RType,
     index: usize,
 ) -> String {
-    let ptr_type: RType = RType::RawPointerMut(box_new(RType::Unit)); // dummy type to use `ptr` type
+    let ptr_type: RType = RType::RawPointerMut(box_new::<RType>(RType::Unit)); // dummy type to use `ptr` type
     let addition: RAstArithmeticOp = RAstArithmeticOp::Add;
     let offset: String = integer_to_string(index * rType_size(codegen, icg, ty));
 
@@ -4362,8 +4370,8 @@ fn codegen_emit_pointer_add(
 /// If the value is an enum, load the value and return the name of the register with the loaded
 /// value, otherwise return back the given value's name.
 fn codegen_emit_load_if_enum(codegen: &mut Codegen, icg: &ICodegen, value: String, ty: &RType) -> String {
-    if rType_is_enum(codegen, &ty) {
-        codegen_emit_load(codegen, icg, &ty, &value)
+    if rType_is_enum(codegen, ty) {
+        codegen_emit_load(codegen, icg, ty, &value)
     } else {
         value
     }
@@ -4602,7 +4610,7 @@ fn codegen_fixup_alloca(codegen: &mut Codegen, icg: &ICodegen, index: usize, new
 
     // "  <register> = alloca " has 5 spaces.
     while space_count < 5 {
-        let c: char = string_at(&old_alloca, i);
+        let c: char = string_at(old_alloca, i);
 
         if is_whitespace(c) {
             space_count = space_count + 1;
@@ -5975,7 +5983,7 @@ fn emu_new(memory_size: usize, ast: &LAst) -> Emu {
     let memory: Vec<u8> = unsafe { vec_with_len::<u8>(memory_size) };
     let globals: StringMap<usize> = stringMap_new::<usize>();
     let mut emulator: Emu = Emu::Emu(globals, memory, stack_pointer, 0, 0, Option::<usize>::None);
-    let heap_start: usize = emu_initialise_global_data(&mut emulator, &ast);
+    let heap_start: usize = emu_initialise_global_data(&mut emulator, ast);
     let Emu::Emu(_, _, _, _, bump_pointer, _): &mut Emu = &mut emulator;
     *bump_pointer = heap_start;
     emulator
@@ -6329,7 +6337,7 @@ fn emu_execute_instructions(
                 return ExecFlow::Return(match return_value {
                     Option::Some(value) => {
                         let mut value: Value = llvm_eval_value(emulator, registers, value);
-                        llvm_overflow_value(&mut value, &return_type);
+                        llvm_overflow_value(&mut value, return_type);
                         value
                     },
                     Option::None => Value::Int(0),
@@ -6355,7 +6363,7 @@ fn emu_execute_instructions(
         match emu_exit_code(emulator) {
             Option::Some(code) => return ExecFlow::Return(Value::Int(code)),
             Option::None => {},
-        }
+        };
 
         i = i + 1;
     }
@@ -6554,7 +6562,7 @@ fn args_new(argc: usize, argv: *mut *mut u8) -> Args {
         while i < argc {
             let arg: *mut u8 = *ptr_add::<*mut u8>(argv, i);
             let mut nul_index: usize = 0;
-            while *ptr_add(arg, nul_index) != 0 as u8 {
+            while *ptr_add::<u8>(arg, nul_index) != 0 as u8 {
                 nul_index = nul_index + 1;
             }
             let length: usize = nul_index; // do not include the NULL-termination
@@ -6572,7 +6580,7 @@ fn args_len(Args::Args(args): &Args) -> usize {
 
 /// Get the argument at index `index`.
 fn args_at(Args::Args(args): &Args, index: usize) -> &String {
-    vec_at(args, index)
+    vec_at::<String>(args, index)
 }
 
 // -------------------------- Error --------------------------------
