@@ -75,8 +75,8 @@ fn main(argc: usize, argv: *mut *mut u8) {
 }
 
 fn print_help_exit() -> ! {
-    eprint_str("Usage: <program> ( -c <input> [ -o <output> ] [ -e ] [ --unsafe ] | -e <inputllvm> )");
-    eprintln();
+    print_str("Usage: <program> ( -c <input> [ -o <output> ] [ -e ] [ --unsafe ] | -e <inputllvm> )");
+    println();
     exit_process(1);
 }
 
@@ -2261,10 +2261,6 @@ fn semantic_check_extern(semantic: &mut Semantic, declarations: &Vec<RAstExternF
 fn semantic_check_function(semantic: &mut Semantic, function: &RAstFunction, globals: &StringMap<Item>) {
     let RAstFunction::Fn(is_generic, is_unsafe, name, parameters, return_type, body): &RAstFunction =
         function;
-
-    print_str("Checking function ");
-    print_string(name);
-    println();
 
     semantic_set_is_generic(semantic, *is_generic);
     semantic_set_current_fn_return_type(semantic, rType_clone(return_type));
@@ -6587,9 +6583,9 @@ fn args_at(Args::Args(args): &Args, index: usize) -> &String {
 
 /// Panic by printing a message and exiting the program.
 fn panic(message: &str) -> ! {
-    eprint_str("panic: ");
-    eprint_str(message);
-    eprintln();
+    print_str("panic: ");
+    print_str(message);
+    println();
     exit_process(1);
 }
 
@@ -6604,11 +6600,11 @@ fn report_error(file: &SourceFile, message: &String) -> ! {
     let line: usize = sourceFile_current_line(file);
     let col: usize = sourceFile_current_column(file);
 
-    eprint_str("Error at ");
-    eprint_string(&integer_to_string(line));
-    eprint_str(":");
-    eprint_string(&integer_to_string(col));
-    eprint_str(":\n");
+    print_str("Error at ");
+    print_string(&integer_to_string(line));
+    print_str(":");
+    print_string(&integer_to_string(col));
+    print_str(":\n");
 
     let mut line: String = string_new();
     let mut start: usize = sourceFile_current_line_start(file);
@@ -6626,17 +6622,17 @@ fn report_error(file: &SourceFile, message: &String) -> ! {
         }
         start = start + 1;
     }
-    eprint_string(&line);
-    eprintln();
+    print_string(&line);
+    println();
 
     let mut i: usize = 1;
     while i < col {
-        eprint_str(" ");
+        print_str(" ");
         i = i + 1;
     }
-    eprint_str("^ ");
-    eprint_string(message);
-    eprintln();
+    print_str("^ ");
+    print_string(message);
+    println();
     exit_process(1);
 }
 
@@ -6652,7 +6648,7 @@ fn report_warning(file: &SourceFile, message: &String) {
     string_push(&mut header, ':');
     string_push_string(&mut header, &col_text);
     string_push_str(&mut header, ":\n");
-    eprint_string(&header);
+    print_string(&header);
 
     let mut start: usize = sourceFile_current_line_start(file);
     let mut reached_end: bool = false;
@@ -6670,17 +6666,17 @@ fn report_warning(file: &SourceFile, message: &String) {
         }
         start = start + 1;
     }
-    eprint_string(&line_content);
-    eprint_str("\n");
+    print_string(&line_content);
+    print_str("\n");
 
     let mut i: usize = 1;
     while i < col {
-        eprint_str(" ");
+        print_str(" ");
         i = i + 1;
     }
-    eprint_str("^ ");
-    eprint_string(message);
-    eprint_str("\n");
+    print_str("^ ");
+    print_string(message);
+    print_str("\n");
 }
 
 fn rLexer_error(lexer: &RLexer, message: &String) -> ! {
@@ -6693,9 +6689,9 @@ fn parse_error(lexer: &RLexer, message: &String) -> ! {
 }
 
 fn semantic_error(message: &String) -> ! {
-    eprint_str("Semantic error: ");
-    eprint_string(message);
-    eprintln();
+    print_str("Semantic error: ");
+    print_string(message);
+    println();
     exit_process(1)
 }
 
@@ -7937,6 +7933,11 @@ fn string_len(String::Inner(bytes): &String) -> usize {
     vec_len::<u8>(bytes)
 }
 
+/// Get the internal raw pointer to the start of the string.
+fn string_ptr(String::Inner(bytes): &String) -> *mut u8 {
+    vec_ptr::<u8>(bytes)
+}
+
 /// Get the character at the given index.
 fn string_get(String::Inner(bytes): &String, index: usize) -> Option<char> {
     match vec_get::<u8>(bytes, index) {
@@ -8290,69 +8291,55 @@ enum IOResult {
 /// Check for errors and report if there is one.
 fn io_check_error_str(result: &IOResult, filename: &str) {
     match result {
-        IOResult::OpenFailure => eprint_str("Could not open "),
-        IOResult::WriteFailure => eprint_str("Could not write to "),
-        IOResult::ReadFailure => eprint_str("Could not read "),
+        IOResult::OpenFailure => print_str("Could not open "),
+        IOResult::WriteFailure => print_str("Could not write to "),
+        IOResult::ReadFailure => print_str("Could not read "),
         _ => return,
     }
-    eprint_str(filename);
-    eprintln();
+    print_str(filename);
+    println();
     exit_process(1);
 }
 
 /// Check for errors and report if there is one.
 fn io_check_error_string(result: &IOResult, filename: &String) {
     match result {
-        IOResult::OpenFailure => eprint_str("Could not open "),
-        IOResult::WriteFailure => eprint_str("Could not write to "),
-        IOResult::ReadFailure => eprint_str("Could not read "),
+        IOResult::OpenFailure => print_str("Could not open "),
+        IOResult::WriteFailure => print_str("Could not write to "),
+        IOResult::ReadFailure => print_str("Could not read "),
         _ => return,
     }
-    eprint_string(filename);
-    eprintln();
+    print_string(filename);
+    println();
     exit_process(1);
 }
 
-/// Print a string to stdout.
-fn print_string(String::Inner(bytes): &String) {
-    let len: usize = vec_len::<u8>(bytes);
-    let ptr: *mut u8 = vec_ptr::<u8>(bytes);
-    unsafe { io_write_report_error_str("/dev/stdout\0", ptr, len) };
-}
-
 /// Print a string to stderr.
-fn eprint_string(String::Inner(bytes): &String) {
-    let len: usize = vec_len::<u8>(bytes);
-    let ptr: *mut u8 = vec_ptr::<u8>(bytes);
-    unsafe { io_write_report_error_str("/dev/stderr\0", ptr, len) };
-}
-
-/// Print a string slice to stdout.
-fn print_str(text: &str) {
-    let len: usize = str::len(text);
-    let ptr: *mut u8 = str::as_ptr(text) as *mut u8;
-    unsafe { io_write_report_error_str("/dev/stdout\0", ptr, len) };
+fn print_string(message: &String) {
+    match unsafe { io_write_stdout(string_ptr(message), string_len(message)) } {
+        IOResult::WriteFailure => exit_process(12),
+        _ => {},
+    }
 }
 
 /// Print a string slice to stderr.
-fn eprint_str(text: &str) {
-    let len: usize = str::len(text);
-    let ptr: *mut u8 = str::as_ptr(text) as *mut u8;
-    unsafe { io_write_report_error_str("/dev/stderr\0", ptr, len) };
+fn print_str(message: &str) {
+    match unsafe { io_write_stdout(str::as_ptr(message) as *mut u8, str::len(message)) } {
+        IOResult::WriteFailure => exit_process(12),
+        _ => {},
+    }
 }
 
 fn println() {
     print_str("\n");
 }
 
-fn eprintln() {
-    eprint_str("\n");
-}
-
 /// Write the entire contents of a string into a file. Creates missing and truncates existing files.
 fn write_file(mut filename: String, String::Inner(Vec::Vec(buf_ptr, len, _)): &String) {
-    string_push(&mut filename, 0 as char); // NULL-terminate the string
-    unsafe { io_write_report_error_string(&filename, *buf_ptr, *len) };
+    string_push(&mut filename, 0 as u8 as char); // NULL-terminate the string
+    let String::Inner(Vec::Vec(path_ptr, _, _)): &String = &filename;
+    let result: IOResult = unsafe { io_write(*path_ptr, *buf_ptr, *len) };
+    io_check_error_string(&result, &filename);
 }
 
 /// Read the entire contents of a file and return it as a String.
@@ -8389,37 +8376,39 @@ fn read_file(mut filename: String) -> String {
     string_new() // satisfy compiler
 }
 
-/// Write the given `buffer` to `path` and report an error if there was one.
-/// The caller must ensure that `path` is a NULL-terminated string.
-unsafe fn io_write_report_error_str(path: &str, buffer_ptr: *mut u8, len: usize) {
-    let path_ptr: *mut u8 = str::as_ptr(path) as *mut u8;
-    let result: IOResult = unsafe { io_write(path_ptr, buffer_ptr, len) };
-    io_check_error_str(&result, path);
-}
-
-/// Write the given `buffer` to `path` and report an error if there was one.
-/// The caller must ensure that `path` is a NULL-terminated string.
-unsafe fn io_write_report_error_string(path: &String, buffer_ptr: *mut u8, len: usize) {
-    let String::Inner(Vec::Vec(path_ptr, _, _)): &String = path;
-    let result: IOResult = unsafe { io_write(*path_ptr, buffer_ptr, len) };
-    io_check_error_string(&result, path);
-}
-
-/// Write the given `buffer` to `path` and return an IOResult.
-/// `path` must be a NULL-terminated string.
+/// Write the given `buffer` to `path` and return an IOResult. Creates the file if it does not
+/// exist, otherwise truncates the existing file.
+/// The caller must ensure that `path` is a NULL-terminated string and memory from `buffer[0]` to
+/// `buffer[len - 1]` can be read safely.
 unsafe fn io_write(path: *mut u8, buffer: *mut u8, len: usize) -> IOResult {
     let O_WRONLY_CREAT_TRUNC: usize = 321; // O_WRONLY = 1, O_CREAT = 64, O_TRUNC = 256
     let mode: usize = 420; // = 0o0644
-
-    let fd: usize = unsafe { open(path, O_WRONLY_CREAT_TRUNC, mode) };
-    if is_negative(fd) {
-        return IOResult::OpenFailure;
+    unsafe {
+        let fd: usize = open(path, O_WRONLY_CREAT_TRUNC, mode);
+        if is_negative(fd) {
+            return IOResult::OpenFailure;
+        }
+        let mut offset: usize = 0;
+        while offset < len {
+            let remaining: usize = len - offset;
+            let written: usize = write(fd, ptr_add::<u8>(buffer, offset), remaining);
+            if or(is_negative(written), written == 0) {
+                return IOResult::WriteFailure;
+            }
+            offset = offset + written;
+        }
+        IOResult::Success
     }
+}
 
+/// Write the given `buffer` to stdout and return an IOResult.
+/// The caller must ensure that memory from `buffer[0]` to `buffer[len - 1]` can be read safely.
+unsafe fn io_write_stdout(buffer: *mut u8, len: usize) -> IOResult {
+    let stdout_fd: usize = 1;
     let mut offset: usize = 0;
     while offset < len {
         let remaining: usize = len - offset;
-        let written: usize = unsafe { write(fd, ptr_add::<u8>(buffer, offset), remaining) };
+        let written: usize = unsafe { write(stdout_fd, ptr_add::<u8>(buffer, offset), remaining) };
         if or(is_negative(written), written == 0) {
             return IOResult::WriteFailure;
         }
@@ -8457,7 +8446,7 @@ unsafe fn alloc<T>(count: usize) -> *mut T {
     unsafe {
         let p: *mut u8 = malloc(size_of::<T>() * count);
         if p as usize == 0 {
-            eprint_str("Memory Allocation Error!\n");
+            print_str("Memory Allocation Error!\n");
             exit(1);
         }
         p as *mut T
