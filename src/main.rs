@@ -3497,6 +3497,7 @@ fn codegen_call(
                                 // save the current function code generation index and SSA counter value
                                 let fn_index: usize = code_current_function_index(codegen_code(codegen));
                                 let ssa_counter: usize = codegen_ssa_counter(codegen);
+                                codegen_set_ssa_counter(codegen, 0);
 
                                 // recursively generate code for the generic function.
                                 codegen_function(codegen, icg, function);
