@@ -1870,7 +1870,7 @@ fn insert_item_into_global_table(table: &mut StringMap<Item>, item: &RAstItem) {
                 }
 
                 let item: Item = Item::Function(rType_clone(return_type), types, true, false);
-                stringMap_insert(table, string_clone(name), item);
+                stringMap_insert::<Item>(table, string_clone(name), item);
                 i = i + 1;
             }
         },
@@ -2555,6 +2555,7 @@ fn semantic_check_path(
             Item::Function(return_type, parameter_types, is_unsafe, is_generic) => {
                 return semantic_check_call(
                     semantic,
+                    first_ident,
                     return_type,
                     parameter_types,
                     *is_unsafe,
@@ -2567,11 +2568,12 @@ fn semantic_check_path(
         },
         _ => {
             let function_name: String = rAstPath_to_string(path);
-            match stringMap_get::<Item>(globals, function_name) {
+            match stringMap_get::<Item>(globals, string_clone(&function_name)) {
                 Option::Some(item) => match item {
                     Item::Function(return_type, parameter_types, is_unsafe, is_generic) => {
                         return semantic_check_call(
                             semantic,
+                            &function_name,
                             return_type,
                             parameter_types,
                             *is_unsafe,
@@ -2594,6 +2596,7 @@ fn semantic_check_path(
 
 fn semantic_check_call(
     semantic: &mut Semantic,
+    name: &String,
     return_type: &RType,
     parameter_types: &Vec<RType>,
     is_unsafe: bool,
@@ -2613,7 +2616,10 @@ fn semantic_check_call(
         },
         _ => {
             if is_generic {
-                semantic_error(&string("calling generic function requires turbofish syntax"))
+                let mut msg: String = string("calling generic function requires turbofish syntax: ");
+                string_push_string(&mut msg, name);
+                string_push_str(&mut msg, " is a generic function");
+                semantic_error(&msg)
             }
         },
     }
@@ -3941,7 +3947,7 @@ fn generic_instantiate(generic: &mut Generic, name: &String, ty: &RType) -> bool
             let mut i: usize = 0;
             while i < vec_len::<RType>(instances) {
                 if rType_eq(ty, vec_at::<RType>(instances, i)) {
-                    stringMap_insert(mappings, string_clone(name), rType_clone(ty));
+                    stringMap_insert::<RType>(mappings, string_clone(name), rType_clone(ty));
                     return false; // already generated code for the given type
                 }
                 i = i + 1;
@@ -3951,10 +3957,10 @@ fn generic_instantiate(generic: &mut Generic, name: &String, ty: &RType) -> bool
         _ => {
             let mut instances: Vec<RType> = vec_new::<RType>();
             vec_push::<RType>(&mut instances, rType_clone(ty));
-            stringMap_insert(generated, string_clone(name), instances);
+            stringMap_insert::<Vec<RType>>(generated, string_clone(name), instances);
         },
     }
-    stringMap_insert(mappings, string_clone(name), rType_clone(ty));
+    stringMap_insert::<RType>(mappings, string_clone(name), rType_clone(ty));
     true
 }
 
