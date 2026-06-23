@@ -1219,13 +1219,20 @@ fn parse_extern_block(lexer: &mut RLexer) -> Vec<RAstExternFn> {
     expect_token(lexer, &RToken::Extern);
 
     match rLexer_current_token(lexer) {
-        RToken::Literal(RLiteral::String(value)) => {
-            if not(string_eq(value, &string("C"))) {
+        RToken::Literal(literal) => match literal {
+            RLiteral::String(value) => {
+                if not(string_eq(value, &string("C"))) {
+                    let mut message: String = string("expected \"C\", but got: ");
+                    string_push_string(&mut message, &rToken_to_string(rLexer_current_token(lexer)));
+                    parse_error(lexer, &message);
+                }
+                rLexer_next_token(lexer);
+            },
+            _ => {
                 let mut message: String = string("expected \"C\", but got: ");
                 string_push_string(&mut message, &rToken_to_string(rLexer_current_token(lexer)));
                 parse_error(lexer, &message);
-            }
-            rLexer_next_token(lexer);
+            },
         },
         _ => {
             let mut message: String = string("expected \"C\", but got: ");
@@ -2814,7 +2821,10 @@ fn semantic_check_pattern(
                             enum_type = rType_instantiate_generic(&enum_type, &generic, globals);
                         }
                         if and(not(refutable_ok), vec_len::<RAstVariant>(variants) > 1) {
-                            semantic_error(&string("nested enum patterns must all be irrefutable"));
+                            let mut msg: String = string("nested enum patterns in must all be irrefutable: ");
+                            string_push_string(&mut msg, enum_name);
+                            string_push_str(&mut msg, " has more than one variant");
+                            semantic_error(&msg);
                         }
                         match rAstEnum_get_variant_fields(variants, variant) {
                             Option::Some(fields) => fields,
