@@ -58,7 +58,7 @@ fn main(argc: usize, argv: *mut *mut u8) {
             let exit_code: usize = emu_execute_llvm(output_code);
             exit_process(exit_code);
         }
-        return;
+        exit_process(0);
     }
 
     if string_eq(args_at(&args, 1), &string("-e")) {
