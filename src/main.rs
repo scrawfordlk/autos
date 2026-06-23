@@ -301,8 +301,7 @@ fn rLexer_expect_char(lexer: &mut RLexer, expected: char) {
 
 /// Consume and return the next token.
 fn rLexer_next_token(lexer: &mut RLexer) -> RToken {
-    rLexer_skip_attributes(lexer);
-    rLexer_skip_whitespace(lexer);
+    rLexer_skip_whitespace_and_attributes(lexer);
 
     let token: RToken = match rLexer_peek_char(lexer) {
         Option::Some(c) => {
@@ -585,7 +584,7 @@ fn rLexer_skip_line_comment(lexer: &mut RLexer) {
 }
 
 /// Skips attributes which are useful in Rust, but unsupported.
-fn rLexer_skip_attributes(lexer: &mut RLexer) {
+fn rLexer_skip_whitespace_and_attributes(lexer: &mut RLexer) {
     rLexer_skip_whitespace(lexer);
     while true {
         if rLexer_try_consume_char(lexer, '#') {
@@ -611,6 +610,7 @@ fn rLexer_skip_attributes(lexer: &mut RLexer) {
         } else {
             return;
         }
+        rLexer_skip_whitespace(lexer);
     }
 }
 
