@@ -1190,6 +1190,19 @@ fn parse_language(lexer: &mut RLexer) -> RAst {
                 let enumeration: RAstItem = RAstItem::Enum(parse_enum(lexer));
                 vec_push::<RAstItem>(&mut items, enumeration);
             },
+            RToken::Identifier(name) => {
+                if string_eq(name, &string("include")) {
+                    // ignore `include!("...");`
+                    expect_token(lexer, &RToken::Bang);
+                    expect_token(lexer, &RToken::LParen);
+                    rLexer_next_token(lexer); // skip string literal
+                    expect_token(lexer, &RToken::RParen);
+                    expect_token(lexer, &RToken::SemiColon);
+                } else {
+                    let message: String = string("expected function, enum, or extern block, but got a name");
+                    parse_error(lexer, &message);
+                }
+            },
             token => {
                 let mut message: String = string("expected function, enum, or extern block, but got: ");
                 string_push_string(&mut message, &rToken_to_string(token));
@@ -8438,4 +8451,4 @@ unsafe extern "C" {
 // -------------------------- Tests --------------------------------
 // -----------------------------------------------------------------
 
-include!("tests.rs");
+include!("tests.rs"); // ignored by autos
