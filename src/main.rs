@@ -1024,7 +1024,7 @@ fn rType_instantiate_generic(ty: &RType, mapping: &Option<RType>, items: &String
         RType::Enum(name, generic) => match generic {
             Option::Some(instance) => RType::Enum(
                 string_clone(name),
-                Option::Some(box_new::<RType>(rType_instantiate_generic(
+                Option::<Box<RType>>::Some(box_new::<RType>(rType_instantiate_generic(
                     box_deref::<RType>(instance),
                     mapping,
                     items,
@@ -1037,7 +1037,7 @@ fn rType_instantiate_generic(ty: &RType, mapping: &Option<RType>, items: &String
                             if *is_generic {
                                 RType::Enum(
                                     string_clone(name),
-                                    Option::Some(box_new::<RType>(rType_clone(instance))),
+                                    Option::<Box<RType>>::Some(box_new::<RType>(rType_clone(instance))),
                                 )
                             } else {
                                 rType_clone(ty)
@@ -1058,12 +1058,12 @@ fn rType_instantiate_generic(ty: &RType, mapping: &Option<RType>, items: &String
 fn rType_extract_enum_generic(ty: &RType) -> Option<RType> {
     match ty {
         RType::Enum(_, generic) => match generic {
-            Option::Some(instance) => Option::Some(rType_clone(box_deref::<RType>(instance))),
-            _ => Option::None,
+            Option::Some(instance) => Option::<RType>::Some(rType_clone(box_deref::<RType>(instance))),
+            _ => Option::<RType>::None,
         },
         RType::Reference(inner, _) => rType_extract_enum_generic(box_deref::<RType>(inner)),
         RType::RawPointerMut(inner) => rType_extract_enum_generic(box_deref::<RType>(inner)),
-        _ => Option::None,
+        _ => Option::<RType>::None,
     }
 }
 
@@ -1334,7 +1334,7 @@ fn parse_variant(lexer: &mut RLexer) -> RAstVariant {
 fn parse_block(lexer: &mut RLexer) -> RAstBlock {
     expect_token(lexer, &RToken::LBrace);
     let mut statements: Vec<RAstStatement> = vec_new::<RAstStatement>();
-    let mut tail: Option<Box<RAstExpr>> = Option::None;
+    let mut tail: Option<Box<RAstExpr>> = Option::<Box<RAstExpr>>::None;
 
     while not(rLexer_current_token_eq(lexer, &RToken::RBrace)) {
         if rLexer_current_token_eq(lexer, &RToken::Let) {
@@ -1347,7 +1347,7 @@ fn parse_block(lexer: &mut RLexer) -> RAstBlock {
             if rLexer_current_token_eq(lexer, &RToken::RBrace) {
                 // end of block with expression as return value
                 rLexer_next_token(lexer);
-                tail = Option::Some(box_new::<RAstExpr>(expression));
+                tail = Option::<Box<RAstExpr>>::Some(box_new::<RAstExpr>(expression));
                 return RAstBlock::Block(statements, tail);
             } else {
                 rLexer_try_consume(lexer, &RToken::SemiColon); // optional semi-colon
@@ -1409,7 +1409,7 @@ fn parse_type(lexer: &mut RLexer) -> RType {
                 RToken::Identifier(name) => {
                     if string_eq(name, &string("str")) {
                         rLexer_next_token(lexer);
-                        return RType::Enum(string("&str"), Option::None);
+                        return RType::Enum(string("&str"), Option::<Box<RType>>::None);
                     }
                 },
                 _ => {},
@@ -1432,9 +1432,9 @@ fn parse_type(lexer: &mut RLexer) -> RType {
                 if rLexer_try_consume(lexer, &RToken::LAngle) {
                     let instance: RType = parse_type(lexer);
                     expect_token(lexer, &RToken::RAngle);
-                    RType::Enum(name, Option::Some(box_new::<RType>(instance)))
+                    RType::Enum(name, Option::<Box<RType>>::Some(box_new::<RType>(instance)))
                 } else {
-                    RType::Enum(name, Option::None)
+                    RType::Enum(name, Option::<Box<RType>>::None)
                 }
             }
         },
@@ -1451,10 +1451,10 @@ fn parse_expression(lexer: &mut RLexer) -> RAstExpr {
         RToken::Return => {
             rLexer_next_token(lexer);
             match rLexer_current_token(lexer) {
-                RToken::SemiColon | RToken::RBrace => RAstExpr::Return(Option::None),
+                RToken::SemiColon | RToken::RBrace => RAstExpr::Return(Option::<Box<RAstExpr>>::None),
                 _ => {
                     let expression: RAstExpr = parse_expression(lexer);
-                    RAstExpr::Return(Option::Some(box_new::<RAstExpr>(expression)))
+                    RAstExpr::Return(Option::<Box<RAstExpr>>::Some(box_new::<RAstExpr>(expression)))
                 },
             }
         },
@@ -1615,15 +1615,14 @@ fn parse_factor(lexer: &mut RLexer) -> RAstExpr {
 /// Parses either a variable, a function call or an instantiation of an enum.
 fn parse_identifier_expression(lexer: &mut RLexer) -> RAstExpr {
     let first_identifier: String = expect_identifier(lexer);
+    let mut generic: Option<RType> = Option::<RType>::None;
 
     if rLexer_try_consume(lexer, &RToken::DoubleColon) {
-        let generic: Option<RType> = if rLexer_try_consume(lexer, &RToken::LAngle) {
+        if rLexer_try_consume(lexer, &RToken::LAngle) {
             let ty: RType = parse_type(lexer);
             expect_token(lexer, &RToken::RAngle);
-            Option::Some(ty)
-        } else {
-            Option::None
-        };
+            generic = Option::<RType>::Some(ty);
+        }
         let mut segments: Vec<String> = vec_new::<String>();
         vec_push::<String>(&mut segments, first_identifier);
         match rLexer_current_token(lexer) {
@@ -1638,7 +1637,7 @@ fn parse_identifier_expression(lexer: &mut RLexer) -> RAstExpr {
     } else if rLexer_current_token_eq(lexer, &RToken::LParen) {
         let mut segments: Vec<String> = vec_new::<String>();
         vec_push::<String>(&mut segments, first_identifier);
-        parse_path_values(lexer, segments, Option::None)
+        parse_path_values(lexer, segments, generic)
     } else {
         RAstExpr::Variable(first_identifier)
     }
@@ -1652,13 +1651,13 @@ fn parse_if(lexer: &mut RLexer) -> RAstIf {
     let else_branch: Option<RAstElse> = if rLexer_try_consume(lexer, &RToken::Else) {
         if rLexer_current_token_eq(lexer, &RToken::If) {
             let else_if: RAstIf = parse_if(lexer);
-            Option::Some(RAstElse::If(box_new::<RAstIf>(else_if)))
+            Option::<RAstElse>::Some(RAstElse::If(box_new::<RAstIf>(else_if)))
         } else {
             let else_block: RAstBlock = parse_block(lexer);
-            Option::Some(RAstElse::Block(else_block))
+            Option::<RAstElse>::Some(RAstElse::Block(else_block))
         }
     } else {
-        Option::None
+        Option::<RAstElse>::None
     };
 
     RAstIf::If(box_new::<RAstExpr>(condition), then_block, else_branch)
@@ -1856,14 +1855,16 @@ fn insert_item_into_global_table(table: &mut StringMap<Item>, item: &RAstItem) {
 fn insert_builtin_functions(table: &mut StringMap<Item>) {
     let as_ptr: String = string("str::as_ptr");
     let mut parameters: Vec<RType> = vec_new::<RType>();
-    vec_push::<RType>(&mut parameters, RType::Enum(string("&str"), Option::None));
+    let str_type: RType = RType::Enum(string("&str"), Option::<Box<RType>>::None);
+    vec_push::<RType>(&mut parameters, str_type);
     let return_type: RType = RType::RawPointerMut(box_new::<RType>(RType::U8));
     let item: Item = Item::Function(return_type, parameters, false, false);
     stringMap_insert::<Item>(table, as_ptr, item);
 
     let len: String = string("str::len");
     let mut parameters: Vec<RType> = vec_new::<RType>();
-    vec_push::<RType>(&mut parameters, RType::Enum(string("&str"), Option::None));
+    let str_type: RType = RType::Enum(string("&str"), Option::<Box<RType>>::None);
+    vec_push::<RType>(&mut parameters, str_type);
     let item: Item = Item::Function(RType::Usize, parameters, false, false);
     stringMap_insert::<Item>(table, len, item);
 
@@ -2005,9 +2006,9 @@ fn semantic_lookup_variable(semantic: &Semantic, name: &String) -> Option<Variab
     match stringMapStack_lookup::<Variable>(semantic_locals(semantic), string_clone(name)) {
         Option::Some(entry) => {
             let Variable::Variable(variable_type, mutable) = entry;
-            Option::Some(Variable::Variable(rType_clone(variable_type), *mutable))
+            Option::<Variable>::Some(Variable::Variable(rType_clone(variable_type), *mutable))
         },
-        Option::None => Option::None,
+        Option::None => Option::<Variable>::None,
     }
 }
 
@@ -2157,7 +2158,7 @@ fn semantic_check_enum_def(semantic: &mut Semantic, e: &RAstEnum, globals: &Stri
         }
         semantic_check_variant(
             semantic,
-            &RType::Enum(string_clone(name), Option::None),
+            &RType::Enum(string_clone(name), Option::<Box<RType>>::None),
             fields,
             *is_generic,
             globals,
@@ -2620,13 +2621,13 @@ fn semantic_check_enum(
             if not(*is_generic) {
                 semantic_error(&string("non-generic enum constructors cannot specify a type"));
             }
-            Option::Some(box_new::<RType>(rType_clone(ty)))
+            Option::<Box<RType>>::Some(box_new::<RType>(rType_clone(ty)))
         },
         _ => {
             if *is_generic {
                 semantic_error(&string("generic enum constructors require turbofish syntax"))
             }
-            Option::None
+            Option::<Box<RType>>::None
         },
     };
     let fields: Vec<RType> = match rAstEnum_get_variant_fields(variants, variant) {
@@ -2784,7 +2785,7 @@ fn semantic_check_pattern(
         },
         RAstPattern::Wildcard => return, // type agnostic
         RAstPattern::EnumVariant(enum_name, variant, inner_patterns) => {
-            let mut enum_type: RType = RType::Enum(string_clone(enum_name), Option::None);
+            let mut enum_type: RType = RType::Enum(string_clone(enum_name), Option::<Box<RType>>::None);
             let generic: Option<RType> = rType_extract_enum_generic(scrutinee_match_type(&scrutinee));
 
             let fields: Vec<RType> = match stringMap_get::<Item>(globals, string_clone(enum_name)) {
@@ -2921,7 +2922,7 @@ fn codegen_scope_insert(codegen: &mut Codegen, name: String, ty: RType, pointer_
 fn codegen_scope_lookup(Codegen::Gen(_, _, _, stack, _): &Codegen, name: &String) -> STPair {
     match stringMapStack_lookup::<STPair>(stack, string_clone(name)) {
         Option::Some(variable) => stPair_clone(variable),
-        Option::None => STPair::ST(string_new(), RType::Unit), // should not be reachable
+        Option::None => STPair::ST(string_new(), RType::Unit), // semantic analysis makes this impossible
     }
 }
 
@@ -3341,15 +3342,15 @@ fn codegen_literal(codegen: &mut Codegen, icg: &ICodegen, literal: &RLiteral) ->
         RLiteral::Char(value) => STPair::ST(integer_to_string(*value as usize), RType::Char),
         RLiteral::Bool(value) => STPair::ST(integer_to_string(*value as usize), RType::Bool),
         RLiteral::String(value) => {
-            let struct_type: RType = RType::Enum(string("&str"), Option::None);
+            let str_type: RType = RType::Enum(string("&str"), Option::<Box<RType>>::None);
             let string_ptr: String = codegen_emit_string(codegen, value);
-            let struct_ptr: String = codegen_emit_alloca(codegen, icg, &struct_type);
+            let struct_ptr: String = codegen_emit_alloca(codegen, icg, &str_type);
             let string_ptr_type: RType = RType::RawPointerMut(box_new::<RType>(RType::U8));
             codegen_emit_store(codegen, icg, &string_ptr_type, &string_ptr, &struct_ptr);
             let len_ptr: String = codegen_emit_pointer_add(codegen, icg, &struct_ptr, &string_ptr_type, 1);
             let length: String = integer_to_string(string_len(value));
             codegen_emit_store(codegen, icg, &RType::Usize, &length, &len_ptr);
-            STPair::ST(struct_ptr, struct_type)
+            STPair::ST(struct_ptr, str_type)
         },
     }
 }
@@ -3401,7 +3402,7 @@ fn codegen_enum(
 
     let mapping: Option<Box<RType>> = match generic {
         Option::Some(instance) => Option::Some(box_new::<RType>(rType_clone(instance))),
-        _ => Option::None,
+        _ => Option::<Box<RType>>::None,
     };
     let enum_type: RType = RType::Enum(string_clone(enum_name), mapping);
     let enum_ptr: String = codegen_emit_alloca(codegen, icg, &enum_type);
@@ -3931,7 +3932,7 @@ fn generic_instantiate(generic: &mut Generic, name: &String, ty: &RType) -> bool
 fn generic_get_type(Generic::Manager(mappings, _): &Generic, name: &String) -> Option<RType> {
     match stringMap_get::<RType>(mappings, string_clone(name)) {
         Option::Some(ty) => Option::Some(rType_clone(ty)),
-        _ => Option::None,
+        _ => Option::<RType>::None,
     }
 }
 
@@ -5614,9 +5615,9 @@ fn parser_parse_return(parser: &mut Parser) -> Instruction {
     parser_expect_token(parser, &LToken::Ret);
     let returned_type: LType = parser_parse_type(parser);
     let return_value: Option<LValue> = if llvmType_eq(&returned_type, &LType::Void) {
-        Option::None
+        Option::<LValue>::None
     } else {
-        Option::Some(parser_parse_value(parser))
+        Option::<LValue>::Some(parser_parse_value(parser))
     };
     Instruction::Ret(returned_type, return_value)
 }
@@ -5930,7 +5931,7 @@ fn emu_new(memory_size: usize, ast: &LAst) -> Emu {
     let stack_pointer: usize = memory_size;
     let memory: Vec<u8> = unsafe { vec_with_len::<u8>(memory_size) };
     let globals: StringMap<usize> = stringMap_new::<usize>();
-    let mut emulator: Emu = Emu::Emu(globals, memory, stack_pointer, 0, 0, Option::None);
+    let mut emulator: Emu = Emu::Emu(globals, memory, stack_pointer, 0, 0, Option::<usize>::None);
     let heap_start: usize = emu_initialise_global_data(&mut emulator, &ast);
     let Emu::Emu(_, _, _, _, bump_pointer, _): &mut Emu = &mut emulator;
     *bump_pointer = heap_start;
@@ -5980,14 +5981,14 @@ fn emu_increase_bump_pointer(Emu::Emu(_, _, _, _, bump_pointer, _): &mut Emu, va
 /// Return true if exit was requested and return the code.
 fn emu_exit_code(Emu::Emu(_, _, _, _, _, exit_code): &Emu) -> Option<usize> {
     match exit_code {
-        Option::Some(code) => Option::Some(*code),
-        Option::None => Option::None,
+        Option::Some(code) => Option::<usize>::Some(*code),
+        Option::None => Option::<usize>::None,
     }
 }
 
 /// Set the exit code and mark the program as exited.
 fn emu_set_exit_code(Emu::Emu(_, _, _, _, _, exit_code): &mut Emu, code: usize) {
-    *exit_code = Option::Some(code);
+    *exit_code = Option::<usize>::Some(code);
 }
 
 /// Allocate `size` many bytes on the stack and return the address.
@@ -6013,7 +6014,7 @@ fn emu_allocate_heap(emulator: &mut Emu, mut size: usize) -> Option<usize> {
     let mut bump_pointer: usize = emu_get_bump_pointer(emulator);
 
     if bump_pointer + aligned_size >= emu_get_sp(emulator) {
-        return Option::None;
+        return Option::<usize>::None;
     }
     if bump_pointer == 0 {
         // HACK: allocate 8 extra bytes and return the address 8 to avoid
@@ -6023,7 +6024,7 @@ fn emu_allocate_heap(emulator: &mut Emu, mut size: usize) -> Option<usize> {
     }
 
     emu_increase_bump_pointer(emulator, aligned_size);
-    Option::Some(bump_pointer)
+    Option::<usize>::Some(bump_pointer)
 }
 
 /// Load LLVM-IR C-Strings into the data segment and return the next available address (= start of the
@@ -6063,8 +6064,8 @@ fn emu_deallocate_stack_frame(emulator: &mut Emu) {
 /// Get a raw pointer to the memory the given address points to.
 fn emu_get_memory_pointer(Emu::Emu(_, memory, _, _, _, _): &mut Emu, address: usize) -> Option<*mut u8> {
     match vec_get_mut::<u8>(memory, address) {
-        Option::Some(address) => Option::Some(address as *mut u8),
-        Option::None => Option::None,
+        Option::Some(address) => Option::<*mut u8>::Some(address as *mut u8),
+        Option::None => Option::<*mut u8>::None,
     }
 }
 
@@ -6514,7 +6515,7 @@ fn args_new(argc: usize, argv: *mut *mut u8) -> Args {
                 nul_index = nul_index + 1;
             }
             let length: usize = nul_index; // do not include the NULL-termination
-            let arg: String = String::Inner(Vec::Vec(arg, length, length));
+            let arg: String = String::Inner(Vec::<u8>::Vec(arg, length, length));
             vec_push::<String>(&mut args, arg);
             i = i + 1;
         }
@@ -6763,7 +6764,7 @@ enum Box<T> {
 fn box_new<T>(value: T) -> Box<T> {
     let ptr: *mut T = unsafe { alloc::<T>(1) };
     unsafe { *ptr = value };
-    Box::Ptr(ptr)
+    Box::<T>::Ptr(ptr)
 }
 
 /// Dereference a box.
@@ -6789,14 +6790,14 @@ fn vec_new<T>() -> Vec<T> {
 fn vec_with_capacity<T>(initial_capacity: usize) -> Vec<T> {
     let capacity: usize = max(initial_capacity, 1);
     let ptr: *mut T = unsafe { alloc::<T>(capacity) };
-    Vec::Vec(ptr, 0, capacity)
+    Vec::<T>::Vec(ptr, 0, capacity)
 }
 
 /// Create a vector with a fixed initial length.
 /// The caller must ensure to not read the vector's elements before initialising them.
 unsafe fn vec_with_len<T>(len: usize) -> Vec<T> {
     let Vec::Vec(ptr, _, capacity) = vec_with_capacity(len);
-    Vec::Vec(ptr, len, capacity)
+    Vec::<T>::Vec(ptr, len, capacity)
 }
 
 /// Get the backing pointer.
@@ -6845,20 +6846,20 @@ fn vec_set_len<T>(Vec::Vec(_, old_len, _): &mut Vec<T>, len: usize) {
 /// Get an immutable reference to an element by index.
 fn vec_get<T>(vec: &Vec<T>, index: usize) -> Option<&T> {
     if index >= vec_len::<T>(vec) {
-        Option::None
+        Option::<&T>::None
     } else {
         let ptr: *mut T = ptr_add::<T>(vec_ptr::<T>(vec), index);
-        unsafe { Option::Some(&*ptr) }
+        unsafe { Option::<&T>::Some(&*ptr) }
     }
 }
 
 /// Get a mutable reference to an element by index.
 fn vec_get_mut<T>(vec: &mut Vec<T>, index: usize) -> Option<&mut T> {
     if index >= vec_len::<T>(vec) {
-        Option::None
+        Option::<&mut T>::None
     } else {
         let ptr: *mut T = ptr_add::<T>(vec_ptr::<T>(vec), index);
-        unsafe { Option::Some(&mut *ptr) }
+        unsafe { Option::<&mut T>::Some(&mut *ptr) }
     }
 }
 
@@ -6961,13 +6962,13 @@ fn stringMap_with_len<T>(len: usize) -> StringMap<T> {
         vec_push::<Vec<StringMapEntry<T>>>(&mut buckets, vec_new::<StringMapEntry<T>>());
         i = i + 1;
     }
-    StringMap::Map(buckets)
+    StringMap::<T>::Map(buckets)
 }
 
 /// Insert a key/value pair by prepending it to the bucket list.
 fn stringMap_insert<T>(map: &mut StringMap<T>, key: String, value: T) {
     let bucket: &mut Vec<StringMapEntry<T>> = stringMap_bucket_mut(map, string_clone(&key));
-    vec_push::<StringMapEntry<T>>(bucket, StringMapEntry::Entry(key, value));
+    vec_push::<StringMapEntry<T>>(bucket, StringMapEntry::<T>::Entry(key, value));
 }
 
 /// Get a shared reference to the value for a key.
@@ -6984,7 +6985,7 @@ fn stringMap_get<T>(map: &StringMap<T>, key: String) -> Option<&T> {
         let entry: &StringMapEntry<T> = vec_at::<StringMapEntry<T>>(bucket, nth - 1);
         let other_key: &String = stringMapEntry_get_key::<T>(entry);
         if string_eq(other_key, &key) {
-            return Option::Some(stringMapEntry_get_value::<T>(entry));
+            return Option::<&T>::Some(stringMapEntry_get_value::<T>(entry));
         }
         nth = nth - 1;
     }
@@ -7005,7 +7006,7 @@ fn stringMap_get_mut<T>(map: &mut StringMap<T>, key: String) -> Option<&mut T> {
         let other_key: &String =
             stringMapEntry_get_key::<T>(vec_at_mut::<StringMapEntry<T>>(bucket, nth - 1));
         if string_eq(other_key, &key) {
-            return Option::Some(stringMapEntry_get_value_mut::<T>(
+            return Option::<&mut T>::Some(stringMapEntry_get_value_mut::<T>(
                 vec_at_mut::<StringMapEntry<T>>(bucket, nth - 1),
             ));
         }
@@ -7066,7 +7067,7 @@ enum StringMapStack<T> {
 
 /// Create an empty StringMap stack.
 fn stringMapStack_new<T>() -> StringMapStack<T> {
-    StringMapStack::Stack(vec_new::<StringMap<T>>(), 0)
+    StringMapStack::<T>::Stack(vec_new::<StringMap<T>>(), 0)
 }
 
 /// Push a new empty scope.
@@ -7112,11 +7113,11 @@ fn stringMapStack_lookup<T>(stack: &StringMapStack<T>, name: String) -> Option<&
         i = i - 1;
         let scope: &StringMap<T> = unwrap::<&StringMap<T>>(vec_get::<StringMap<T>>(scopes, i));
         match stringMap_get::<T>(scope, string_clone(&name)) {
-            Option::Some(value) => return Option::Some(value),
+            Option::Some(value) => return Option::<&T>::Some(value),
             Option::None => {},
         }
     }
-    Option::None
+    Option::<&T>::None
 }
 
 // --------------------------- Eq ---------------------------------
@@ -7710,9 +7711,9 @@ fn rType_clone(t: &RType) -> RType {
             let generic: Option<Box<RType>> = match generic {
                 Option::Some(inner) => {
                     let inner: &RType = box_deref::<RType>(inner);
-                    Option::Some(box_new::<RType>(rType_clone(inner)))
+                    Option::<Box<RType>>::Some(box_new::<RType>(rType_clone(inner)))
                 },
-                _ => Option::None,
+                _ => Option::<Box<RType>>::None,
             };
             RType::Enum(string_clone(name), generic)
         },
@@ -7873,8 +7874,8 @@ fn string_len(String::Inner(bytes): &String) -> usize {
 /// Get the character at the given index.
 fn string_get(String::Inner(bytes): &String, index: usize) -> Option<char> {
     match vec_get::<u8>(bytes, index) {
-        Option::Some(value) => Option::Some(*value as char),
-        Option::None => Option::None,
+        Option::Some(value) => Option::<char>::Some(*value as char),
+        Option::None => Option::<char>::None,
     }
 }
 
@@ -7940,14 +7941,14 @@ fn string_to_integer(string: &String, base: usize) -> Option<usize> {
         let max: usize = 18446744073709551615; // 2^64 - 1
 
         if or(digit_value > base - 1, value > max / base) {
-            return Option::None;
+            return Option::<usize>::None;
         }
 
         value = value * base + digit_value;
 
         i = i + 1;
     }
-    Option::Some(value)
+    Option::<usize>::Some(value)
 }
 
 /// Add as many leading zeros as are needed to reach `digits` digits.
