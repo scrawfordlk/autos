@@ -6728,17 +6728,17 @@ fn parser_expected_message(parser: &Parser, expected: &String) -> String {
 
 /// Logical AND of two booleans.
 fn and(a: bool, b: bool) -> bool {
-    a as u8 + b as u8 == 2
+    a as usize + b as usize == 2
 }
 
 /// Logical OR of two booleans.
 fn or(a: bool, b: bool) -> bool {
-    a as u8 + b as u8 > 0
+    a as usize + b as usize > 0
 }
 
 /// Logical NOT of one boolean.
 fn not(a: bool) -> bool {
-    a as u8 == 0
+    a as usize == 0
 }
 
 // -------------------------- char ---------------------------------
