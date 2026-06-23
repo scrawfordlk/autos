@@ -1368,8 +1368,8 @@ fn parse_block(lexer: &mut RLexer) -> RAstBlock {
                 return RAstBlock::Block(statements, tail);
             } else {
                 rLexer_try_consume(lexer, &RToken::SemiColon); // optional semi-colon
-                let expr_statement = RAstStatement::Expression(box_new::<RAstExpr>(expression));
-                vec_push::<RAstStatement>(&mut statements, expr_statement);
+                let statement: RAstStatement = RAstStatement::Expression(box_new::<RAstExpr>(expression));
+                vec_push::<RAstStatement>(&mut statements, statement);
             }
         }
     }
@@ -2024,7 +2024,7 @@ fn semantic_expect_bool_type(ty: &RType) {
 fn semantic_lookup_variable(semantic: &Semantic, name: &String) -> Option<Variable> {
     match stringMapStack_lookup::<Variable>(semantic_locals(semantic), string_clone(name)) {
         Option::Some(entry) => {
-            let Variable::Variable(variable_type, mutable) = entry;
+            let Variable::Variable(variable_type, mutable): &Variable = entry;
             Option::<Variable>::Some(Variable::Variable(rType_clone(variable_type), *mutable))
         },
         Option::None => Option::<Variable>::None,
@@ -3151,7 +3151,7 @@ fn codegen_block(codegen: &mut Codegen, icg: &ICodegen, block: &RAstBlock) -> ST
         i = i + 1;
     }
 
-    let STPair::ST(name, mut ty) = match tail {
+    let STPair::ST(name, mut ty): STPair = match tail {
         Option::Some(expression) => codegen_expression(codegen, icg, box_deref::<RAstExpr>(expression)),
         Option::None => STPair::ST(string_new(), RType::Unit),
     };
@@ -3747,7 +3747,7 @@ fn codegen_arm(
     let pattern: &RAstPattern = vec_at::<RAstPattern>(patterns, 0); // assume the arm only has a single pattern
     codegen_bind_or_destructure(codegen, icg, pattern, expr_name, expr_type);
 
-    let STPair::ST(mut arm_value, arm_type) = codegen_expression(codegen, icg, arm_expr);
+    let STPair::ST(mut arm_value, arm_type): STPair = codegen_expression(codegen, icg, arm_expr);
     if rType_has_value(&arm_type) {
         arm_value = codegen_emit_load_if_enum(codegen, icg, arm_value, &arm_type);
         codegen_emit_store(codegen, icg, &arm_type, &arm_value, &result_pointer);
@@ -3878,7 +3878,7 @@ fn codegen_enum_destructure(
         _ => return, // assume this case does not occur
     };
 
-    let mut offset = codegen_emit_pointer_add(codegen, icg, initial_offset, &RType::Usize, 1); // skip discriminant
+    let mut offset: String = codegen_emit_pointer_add(codegen, icg, initial_offset, &RType::Usize, 1); // skip discriminant
     let mut i: usize = 0;
     while i < vec_len::<RType>(&fields) {
         let ty: RType =
@@ -5248,7 +5248,7 @@ fn lLocalSymbolTable_insert_register(
 ) -> bool {
     let is_defined: bool = stringMap_contains::<LType>(registers, &name);
     stringMap_insert::<LType>(registers, name, ty);
-    !is_defined
+    not(is_defined)
 }
 
 /// Lookup a register type in the local symbol table.
@@ -6838,7 +6838,7 @@ fn vec_with_capacity<T>(initial_capacity: usize) -> Vec<T> {
 /// Create a vector with a fixed initial length.
 /// The caller must ensure to not read the vector's elements before initialising them.
 unsafe fn vec_with_len<T>(len: usize) -> Vec<T> {
-    let Vec::Vec(ptr, _, capacity) = vec_with_capacity(len);
+    let Vec::Vec(ptr, _, capacity): Vec<T> = vec_with_capacity(len);
     Vec::<T>::Vec(ptr, len, capacity)
 }
 
@@ -7149,7 +7149,7 @@ fn stringMapStack_insert<T>(stack: &mut StringMapStack<T>, name: String, value: 
 
 /// Look up a value in any visible scope.
 fn stringMapStack_lookup<T>(stack: &StringMapStack<T>, name: String) -> Option<&T> {
-    let StringMapStack::Stack(scopes, top) = stack;
+    let StringMapStack::Stack(scopes, top): &StringMapStack<T> = stack;
     let mut i: usize = *top;
     while i > 0 {
         i = i - 1;
