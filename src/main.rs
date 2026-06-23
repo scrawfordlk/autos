@@ -1335,7 +1335,10 @@ fn parse_variant(lexer: &mut RLexer) -> RAstVariant {
     if rLexer_try_consume(lexer, &RToken::LParen) {
         vec_push::<RType>(&mut field_types, parse_type(lexer));
 
-        while rLexer_try_consume(lexer, &RToken::Comma) {
+        while and(
+            rLexer_try_consume(lexer, &RToken::Comma),
+            not(rLexer_current_token_eq(lexer, &RToken::RParen)),
+        ) {
             vec_push::<RType>(&mut field_types, parse_type(lexer));
         }
         expect_token(lexer, &RToken::RParen);
