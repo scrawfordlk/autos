@@ -4758,12 +4758,16 @@ fn lLexer_scan_cstring(lexer: &mut LLexer) -> String {
 
     while true {
         match lLexer_consume_char(lexer) {
-            Option::Some('"') => return literal,
-            Option::Some('\\') => {
-                let character: char = lLexer_scan_escape(lexer);
-                string_push(&mut literal, character);
+            Option::Some(c) => {
+                if c == '"' {
+                    return literal;
+                } else if c == '\\' {
+                    let character: char = lLexer_scan_escape(lexer);
+                    string_push(&mut literal, character);
+                } else {
+                    string_push(&mut literal, c)
+                }
             },
-            Option::Some(ch) => string_push(&mut literal, ch),
             Option::None => panic("unterminated LLVM c-string"),
         }
     }
@@ -4966,8 +4970,11 @@ fn lLexer_skip_whitespace_and_comments(lexer: &mut LLexer) {
 fn lLexer_skip_line(lexer: &mut LLexer) {
     while true {
         match lLexer_consume_char(lexer) {
-            Option::Some('\n') => return,
-            Option::Some(_) => {},
+            Option::Some(c) => {
+                if c == '\n' {
+                    return;
+                }
+            },
             Option::None => return,
         }
     }
@@ -6560,8 +6567,13 @@ fn report_error(file: &SourceFile, message: &String) -> ! {
     let mut reached_end: bool = false;
     while not(reached_end) {
         match sourceFile_get_char(file, start) {
-            Option::Some('\n') => reached_end = true,
-            Option::Some(c) => eprint!("{}", c),
+            Option::Some(c) => {
+                if c == '\n' {
+                    reached_end = true;
+                } else {
+                    eprint!("{}", c);
+                }
+            },
             Option::None => reached_end = true,
         }
         start = start + 1;
@@ -6599,8 +6611,13 @@ fn report_warning(file: &SourceFile, message: &String) {
     let mut line_content: String = string_new();
     while not(reached_end) {
         match sourceFile_get_char(file, start) {
-            Option::Some('\n') => reached_end = true,
-            Option::Some(c) => string_push(&mut line_content, c),
+            Option::Some(c) => {
+                if c == '\n' {
+                    reached_end = true;
+                } else {
+                    string_push(&mut line_content, c);
+                }
+            },
             Option::None => reached_end = true,
         }
         start = start + 1;
