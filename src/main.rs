@@ -6599,7 +6599,7 @@ fn report_error(file: &SourceFile, message: &String) -> ! {
     eprint_str("Error at ");
     eprint_string(&integer_to_string(line));
     eprint_str(":");
-    eprint_string(&integer_to_string(line));
+    eprint_string(&integer_to_string(col));
     eprint_str(":\n");
 
     let mut line: String = string_new();
