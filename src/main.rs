@@ -6557,11 +6557,11 @@ fn args_new(argc: usize, argv: *mut *mut u8) -> Args {
         let mut i: usize = 0;
         while i < argc {
             let arg: *mut u8 = *ptr_add::<*mut u8>(argv, i);
-            let mut nul_index: usize = 0;
-            while *ptr_add::<u8>(arg, nul_index) != 0 as u8 {
-                nul_index = nul_index + 1;
+            let mut null_index: usize = 0;
+            while *ptr_add::<u8>(arg, null_index) != 0 as u8 {
+                null_index = null_index + 1;
             }
-            let length: usize = nul_index; // do not include the NULL-termination
+            let length: usize = null_index; // do not include the NULL-termination
             let arg: String = String::Inner(Vec::<u8>::Vec(arg, length, length));
             vec_push::<String>(&mut args, arg);
             i = i + 1;
@@ -8344,7 +8344,7 @@ fn write_file(mut filename: String, String::Inner(Vec::Vec(buf_ptr, len, _)): &S
 
 /// Read the entire contents of a file and return it as a String.
 fn read_file(mut filename: String) -> String {
-    string_push(&mut filename, 0 as char); // NULL-terminate the string
+    string_push(&mut filename, 0 as u8 as char); // NULL-terminate the string
     let String::Inner(Vec::Vec(path_ptr, _, _)): &String = &filename;
     let O_RDONLY: usize = 0;
 
