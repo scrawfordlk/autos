@@ -1193,6 +1193,7 @@ fn parse_language(lexer: &mut RLexer) -> RAst {
             RToken::Identifier(name) => {
                 if string_eq(name, &string("include")) {
                     // ignore `include!("...");`
+                    rLexer_next_token(lexer);
                     expect_token(lexer, &RToken::Bang);
                     expect_token(lexer, &RToken::LParen);
                     rLexer_next_token(lexer); // skip string literal
