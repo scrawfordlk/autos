@@ -1030,6 +1030,7 @@ fn rType_instantiate_generic(ty: &RType, mapping: &Option<RType>, items: &String
                     items,
                 ))),
             ),
+            // set instantiation only if the enum is generic
             _ => match mapping {
                 Option::Some(instance) => match stringMap_get::<Item>(items, string_clone(name)) {
                     Option::Some(item) => match item {
@@ -3487,11 +3488,23 @@ fn codegen_call(
 
     let generate_function: bool = match generic {
         Option::Some(instance) => {
-            let do_generate: bool = codegen_instantiate_generic(codegen, name, instance);
+            // If the current function is generic, then there is the possibility that `instance`
+            // contains a generic type parameter. To handle this, first instantiate `instance` with
+            // the generic instance of the current function, then instantiate the generic for the callee.
+            // E.g.: If the current function has instance T -> usize and this function call uses
+            // turbofish ::<Vec<StringMapEntry<T>>>, then before Vec<StringMapEntry<T>> can be used
+            // as a generic instance, it has to be instantiated with the current function's instance
+            // (in this case usize), so that the callee's instance becomes Vec<StringMapEntry<usize>>.
+            let instance: RType = rType_instantiate_generic(
+                instance,
+                &codegen_generic_instance(codegen, codegen_current_function(codegen)),
+                iCodegen_globals(icg),
+            );
+            let do_generate: bool = codegen_instantiate_generic(codegen, name, &instance);
 
             // size_of<T>() is inlined instead of generating a function
             if string_eq(name, &string("size_of")) {
-                let size: usize = rType_size(codegen, icg, instance);
+                let size: usize = rType_size(codegen, icg, &instance);
                 codegen_remove_generic_instance(codegen, name);
                 return STPair::ST(integer_to_string(size), RType::Usize);
             }
@@ -3501,10 +3514,6 @@ fn codegen_call(
         },
         _ => false,
     };
-
-    // necessary before generating call so that generic return values can be resolved correctly
-    let caller: String = string_clone(codegen_current_function(codegen));
-    codegen_set_current_function(codegen, string_clone(name));
 
     let mut result_name: String = if rType_has_value(&return_type) {
         codegen_emit_call_assign(codegen, icg, name, &return_type, &value_types, &value_names)
@@ -3520,7 +3529,6 @@ fn codegen_call(
     }
 
     let items: &Vec<RAstItem> = iCodegen_ast_items(icg);
-
     match generic {
         Option::Some(_) => {
             if generate_function {
@@ -3531,6 +3539,7 @@ fn codegen_call(
                             let other: &String = rAstFunction_name(function);
                             if string_eq(name, other) {
                                 // save the current function code generation index and SSA counter value
+                                let caller: String = string_clone(codegen_current_function(codegen));
                                 let fn_index: usize = code_current_function_index(codegen_code(codegen));
                                 let ssa_counter: usize = codegen_ssa_counter(codegen);
                                 codegen_set_ssa_counter(codegen, 0);
@@ -3539,6 +3548,7 @@ fn codegen_call(
                                 codegen_function(codegen, icg, function);
 
                                 // restore the saved values
+                                codegen_set_current_function(codegen, caller);
                                 code_set_current_function_index(codegen_code_mut(codegen), fn_index);
                                 codegen_set_ssa_counter(codegen, ssa_counter);
                                 i = vec_len::<RAstItem>(items); // break
@@ -3553,8 +3563,6 @@ fn codegen_call(
         },
         _ => {},
     }
-
-    codegen_set_current_function(codegen, caller);
     STPair::ST(result_name, return_type)
 }
 
