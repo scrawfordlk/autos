@@ -1464,7 +1464,9 @@ fn parse_expression(lexer: &mut RLexer) -> RAstExpr {
         RToken::Return => {
             rLexer_next_token(lexer);
             match rLexer_current_token(lexer) {
-                RToken::SemiColon | RToken::RBrace => RAstExpr::Return(Option::<Box<RAstExpr>>::None),
+                RToken::SemiColon | RToken::RBrace | RToken::Comma => {
+                    RAstExpr::Return(Option::<Box<RAstExpr>>::None)
+                },
                 _ => {
                     let expression: RAstExpr = parse_expression(lexer);
                     RAstExpr::Return(Option::<Box<RAstExpr>>::Some(box_new::<RAstExpr>(expression)))
