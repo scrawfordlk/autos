@@ -6862,7 +6862,7 @@ fn vec_with_capacity<T>(initial_capacity: usize) -> Vec<T> {
 /// Create a vector with a fixed initial length.
 /// The caller must ensure to not read the vector's elements before initialising them.
 unsafe fn vec_with_len<T>(len: usize) -> Vec<T> {
-    let Vec::Vec(ptr, _, capacity): Vec<T> = vec_with_capacity(len);
+    let Vec::Vec(ptr, _, capacity): Vec<T> = vec_with_capacity::<T>(len);
     Vec::<T>::Vec(ptr, len, capacity)
 }
 
@@ -6952,7 +6952,7 @@ fn vec_set<T>(vec: &mut Vec<T>, index: usize, value: T) -> bool {
     if index >= vec_len::<T>(vec) {
         false
     } else {
-        let elem: &mut T = vec_at_mut(vec, index);
+        let elem: &mut T = vec_at_mut::<T>(vec, index);
         *elem = value;
         true
     }
@@ -7033,7 +7033,7 @@ fn stringMap_with_len<T>(len: usize) -> StringMap<T> {
 
 /// Insert a key/value pair by prepending it to the bucket list.
 fn stringMap_insert<T>(map: &mut StringMap<T>, key: String, value: T) {
-    let bucket: &mut Vec<StringMapEntry<T>> = stringMap_bucket_mut(map, string_clone(&key));
+    let bucket: &mut Vec<StringMapEntry<T>> = stringMap_bucket_mut::<T>(map, string_clone(&key));
     vec_push::<StringMapEntry<T>>(bucket, StringMapEntry::<T>::Entry(key, value));
 }
 
@@ -7102,7 +7102,7 @@ fn stringMap_remove<T>(map: &mut StringMap<T>, key: &String) -> bool {
         let entry: &StringMapEntry<T> = vec_at::<StringMapEntry<T>>(bucket, nth - 1);
         let other_key: &String = stringMapEntry_get_key::<T>(entry);
         if string_eq(other_key, key) {
-            vec_remove(bucket, length - nth);
+            vec_remove::<StringMapEntry<T>>(bucket, length - nth);
             return true;
         }
         nth = nth - 1;
@@ -7143,7 +7143,7 @@ fn stringMapStack_push_empty<T>(StringMapStack::Stack(scopes, top): &mut StringM
         vec_push::<StringMap<T>>(scopes, new_scope);
     } else {
         vec_set::<StringMap<T>>(scopes, *top, new_scope);
-    }
+    };
     *top = *top + 1;
 }
 
@@ -7207,10 +7207,10 @@ fn llvmType_eq(left: &LType, right: &LType) -> bool {
             _ => false,
         },
         LType::Array(left_len, left_inner) => match right {
-            LType::Array(right_len, right_inner) => {
-                *left_len == *right_len
-                    && llvmType_eq(box_deref::<LType>(left_inner), box_deref::<LType>(right_inner))
-            },
+            LType::Array(right_len, right_inner) => and(
+                *left_len == *right_len,
+                llvmType_eq(box_deref::<LType>(left_inner), box_deref::<LType>(right_inner)),
+            ),
             _ => false,
         },
         LType::Void => match right {
@@ -8080,10 +8080,10 @@ fn integer_to_string_base(mut integer: usize, base: usize) -> String {
 
     while integer > 0 {
         let digit: u8 = (integer % base) as u8;
-        let character: char = if digit < 10 {
+        let character: char = if digit < 10 as u8 {
             ('0' as u8 + digit) as char
         } else {
-            ('A' as u8 + (digit - 10)) as char
+            ('A' as u8 + (digit - 10 as u8)) as char
         };
         string_push(&mut string, character);
         integer = integer / base;
