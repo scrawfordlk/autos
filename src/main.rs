@@ -6561,8 +6561,13 @@ fn report_error(file: &SourceFile, message: &String) -> ! {
     let line: usize = sourceFile_current_line(file);
     let col: usize = sourceFile_current_column(file);
 
-    eprintln!("ERROR at {}:{}:", line, col);
+    eprint_str("Error at ");
+    eprint_string(&integer_to_string(line));
+    eprint_str(":");
+    eprint_string(&integer_to_string(line));
+    eprint_str(":\n");
 
+    let mut line: String = string_new();
     let mut start: usize = sourceFile_current_line_start(file);
     let mut reached_end: bool = false;
     while not(reached_end) {
@@ -6571,14 +6576,15 @@ fn report_error(file: &SourceFile, message: &String) -> ! {
                 if c == '\n' {
                     reached_end = true;
                 } else {
-                    eprint!("{}", c);
+                    string_push(&mut line, c);
                 }
             },
             Option::None => reached_end = true,
         }
         start = start + 1;
     }
-    eprint_str("\n");
+    eprint_string(&line);
+    eprintln();
 
     let mut i: usize = 1;
     while i < col {
@@ -6587,8 +6593,7 @@ fn report_error(file: &SourceFile, message: &String) -> ! {
     }
     eprint_str("^ ");
     eprint_string(message);
-    eprint_str("\n");
-
+    eprintln();
     exit_process(1);
 }
 
