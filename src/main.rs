@@ -4454,6 +4454,7 @@ fn codegen_mangle_name(codegen: &Codegen, callee: &String) -> String {
     string_replace_all(&mut name, '>', '.'); // for generic enums
     string_replace_all(&mut name, '&', '$'); // for references
     string_replace_all(&mut name, ' ', '_'); // for pointers/references
+    string_replace_all(&mut name, '*', '.'); // for pointers/references
     name
 }
 
