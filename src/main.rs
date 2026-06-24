@@ -4442,7 +4442,6 @@ fn codegen_emit_call_void(
 /// Mangles a function name by replacing all `::` with `..`  and appending `.<type>` if the function is generic.
 fn codegen_mangle_name(codegen: &Codegen, callee: &String) -> String {
     let mut name: String = string_clone(callee);
-    string_replace_all(&mut name, ':', '.');
     match codegen_generic_instance(codegen, callee) {
         Option::Some(ty) => {
             string_push(&mut name, '.'); // mangle for each instantiation
@@ -4450,12 +4449,7 @@ fn codegen_mangle_name(codegen: &Codegen, callee: &String) -> String {
         },
         _ => {},
     }
-    string_replace_all(&mut name, '<', '.'); // for generic enums
-    string_replace_all(&mut name, '>', '.'); // for generic enums
-    string_replace_all(&mut name, '&', '$'); // for references
-    string_replace_all(&mut name, ' ', '_'); // for pointers/references
-    string_replace_all(&mut name, '*', '.'); // for pointers/references
-    name
+    string_replace_all(&mut name, &string(":<>& *"), &string("...$_."))
 }
 
 /// Construct a call instruction and return it.
@@ -8013,15 +8007,27 @@ fn string_push_string(String::Inner(bytes): &mut String, String::Inner(other_byt
     vec_extend::<u8>(bytes, other_bytes);
 }
 
-/// Replace all characters `old` with `new`.
-fn string_replace_all(string: &mut String, old: char, new: char) {
+/// Replace all characters in `string` that are contained in `old_chars` and replace them with their
+/// counterpart in `new_chars` based on the corresponding index.
+fn string_replace_all(string: &mut String, old_chars: &String, new_chars: &String) -> String {
+    if string_len(old_chars) != string_len(new_chars) {
+        return string_clone(string);
+    }
+    let mut replaced: String = string_with_capacity(string_len(string));
     let mut i: usize = 0;
     while i < string_len(string) {
-        if string_at(string, i) == old {
-            string_set(string, i, new);
+        let mut c: char = string_at(string, i);
+        let mut j: usize = 0;
+        while j < string_len(old_chars) {
+            if c == string_at(old_chars, j) {
+                c = string_at(new_chars, j);
+            }
+            j = j + 1;
         }
+        string_push(&mut replaced, c);
         i = i + 1;
     }
+    replaced
 }
 
 /// Converts a string into an integer given the base.
@@ -8067,19 +8073,6 @@ fn string_integer_extend(integer: &String, digits: usize) -> String {
         i = i + 1;
     }
     s
-}
-
-/// Reverse a String in place.
-fn string_reverse(string: &mut String) {
-    let len: usize = string_len(string);
-    let mut i: usize = 0;
-    while i < len / 2 {
-        let a: char = string_at(string, i);
-        let b: char = string_at(string, len - 1 - i);
-        string_set(string, i, b);
-        string_set(string, len - 1 - i, a);
-        i = i + 1;
-    }
 }
 
 /// Hash a String.
