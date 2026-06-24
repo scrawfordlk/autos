@@ -12,6 +12,7 @@ fn test_system() {
     assert!(tool_available("rustc"), "rustc is required");
     assert!(tool_available("clang"), "clang is required");
     assert!(tool_available("lli"), "lli is required");
+    assert!(tool_available("diff"), "lli is required"); // used to check fixpoint
 
     for source_path in rust_sources() {
         let label = source_label(&source_path);
@@ -88,17 +89,72 @@ fn test_llvm() {
 
 #[test]
 fn test_self_compilation() {
-    let file = "src/main.rs";
+    let source = "src/main.rs";
+    let l1 = "level1";
+    let l2 = "level2";
+    let level1 = unique_path(&format!("{}-autos", l1), "ll");
+    let level2 = unique_path(&format!("{}-autos", l2), "ll");
+
+    // boostrapping & self-compiling autos
     let status = Command::new("cargo")
         .env("RUSTFLAGS", "-Awarnings") // hide warnings
         .arg("run")
         .arg("--")
         .arg("-c")
-        .arg(file)
+        .arg(source)
+        .arg("-o")
+        .arg(&level1)
+        .stdout(Stdio::null())
+        .status()
+        .expect("can bootstrap and self-compile using the bootstrapped binary");
+    assert!(
+        status.success(),
+        "autos can self-compile using the bootstrapped compiler"
+    );
+
+    // lower LLVM-IR into machine code using clang
+    let status = Command::new("clang")
+        .arg(&level1)
+        .arg("-o")
+        .arg(&l1)
+        .stdout(Stdio::null())
+        .status()
+        .expect("able to lower self-compiled compiler code to machine code");
+    assert!(
+        status.success(),
+        "clang can lower the generated self-compiled code to machine code"
+    );
+
+    // self-compile using the self-compiled binary
+    let mut compiler = PathBuf::from(".");
+    compiler.push(&l1);
+    let status = Command::new(&compiler)
+        .arg("-c")
+        .arg(source)
+        .arg("-o")
+        .arg(&level2)
         .stdout(Stdio::null())
         .status()
         .expect("able to self-compile autos");
-    assert!(status.success());
+    assert!(
+        status.success(),
+        "autos can self-compile using the bootstrapped compiler"
+    );
+
+    // Check if the fixpoint was reached
+    let status = Command::new("diff")
+        .arg(&level1)
+        .arg(&level2)
+        .status()
+        .expect("able diff the LLVM-IR generated outputs of the compiler");
+    assert!(
+        status.code().expect("diff exits with an exit code") == 0,
+        "self-compilation reaches a fixpoint"
+    );
+
+    remove_file(&level1).expect("can remove level 1 generated LLVM-IR code");
+    remove_file(&l1).expect("can remove clang-compiled level 1 self-compiled autos binary");
+    remove_file(&level2).expect("can remove level 2 generated LLVM-IR code");
 }
 
 fn unique_path(label: &str, extension: &str) -> PathBuf {
