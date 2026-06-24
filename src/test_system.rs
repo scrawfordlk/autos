@@ -86,6 +86,21 @@ fn test_llvm() {
     }
 }
 
+#[test]
+fn test_self_compilation() {
+    let file = "src/main.rs";
+    let status = Command::new("cargo")
+        .env("RUSTFLAGS", "-Awarnings") // hide warnings
+        .arg("run")
+        .arg("--")
+        .arg("-c")
+        .arg(file)
+        .stdout(Stdio::null())
+        .status()
+        .expect("able to self-compile autos");
+    assert!(status.success());
+}
+
 fn unique_path(label: &str, extension: &str) -> PathBuf {
     let mut path = std::env::temp_dir();
     let nanos = SystemTime::now()
@@ -191,8 +206,9 @@ fn compile_emulate(source: &Path) -> (i32, PathBuf) {
         .arg("-c")
         .arg(source)
         .arg("-e")
+        .stdout(Stdio::null())
         .status()
-        .expect("able to run bootstrapped compiler/emulator");
+        .expect("able to run bootstrapped autos");
 
     let stem = source.file_stem().and_then(|s| s.to_str()).unwrap_or("code");
     let output = PathBuf::from(format!("{}.ll", stem));
