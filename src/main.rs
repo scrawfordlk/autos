@@ -90,15 +90,21 @@ fn print_help_exit() -> ! {
 fn compile(source: String, do_semantic_analysis: bool) -> String {
     let mut lexer: RLexer = rLexer_new(source);
     let ast: RAst = parse_language(&mut lexer);
+    print_str("=> Parsing Complete");
+    println();
 
     let items: StringMap<Item> = collect_items(&ast);
     if do_semantic_analysis {
         semantic_check_run(&ast, &items);
+        print_str("=> Semantic Analysis Complete");
+        println();
     }
 
     let mut codegen: Codegen = codegen_new();
     let icg: ICodegen = iCodegenStatic_new(ast, items);
     codegen_language(&mut codegen, &icg);
+    print_str("=> Code Generation Complete");
+    println();
 
     codegen_into_llvm(codegen)
 }
