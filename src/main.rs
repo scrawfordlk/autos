@@ -968,6 +968,13 @@ fn rType_is_enum(codegen: &Codegen, ty: &RType) -> bool {
     }
 }
 
+fn rType_is_pointer(ty: &RType) -> bool {
+    match ty {
+        RType::Reference(_, _) | RType::RawPointerMut(_) => true,
+        _ => false,
+    }
+}
+
 /// Least Upper Bound coerce two types into one type.
 /// If `left` cannot be coerced into `right`, `left` is returned.
 fn rType_lub_coerce(left: RType, right: RType) -> RType {
@@ -3135,6 +3142,9 @@ fn codegen_function(codegen: &mut Codegen, icg: &ICodegen, function: &RAstFuncti
                 // there is not value, so dummy return value that is never reached anyway
                 value_name = if rType_is_enum(codegen, return_type) {
                     codegen_emit_alloca(codegen, icg, return_type)
+                } else if rType_is_pointer(return_type) {
+                    let dummy_ptr: RType = RType::RawPointerMut(box_new::<RType>(RType::Usize));
+                    codegen_emit_inttoptr(codegen, icg, &RType::Usize, &dummy_ptr, &string("0"))
                 } else {
                     string("0")
                 };
