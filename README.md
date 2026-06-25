@@ -2,8 +2,8 @@
 
 Autos (from Ancient Greek αὐτός, meaning "self") is a self-contained 64-bit software system that consists of:
 
-- a self-compiling compiler that compiles RawRust, a tiny subset of the Rust programming language
-- a self-emulating emulator that emulates LLLVM-IR, a tiny subset of LLVM Intermediate Representation
+- A self-compiling compiler that compiles RawRust, a tiny subset of the Rust programming language
+- A self-emulating emulator that emulates LLLVM-IR, a tiny subset of LLVM Intermediate Representation
 
 This project serves as my bachelor thesis, which is inspired by
 the [Selfie project](https://github.com/cksystemsteaching/selfie/).
@@ -17,21 +17,21 @@ You can either then manually invoke:
 cargo build --release && cp target/release/autos .
 ```
 
-Or you can do the same thing using `make`:
+Or by using `make`:
 
 ```bash
 make
 ```
 
 Once the system is bootstrapped, you can now start compiling RawRust programs, such as
-the autos system that was just compiled:
+Autos, i.e. we can attempt self-compilation:
 
 ```bash
 ./autos -c src/main.rs -o autos.ll
 ```
 
 You can then execute the generated LLLVM-IR using the standard LLVM-tools (`clang`, `lli`, $\dots$)
-or you can emulate it using autos:
+or you can emulate it using Autos:
 
 ```bash
 ./autos -e main.ll -c src/main.rs
@@ -73,5 +73,5 @@ To summarise, LLLVM-IR features:
 - A minimal subset of RISC-like instructions
 - Organisation of code using functions
 - Static string literals
-- strict type-safety
+- Strict type-safety
 - Single Static Assignment (SSA) compliance
