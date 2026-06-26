@@ -236,7 +236,7 @@ fn rust_sources() -> Vec<PathBuf> {
         .filter_map(Result::ok)
         .filter(|e| e.file_type().is_file())
         .map(|e| e.path().to_str().expect("is string").to_string())
-        .map(|e| PathBuf::from(e))
+        .map(PathBuf::from)
         .collect();
     sources.sort_unstable();
     sources
@@ -248,7 +248,7 @@ fn llvm_sources() -> Vec<PathBuf> {
         .filter_map(Result::ok)
         .filter(|e| e.file_type().is_file())
         .map(|e| e.path().to_str().expect("is string").to_string())
-        .map(|e| PathBuf::from(e))
+        .map(PathBuf::from)
         .collect();
     sources.sort_unstable();
     sources
