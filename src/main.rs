@@ -1,4 +1,17 @@
-#![allow(clippy::assign_op_pattern, while_true, non_snake_case)]
+#![allow(
+    clippy::assign_op_pattern,
+    clippy::match_like_matches_macro,
+    clippy::single_match,
+    clippy::collapsible_match,
+    clippy::too_many_arguments,
+    clippy::unnecessary_cast,
+    clippy::manual_bits,
+    clippy::upper_case_acronyms,
+    clippy::manual_is_multiple_of,
+    clippy::char_lit_as_u8,
+    while_true,
+    non_snake_case
+)] // attributes such as these are ignored by autos
 #![cfg_attr(not(test), no_main)]
 #[cfg(not(test))]
 #[unsafe(no_mangle)]
@@ -14,7 +27,7 @@ fn main(argc: usize, argv: *mut *mut u8) {
         }
         let input_name: &String = args_at(&args, 2);
         let source: String = read_file(string_clone(input_name));
-        let mut emulate: bool = false;
+        let mut do_emulate: bool = false;
         let mut do_semantic_analysis: bool = true;
         let mut output_file: Option<String> = Option::<String>::None;
 
@@ -28,7 +41,7 @@ fn main(argc: usize, argv: *mut *mut u8) {
                 output_file = Option::<String>::Some(string_clone(args_at(&args, i + 1)));
                 i = i + 1;
             } else if string_eq(arg, &string("-e")) {
-                emulate = true;
+                do_emulate = true;
             } else if string_eq(arg, &string("--unsafe")) {
                 do_semantic_analysis = false;
             }
@@ -54,8 +67,8 @@ fn main(argc: usize, argv: *mut *mut u8) {
             },
         };
         write_file(output_name, &output_code);
-        if emulate {
-            let exit_code: usize = emu_execute_llvm(output_code);
+        if do_emulate {
+            let exit_code: usize = emulate(output_code, 3000000);
             exit_process(exit_code);
         }
         exit_process(0);
@@ -67,7 +80,7 @@ fn main(argc: usize, argv: *mut *mut u8) {
         }
         let input_name: &String = args_at(&args, 2);
         let llvm: String = read_file(string_clone(input_name));
-        let exit_code: usize = emu_execute_llvm(llvm);
+        let exit_code: usize = emulate(llvm, 3000000);
         exit_process(exit_code);
     }
 
@@ -989,6 +1002,7 @@ fn rType_lub_coerce(left: RType, right: RType) -> RType {
 /// Coercions:
 ///   - &mut T -> &T
 ///   - !      -> T (any type)
+///
 /// That is, two types a, b can match after coercion, if
 /// a == b || a == ! || a == &mut T && b == &T
 fn rType_coerced_match(left: &RType, right: &RType) -> bool {
@@ -1170,7 +1184,7 @@ fn parse_generic(lexer: &mut RLexer) -> bool {
             parse_error(lexer, &string("only a single generic type is supported"))
         }
         expect_token(lexer, &RToken::RAngle);
-        return true;
+        true
     } else {
         false
     }
@@ -1466,14 +1480,12 @@ fn parse_type(lexer: &mut RLexer) -> RType {
             let name: String = expect_identifier(lexer);
             if string_eq(&name, &string("T")) {
                 RType::Generic // T is always a generic parameter
+            } else if rLexer_try_consume(lexer, &RToken::LAngle) {
+                let instance: RType = parse_type(lexer);
+                expect_token(lexer, &RToken::RAngle);
+                RType::Enum(name, Option::<Box<RType>>::Some(box_new::<RType>(instance)))
             } else {
-                if rLexer_try_consume(lexer, &RToken::LAngle) {
-                    let instance: RType = parse_type(lexer);
-                    expect_token(lexer, &RToken::RAngle);
-                    RType::Enum(name, Option::<Box<RType>>::Some(box_new::<RType>(instance)))
-                } else {
-                    RType::Enum(name, Option::<Box<RType>>::None)
-                }
+                RType::Enum(name, Option::<Box<RType>>::None)
             }
         },
         token => {
@@ -2273,8 +2285,7 @@ fn semantic_check_extern(semantic: &mut Semantic, declarations: &Vec<RAstExternF
 
 /// Analyze one function and validate body against its signature.
 fn semantic_check_function(semantic: &mut Semantic, function: &RAstFunction, globals: &StringMap<Item>) {
-    let RAstFunction::Fn(is_generic, is_unsafe, name, parameters, return_type, body): &RAstFunction =
-        function;
+    let RAstFunction::Fn(is_generic, is_unsafe, _, parameters, return_type, body): &RAstFunction = function;
 
     semantic_set_is_generic(semantic, *is_generic);
     semantic_set_current_fn_return_type(semantic, rType_clone(return_type));
@@ -5586,8 +5597,7 @@ fn parser_parse_declare(parser: &mut Parser) {
 /// Parse parameters of a function.
 ///
 /// * `parser`: The parser state
-/// * `require_names`: True, if the parameters are named (function definition). False, if they are
-/// not (function declaration).
+/// * `require_names`: True, if the parameters are named (function definition). False, if they are not (function declaration).
 fn parser_parse_parameters(parser: &mut Parser, named: bool) -> Vec<LParameter> {
     let mut parameters: Vec<LParameter> = vec_new::<LParameter>();
 
@@ -5611,14 +5621,15 @@ fn parser_parse_parameters(parser: &mut Parser, named: bool) -> Vec<LParameter> 
             let parameter_type: LType = parser_parse_type(parser);
             let param_name: String = parser_parse_parameter_name(parser, vec_len::<LParameter>(&parameters));
 
-            if named {
-                if not(lLocalSymbolTable_insert_register(
+            if and(
+                named,
+                not(lLocalSymbolTable_insert_register(
                     parser_local_mut(parser),
                     string_clone(&param_name),
                     llvmType_clone(&parameter_type),
-                )) {
-                    parser_error(parser, &string("duplicate parameters in LLVM function"));
-                }
+                )),
+            ) {
+                parser_error(parser, &string("duplicate parameters in LLVM function"));
             }
 
             let parameter: LParameter = LParameter::Parameter(param_name, parameter_type);
@@ -6202,14 +6213,13 @@ fn emu_load_bytes(emulator: &Emu, address: usize, byte_count: usize) -> Value {
 }
 
 /// Parse and emulate LLVM source and return the return value of `@main`.
-fn emu_execute_llvm(source: String) -> usize {
+fn emulate(source: String, memory_size: usize) -> usize {
     let ast: LAst = parser_parse_to_ast(source);
 
     let main_name: String = string("main");
     let empty_args: Vec<Value> = vec_new::<Value>();
 
-    // TODO: parameterise memory size
-    let mut emulator: Emu = emu_new(3000000, &ast);
+    let mut emulator: Emu = emu_new(memory_size, &ast);
     match emu_execute_function_named(&mut emulator, &ast, &main_name, &empty_args) {
         Value::Int(value) => value,
         _ => panic("unexpected return value for main"),
@@ -6241,7 +6251,7 @@ fn emu_execute_function(
         LFunction::BuiltIn(builtin, _, _) => {
             let value: usize = emu_execute_builtin(emulator, builtin, arguments);
             emu_set_frame_size(emulator, previous_frame_size);
-            return Value::Int(value);
+            Value::Int(value)
         },
         LFunction::Function(_, parameters, blocks) => {
             let mut virtual_registers: StringMap<Value> = stringMap_new::<Value>();
@@ -6499,7 +6509,7 @@ fn llvm_overflow_value(value: &mut Value, ty: &LType) {
     };
     match value {
         Value::Int(value) => *value = *value % modulo,
-        _ => return,
+        _ => {},
     }
 }
 
@@ -7131,7 +7141,7 @@ fn stringMap_remove<T>(map: &mut StringMap<T>, key: &String) -> bool {
         }
         nth = nth - 1;
     }
-    return false;
+    false
 }
 
 /// Get a shared reference to the bucket by hashing the given key `k` and indexing into the hashtable `b`.
@@ -8312,19 +8322,6 @@ enum IOResult {
     WriteFailure,
     ReadFailure,
     Success,
-}
-
-/// Check for errors and report if there is one.
-fn io_check_error_str(result: &IOResult, filename: &str) {
-    match result {
-        IOResult::OpenFailure => print_str("Could not open "),
-        IOResult::WriteFailure => print_str("Could not write to "),
-        IOResult::ReadFailure => print_str("Could not read "),
-        _ => return,
-    }
-    print_str(filename);
-    println();
-    exit_process(1);
 }
 
 /// Check for errors and report if there is one.
