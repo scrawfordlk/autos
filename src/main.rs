@@ -934,14 +934,11 @@ fn variants_get_discriminator(variants: &Vec<RAstVariant>, variant: &String) -> 
 /// Convert a Rust type into a LLVM-IR type name.
 fn rType_to_llvm_name(codegen: &Codegen, icg: &ICodegen, ty: &RType) -> String {
     match ty {
-        RType::U8 => string("i8"),
+        RType::U8 | RType::Char => string("i8"),
         RType::Usize => string("i64"), // assume 64-bit for now
         RType::Bool => string("i1"),
-        RType::Char => string("i8"),
-        RType::Unit => string("void"),
-        RType::Never => string("void"),
-        RType::Reference(_, _) => string("ptr"),
-        RType::RawPointerMut(_) => string("ptr"),
+        RType::Unit | RType::Never => string("void"),
+        RType::Reference(_, _) | RType::RawPointerMut(_) => string("ptr"),
         RType::Generic => match codegen_generic_instance(codegen, codegen_current_function(codegen)) {
             Option::Some(instance) => rType_to_llvm_name(codegen, icg, &instance),
             _ => panic("can't determine a LLVM type for an uninstantiated generic type"),
@@ -964,8 +961,7 @@ fn size_to_llvm_array(size: usize) -> String {
 
 fn rType_is_numeric(ty: &RType) -> bool {
     match ty {
-        RType::U8 => true,
-        RType::Usize => true,
+        RType::U8 | RType::Usize => true,
         _ => false,
     }
 }
@@ -2126,7 +2122,7 @@ enum CastOperation {
 
 /// Return the CastOperation that is applicable from `left_type` to `right_type` for Rust AST types.
 /// See documentation of CastOperation for more details.
-fn castOperation_get_cast_operation(left_type: &RType, right_type: &RType) -> CastOperation {
+fn castOperation_select_operation(left_type: &RType, right_type: &RType) -> CastOperation {
     if rType_eq(left_type, right_type) {
         return CastOperation::None;
     }
@@ -2503,7 +2499,7 @@ fn semantic_check_cast(
     globals: &StringMap<Item>,
 ) -> RType {
     let from_type: RType = semantic_check_expression(semantic, value, globals);
-    match castOperation_get_cast_operation(&from_type, to_type) {
+    match castOperation_select_operation(&from_type, to_type) {
         CastOperation::Invalid => semantic_error(&string("invalid cast")),
         _ => rType_clone(to_type),
     }
@@ -2819,20 +2815,19 @@ fn semantic_check_pattern(
     let scrutinee: Scrutinee = scrutinee_from_type(expression_type);
     let pattern_type: RType = match pattern {
         RAstPattern::Literal(literal) => {
-            if refutable_ok {
-                match literal {
-                    RAstPatternLiteral::Int(_) => {
-                        if rType_is_numeric(scrutinee_match_type(&scrutinee)) {
-                            return; // numeric expression matches on numeric pattern
-                        } else {
-                            RType::Usize
-                        }
-                    },
-                    RAstPatternLiteral::Char(_) => RType::Char,
-                    RAstPatternLiteral::Bool(_) => RType::Bool,
-                }
-            } else {
+            if not(refutable_ok) {
                 semantic_error(&string("pattern must be irrefutable"))
+            }
+            match literal {
+                RAstPatternLiteral::Int(_) => {
+                    if rType_is_numeric(scrutinee_match_type(&scrutinee)) {
+                        return; // numeric expression matches on numeric pattern
+                    } else {
+                        RType::Usize
+                    }
+                },
+                RAstPatternLiteral::Char(_) => RType::Char,
+                RAstPatternLiteral::Bool(_) => RType::Bool,
             }
         },
         RAstPattern::Identifier(mutable, name) => {
@@ -3155,7 +3150,8 @@ fn codegen_function(codegen: &mut Codegen, icg: &ICodegen, function: &RAstFuncti
                     codegen_emit_alloca(codegen, icg, return_type)
                 } else if rType_is_pointer(return_type) {
                     let dummy_ptr: RType = RType::RawPointerMut(box_new::<RType>(RType::Usize));
-                    codegen_emit_inttoptr(codegen, icg, &RType::Usize, &dummy_ptr, &string("0"))
+                    let op: CastOperation = CastOperation::IntToPtr;
+                    codegen_emit_cast(codegen, icg, &op, &RType::Usize, &dummy_ptr, &string("0"))
                 } else {
                     string("0")
                 };
@@ -3335,27 +3331,9 @@ fn codegen_binary_op(
 fn codegen_cast(codegen: &mut Codegen, icg: &ICodegen, value: &RAstExpr, to_type: &RType) -> STPair {
     let STPair::ST(from_name, from_type): STPair = codegen_expression(codegen, icg, value);
     let to_type: RType = rType_clone(to_type);
-
-    match castOperation_get_cast_operation(&from_type, &to_type) {
-        CastOperation::ZeroExtend => {
-            let name: String = codegen_emit_zext(codegen, icg, &from_type, &to_type, &from_name);
-            STPair::ST(name, to_type)
-        },
-        CastOperation::Truncate => {
-            let name: String = codegen_emit_trunc(codegen, icg, &from_type, &to_type, &from_name);
-            STPair::ST(name, to_type)
-        },
-        CastOperation::IntToPtr => {
-            let name: String = codegen_emit_inttoptr(codegen, icg, &from_type, &to_type, &from_name);
-            STPair::ST(name, to_type)
-        },
-        CastOperation::PtrToInt => {
-            let name: String = codegen_emit_ptrtoint(codegen, icg, &from_type, &to_type, &from_name);
-            STPair::ST(name, to_type)
-        },
-        CastOperation::None => STPair::ST(from_name, to_type),
-        CastOperation::Invalid => STPair::ST(from_name, to_type), // assume this case never occurs
-    }
+    let op: CastOperation = castOperation_select_operation(&from_type, &to_type);
+    let name: String = codegen_emit_cast(codegen, icg, &op, &from_type, &to_type, &from_name);
+    STPair::ST(name, to_type)
 }
 
 /// Emit LLVM-IR for a unary expression.
@@ -3632,12 +3610,10 @@ fn codegen_if(codegen: &mut Codegen, icg: &ICodegen, if_expression: &RAstIf) -> 
                 RAstElse::If(nested_if) => codegen_if(codegen, icg, box_deref::<RAstIf>(nested_if)),
                 RAstElse::Block(block) => codegen_block(codegen, icg, block),
             };
-
             if rType_has_value(&else_type) {
                 else_value = codegen_emit_load_if_enum(codegen, icg, else_value, &else_type);
                 codegen_emit_store(codegen, icg, &else_type, &else_value, &result);
             }
-
             if_type = rType_lub_coerce(if_type, else_type);
         },
         _ => if_type = RType::Unit, // else is implicitly unit, so type of if must be unit
@@ -4240,11 +4216,19 @@ fn codegen_emit_br_conditional(code: &mut Codegen, cond: &String, then: &String,
 fn codegen_emit_cast(
     code: &mut Codegen,
     icg: &ICodegen,
-    op: &str,
+    op: &CastOperation,
     from: &RType,
     to: &RType,
     x: &String,
 ) -> String {
+    let op: &str = match op {
+        CastOperation::ZeroExtend => "zext",
+        CastOperation::Truncate => "trunc",
+        CastOperation::IntToPtr => "inttoptr",
+        CastOperation::PtrToInt => "ptrtoint",
+        CastOperation::Invalid => "invalid", // assume this case never occurs
+        CastOperation::None => return string_clone(x),
+    };
     let name: String = codegen_next_register(code, "cast");
     let mut line: String = string_new();
     string_push_str(&mut line, "  ");
@@ -4259,66 +4243,6 @@ fn codegen_emit_cast(
     string_push_string(&mut line, &rType_to_llvm_name(code, icg, to));
     codegen_emit_line(code, line);
     name
-}
-
-/// Emit a zero-extend instruction.
-/// ```llvm
-/// %<name> = zext <from> <value> to <to>
-/// ```
-/// Returns `%<name>`.
-fn codegen_emit_zext(
-    codegen: &mut Codegen,
-    icg: &ICodegen,
-    from: &RType,
-    to: &RType,
-    value: &String,
-) -> String {
-    codegen_emit_cast(codegen, icg, "zext", from, to, value)
-}
-
-/// Emit a truncate instruction.
-/// ```llvm
-/// %<name> = trunc <from> <value> to <to>
-/// ```
-/// Returns `%<name>`.
-fn codegen_emit_trunc(
-    codegen: &mut Codegen,
-    icg: &ICodegen,
-    from: &RType,
-    to: &RType,
-    val: &String,
-) -> String {
-    codegen_emit_cast(codegen, icg, "trunc", from, to, val)
-}
-
-/// Emit an integer-to-pointer instruction.
-/// ```llvm
-/// %<name> = inttoptr <from> <value> to <to>
-/// ```
-/// Returns `%<name>`.
-fn codegen_emit_inttoptr(
-    codegen: &mut Codegen,
-    icg: &ICodegen,
-    from: &RType,
-    to: &RType,
-    val: &String,
-) -> String {
-    codegen_emit_cast(codegen, icg, "inttoptr", from, to, val)
-}
-
-/// Emit a pointer-to-integer instruction.
-/// ```llvm
-/// %<name> = ptrtoint <from> <value> to <to>
-/// ```
-/// Returns `%<name>`.
-fn codegen_emit_ptrtoint(
-    codegen: &mut Codegen,
-    icg: &ICodegen,
-    from: &RType,
-    to: &RType,
-    val: &String,
-) -> String {
-    codegen_emit_cast(codegen, icg, "ptrtoint", from, to, val)
 }
 
 /// Emit an allocate instruction for a given Rust type.
@@ -4391,10 +4315,11 @@ fn codegen_emit_pointer_add(
     let addition: RAstArithmeticOp = RAstArithmeticOp::Add;
     let offset: String = integer_to_string(index * rType_size(codegen, icg, ty));
 
-    let t0: String = codegen_emit_ptrtoint(codegen, icg, &ptr_type, &RType::Usize, pointer);
+    let ptrtoint: CastOperation = CastOperation::PtrToInt;
+    let inttoptr: CastOperation = CastOperation::IntToPtr;
+    let t0: String = codegen_emit_cast(codegen, icg, &ptrtoint, &ptr_type, &RType::Usize, pointer);
     let t1: String = codegen_emit_binary(codegen, icg, &addition, &RType::Usize, &t0, &offset);
-    let name: String = codegen_emit_inttoptr(codegen, icg, &RType::Usize, &ptr_type, &t1);
-
+    let name: String = codegen_emit_cast(codegen, icg, &inttoptr, &RType::Usize, &ptr_type, &t1);
     name
 }
 
@@ -4450,7 +4375,8 @@ fn codegen_emit_call_void(
     codegen_emit_line(codegen, line);
 }
 
-/// Mangles a function name by replacing all `::` with `..`  and appending `.<type>` if the function is generic.
+/// Mangles a function name by replacing invalid characters with valid LLVM identifier
+/// characters and appending `.<type>` if the function is generic.
 fn codegen_mangle_name(codegen: &Codegen, callee: &String) -> String {
     let mut name: String = string_clone(callee);
     match codegen_generic_instance(codegen, callee) {
@@ -5348,8 +5274,7 @@ fn llvmType_bitwidth(ty: &LType) -> usize {
     match ty {
         LType::I1 => 1,
         LType::I8 => 8,
-        LType::I64 => 64,
-        LType::Ptr => size_of::<usize>() * 8,
+        LType::I64 | LType::Ptr => 64,
         LType::Array(len, inner) => *len * llvmType_bitwidth(box_deref::<LType>(inner)),
         LType::Void => 0,
     }
@@ -7730,7 +7655,6 @@ fn string_eq(s1: &String, s2: &String) -> bool {
         if c1 != c2 {
             return false;
         }
-
         i = i + 1;
     }
     true
@@ -8325,7 +8249,7 @@ enum IOResult {
 }
 
 /// Check for errors and report if there is one.
-fn io_check_error_string(result: &IOResult, filename: &String) {
+fn ioResult_check_error(result: &IOResult, filename: &String) {
     match result {
         IOResult::OpenFailure => print_str("Could not open "),
         IOResult::WriteFailure => print_str("Could not write to "),
@@ -8362,7 +8286,7 @@ fn write_file(mut filename: String, String::Inner(Vec::Vec(buf_ptr, len, _)): &S
     string_push(&mut filename, 0 as u8 as char); // NULL-terminate the string
     let String::Inner(Vec::Vec(path_ptr, _, _)): &String = &filename;
     let result: IOResult = unsafe { io_write(*path_ptr, *buf_ptr, *len) };
-    io_check_error_string(&result, &filename);
+    ioResult_check_error(&result, &filename);
 }
 
 /// Read the entire contents of a file and return it as a String.
@@ -8374,7 +8298,7 @@ fn read_file(mut filename: String) -> String {
     unsafe {
         let fd: usize = open(*path_ptr, O_RDONLY, 0);
         if is_negative(fd) {
-            io_check_error_string(&IOResult::OpenFailure, &filename);
+            ioResult_check_error(&IOResult::OpenFailure, &filename);
         }
 
         let mut content: String = string_new();
@@ -8383,7 +8307,7 @@ fn read_file(mut filename: String) -> String {
         while true {
             let bytes_read: usize = read(fd, buffer_ptr, 2048);
             if is_negative(bytes_read) {
-                io_check_error_string(&IOResult::ReadFailure, &filename);
+                ioResult_check_error(&IOResult::ReadFailure, &filename);
             }
             if bytes_read == 0 {
                 return content;
@@ -8482,8 +8406,8 @@ fn exit_process(code: usize) -> ! {
 }
 
 unsafe extern "C" {
-    fn malloc(size: usize) -> *mut u8;
     fn exit(code: usize) -> !;
+    fn malloc(size: usize) -> *mut u8;
     fn open(path: *mut u8, flags: usize, mode: usize) -> usize;
     fn write(fd: usize, buf: *mut u8, count: usize) -> usize;
     fn read(fd: usize, buf: *mut u8, count: usize) -> usize;
