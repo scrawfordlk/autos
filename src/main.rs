@@ -57,7 +57,9 @@ fn main(argc: usize, argv: *mut *mut u8) {
                 while and(i > 0, string_at(input_name, i) != '/') {
                     i = i - 1;
                 }
-                i = i + 1; // skip the last '/'
+                if string_at(input_name, i) == '/' {
+                    i = i + 1; // skip the last '/'
+                }
                 while and(i < string_len(input_name), string_at(input_name, i) != '.') {
                     string_push(&mut name, string_at(input_name, i));
                     i = i + 1;
