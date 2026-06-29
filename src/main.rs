@@ -3760,10 +3760,15 @@ fn codegen_arm(
                 pattern,
                 expr_name,
                 expr_type,
-                is_last_pattern,
                 &arm_label,
                 &fail_label,
             );
+            if and(
+                rAstPattern_is_refutable(iCodegen_globals(icg), pattern),
+                not(is_last_pattern),
+            ) {
+                codegen_emit_label(codegen, &fail_label); // next pattern of arm
+            }
         } // otherwise arm is executed unconditionally
 
         i = i + 1;
@@ -3798,7 +3803,6 @@ fn codegen_arm_match(
     pattern: &RAstPattern,
     expr_name: &String,
     expr_type: &RType,
-    is_last_pattern: bool,
     arm_label: &String,
     fail_label: &String,
 ) {
@@ -3834,12 +3838,6 @@ fn codegen_arm_match(
             codegen_emit_br_conditional(codegen, &cond, arm_label, fail_label);
         },
         _ => {}, // catch-all patterns do not branch conditionally
-    }
-    if and(
-        rAstPattern_is_refutable(iCodegen_globals(icg), pattern),
-        not(is_last_pattern),
-    ) {
-        codegen_emit_label(codegen, fail_label); // next pattern of arm
     }
 }
 
