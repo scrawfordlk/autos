@@ -71,7 +71,7 @@ To summarise, RawRust features:
 - Generic programming using generic functions/enums
 - Rust-like features such as enums and pattern matching
 
-## LLLVM
+### LLLVM
 
 Autos is also an emulator that can emulate a tiny
 subset of [LLVM-IR](https://llvm.org/), called Little LLVM (LLLVM).
