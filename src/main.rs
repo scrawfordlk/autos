@@ -6126,6 +6126,7 @@ fn emulate(source: String, memory_size: usize, args: &Args) -> usize {
     let main_name: String = string("main");
     let empty_args: Vec<Value> = vec_new::<Value>();
 
+    // TODO: push argv onto stack and give arguments argc and argv to the function call
     let mut emulator: Emu = emu_new(memory_size, &ast, args);
     match emu_execute_function_named(&mut emulator, &ast, &main_name, &empty_args) {
         Value::Int(value) => value,
@@ -8450,4 +8451,4 @@ unsafe extern "C" {
 // -------------------------- Tests --------------------------------
 // -----------------------------------------------------------------
 
-include!("tests.rs"); // ignored by autos
+include!("test_system.rs"); // ignored by autos
