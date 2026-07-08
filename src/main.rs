@@ -5911,7 +5911,7 @@ enum Emu {
 
 /// Create a new emulator state with `memory_size` bytes of main memory and data segment initialised
 /// with the globals found in the AST.
-fn emu_new(memory_size: usize, ast: &LAst, args: &Args) -> Emu {
+fn emu_new(memory_size: usize, ast: &LAst) -> Emu {
     let stack_pointer: usize = memory_size;
     let memory: Vec<u8> = unsafe { vec_with_len::<u8>(memory_size) };
     let globals: StringMap<usize> = stringMap_new::<usize>();
@@ -6009,6 +6009,41 @@ fn emu_allocate_heap(emulator: &mut Emu, mut size: usize) -> Option<usize> {
 
     emu_increase_bump_pointer(emulator, aligned_size);
     Option::<usize>::Some(bump_pointer)
+}
+
+/// Push the given args onto the stack and return a `argv` pointer.
+fn emu_push_argv(emulator: &mut Emu, args: &Args) -> Value {
+    // Allocate space for argv on stack
+    let mut size: usize = 0;
+    let mut i: usize = 0;
+    while i < args_len(args) {
+        size = size + string_len(args_at(args, i)) + 1; // + 1 for NULL-termination
+        i = i + 1;
+    }
+    size = size + args_len(args) * size_of::<usize>(); // pointer array
+    let new_sp: usize = emu_get_sp(emulator) - size;
+    emu_set_sp(emulator, new_sp);
+
+    let NULL: Value = Value::Int(0);
+    let mut offset: usize = new_sp + args_len(args) * size_of::<usize>();
+    i = 0;
+    while i < args_len(args) {
+        // store pointer to argument in pointer array
+        let pointer_address: usize = new_sp + i * size_of::<usize>();
+        emu_store_bytes(emulator, pointer_address, &Value::Int(offset), size_of::<usize>());
+
+        let arg: &String = args_at(args, i);
+        let mut j: usize = 0;
+        while j < string_len(arg) {
+            let byte: usize = string_at(arg, j) as usize;
+            emu_store_bytes(emulator, offset + j, &Value::Int(byte), 1);
+            j = j + 1;
+        }
+        emu_store_bytes(emulator, offset + string_len(arg), &NULL, 1);
+        offset = offset + string_len(arg) + 1;
+        i = i + 1;
+    }
+    Value::Int(new_sp) // pointer to pointer array
 }
 
 /// Load LLVM-IR C-Strings into the data segment and return the next available address (= start of the
@@ -6122,13 +6157,15 @@ fn emu_load_bytes(emulator: &Emu, address: usize, byte_count: usize) -> Value {
 /// Parse and emulate LLVM source and return the return value of `@main`.
 fn emulate(source: String, memory_size: usize, args: &Args) -> usize {
     let ast: LAst = parser_parse_to_ast(source);
+    let mut emulator: Emu = emu_new(memory_size, &ast);
 
-    let main_name: String = string("main");
-    let empty_args: Vec<Value> = vec_new::<Value>();
+    let argc: Value = Value::Int(args_len(args));
+    let argv: Value = emu_push_argv(&mut emulator, args);
+    let mut main_args: Vec<Value> = vec_new::<Value>();
+    vec_push::<Value>(&mut main_args, argc);
+    vec_push::<Value>(&mut main_args, argv);
 
-    // TODO: push argv onto stack and give arguments argc and argv to the function call
-    let mut emulator: Emu = emu_new(memory_size, &ast, args);
-    match emu_execute_function_named(&mut emulator, &ast, &main_name, &empty_args) {
+    match emu_execute_function_named(&mut emulator, &ast, &string("main"), &main_args) {
         Value::Int(value) => value,
         _ => panic("unexpected return value for main"),
     }
