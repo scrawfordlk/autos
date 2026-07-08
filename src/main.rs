@@ -6526,11 +6526,20 @@ fn arg_eq(args: &Args, index: usize, other: &str) -> bool {
 }
 
 /// Create a new Args using the arguments from index `i` onwards.
-fn args_subargs(Args::Args(args): &Args, i: usize) -> Args {
+fn args_subargs(args: &Args, i: usize) -> Args {
+    let mut name: String = string_new();
+    let mut j: usize = 0;
+    while j < i {
+        string_push_string(&mut name, args_at(args, j));
+        j = j + 1;
+        if j < i {
+            string_push(&mut name, ' ');
+        }
+    }
     let mut arguments: Vec<String> = vec_new::<String>();
-    let mut j: usize = i;
-    while j < vec_len::<String>(args) {
-        let argument: &String = vec_at::<String>(args, j);
+    vec_push::<String>(&mut arguments, name);
+    while j < args_len(args) {
+        let argument: &String = args_at(args, j);
         vec_push::<String>(&mut arguments, string_clone(argument));
         j = j + 1;
     }
