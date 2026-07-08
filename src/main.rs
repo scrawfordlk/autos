@@ -6892,7 +6892,12 @@ fn vec_get_mut<T>(vec: &mut Vec<T>, index: usize) -> Option<&mut T> {
 /// Panics, if the index is out of bounds.
 fn vec_at<T>(vec: &Vec<T>, index: usize) -> &T {
     if index >= vec_len::<T>(vec) {
-        panic("Out-of-bounds vector access!");
+        print_str("Out-of-bounds vector access: Index ");
+        print_string(&integer_to_string(index));
+        print_str(" for length ");
+        print_string(&integer_to_string(vec_len::<T>(vec)));
+        println();
+        exit_process(6);
     }
     unwrap::<&T>(vec_get::<T>(vec, index))
 }
