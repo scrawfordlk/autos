@@ -17,80 +17,62 @@
 #[unsafe(no_mangle)]
 fn main(argc: usize, argv: *mut *mut u8) {
     let args: Args = args_new(argc, argv);
-    if args_len(&args) <= 1 {
-        print_help_exit();
-    }
-
-    if string_eq(args_at(&args, 1), &string("-c")) {
+    if arg_eq(&args, 1, "-c") {
         if args_len(&args) <= 2 {
             print_help_exit()
         }
         let input_name: &String = args_at(&args, 2);
         let source: String = read_file(string_clone(input_name));
+
         let mut do_emulate: bool = false;
         let mut do_semantic_analysis: bool = true;
         let mut output_file: Option<String> = Option::<String>::None;
 
-        let mut i: usize = 0;
-        while i < args_len(&args) {
-            let arg: &String = args_at(&args, i);
-            if string_eq(arg, &string("-o")) {
-                if i + 1 >= args_len(&args) {
-                    print_help_exit();
-                }
-                output_file = Option::<String>::Some(string_clone(args_at(&args, i + 1)));
-                i = i + 1;
-            } else if string_eq(arg, &string("-e")) {
-                do_emulate = true;
-            } else if string_eq(arg, &string("--unsafe")) {
-                do_semantic_analysis = false;
+        let mut i: usize = 3;
+        if arg_eq(&args, i, "-o") {
+            if i + 1 >= args_len(&args) {
+                print_help_exit();
             }
+            output_file = Option::<String>::Some(string_clone(args_at(&args, i + 1)));
+            i = i + 2;
+        }
+        if arg_eq(&args, i, "--unsafe") {
+            do_semantic_analysis = false;
+            i = i + 1;
+        }
+        if arg_eq(&args, i, "-e") {
+            do_emulate = true;
             i = i + 1;
         }
 
         let output_code: String = compile(source, do_semantic_analysis);
         let output_name: String = match output_file {
             Option::Some(name) => name,
-            _ => {
-                let mut name: String = string_with_capacity(string_len(input_name));
-                let mut i: usize = string_len(input_name) - 1;
-                while and(i > 0, string_at(input_name, i) != '/') {
-                    i = i - 1;
-                }
-                if string_at(input_name, i) == '/' {
-                    i = i + 1; // skip the last '/'
-                }
-                while and(i < string_len(input_name), string_at(input_name, i) != '.') {
-                    string_push(&mut name, string_at(input_name, i));
-                    i = i + 1;
-                }
-                string_push_str(&mut name, ".ll");
-                name
-            },
+            _ => path_to_file_with_ending(input_name, "ll"),
         };
         write_file(output_name, &output_code);
         if do_emulate {
-            let exit_code: usize = emulate(output_code, 3000000);
+            let args_rest: Args = args_subargs(&args, i);
+            let exit_code: usize = emulate(output_code, 3000000, &args_rest);
             exit_process(exit_code);
         }
         exit_process(0);
     }
-
-    if string_eq(args_at(&args, 1), &string("-e")) {
+    if arg_eq(&args, 1, "-e") {
         if args_len(&args) <= 2 {
             print_help_exit()
         }
         let input_name: &String = args_at(&args, 2);
         let llvm: String = read_file(string_clone(input_name));
-        let exit_code: usize = emulate(llvm, 3000000);
+        let args_rest: Args = args_subargs(&args, 3);
+        let exit_code: usize = emulate(llvm, 3000000, &args_rest);
         exit_process(exit_code);
     }
-
     print_help_exit()
 }
 
 fn print_help_exit() -> ! {
-    print_str("Usage: <program> ( -c <input> [ -o <output> ] [ -e ] [ --unsafe ] | -e <inputllvm> )");
+    print_str("Usage: autos ( -c <input> [ -o <output> ] [ --unsafe ] [ -e ... ] | -e <input> ... )");
     println();
     exit_process(1);
 }
@@ -5929,7 +5911,7 @@ enum Emu {
 
 /// Create a new emulator state with `memory_size` bytes of main memory and data segment initialised
 /// with the globals found in the AST.
-fn emu_new(memory_size: usize, ast: &LAst) -> Emu {
+fn emu_new(memory_size: usize, ast: &LAst, args: &Args) -> Emu {
     let stack_pointer: usize = memory_size;
     let memory: Vec<u8> = unsafe { vec_with_len::<u8>(memory_size) };
     let globals: StringMap<usize> = stringMap_new::<usize>();
@@ -6138,13 +6120,13 @@ fn emu_load_bytes(emulator: &Emu, address: usize, byte_count: usize) -> Value {
 }
 
 /// Parse and emulate LLVM source and return the return value of `@main`.
-fn emulate(source: String, memory_size: usize) -> usize {
+fn emulate(source: String, memory_size: usize, args: &Args) -> usize {
     let ast: LAst = parser_parse_to_ast(source);
 
     let main_name: String = string("main");
     let empty_args: Vec<Value> = vec_new::<Value>();
 
-    let mut emulator: Emu = emu_new(memory_size, &ast);
+    let mut emulator: Emu = emu_new(memory_size, &ast, args);
     match emu_execute_function_named(&mut emulator, &ast, &main_name, &empty_args) {
         Value::Int(value) => value,
         _ => panic("unexpected return value for main"),
@@ -6531,6 +6513,27 @@ fn args_len(Args::Args(args): &Args) -> usize {
 /// Get the argument at index `index`.
 fn args_at(Args::Args(args): &Args, index: usize) -> &String {
     vec_at::<String>(args, index)
+}
+
+/// Return true if the argument at index `index` matches `other` with bounds-checking.
+fn arg_eq(args: &Args, index: usize, other: &str) -> bool {
+    if index < args_len(args) {
+        string_eq(args_at(args, index), &string(other))
+    } else {
+        false
+    }
+}
+
+/// Create a new Args using the arguments from index `i` onwards.
+fn args_subargs(Args::Args(args): &Args, i: usize) -> Args {
+    let mut arguments: Vec<String> = vec_new::<String>();
+    let mut j: usize = i;
+    while j < vec_len::<String>(args) {
+        let argument: &String = vec_at::<String>(args, j);
+        vec_push::<String>(&mut arguments, string_clone(argument));
+        j = j + 1;
+    }
+    Args::Args(arguments)
 }
 
 // -------------------------- Error --------------------------------
@@ -8245,6 +8248,31 @@ fn rLiteral_to_string(literal: &RLiteral) -> String {
 }
 
 // --------------------------- I/O ---------------------------------
+
+/// Given a path separated by `/`, return the filename.
+fn path_to_file_with_ending(path: &String, ending: &str) -> String {
+    let mut start: usize = 0;
+    let mut dot_index: usize = string_len(path);
+    let mut i: usize = 0;
+    while i < string_len(path) {
+        let c: char = string_at(path, i);
+        if c == '/' {
+            start = i + 1;
+        } else if c == '.' {
+            dot_index = i;
+        }
+        i = i + 1;
+    }
+    let mut name: String = string_new();
+    i = start;
+    while i < dot_index {
+        string_push(&mut name, string_at(path, i));
+        i = i + 1;
+    }
+    string_push(&mut name, '.');
+    string_push_str(&mut name, ending);
+    name
+}
 
 enum IOResult {
     OpenFailure,
