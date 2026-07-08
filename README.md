@@ -37,13 +37,13 @@ using the standard LLVM-tools (`clang`, `lli`, $\dots$)
 or you can emulate it using Autos:
 
 ```bash
-./autos -e autos.ll -c src/main.rs
+./autos -e autos.ll -c src/main.rs -o autos2.ll
 ```
 
 Alternatively, instead of the previous two commands, you can also just do:
 
 ```bash
-./autos -c src/main.rs -e -c src/main.rs
+./autos -c src/main.rs -o autos.ll -e -c src/main.rs -o autos2.ll
 ```
 
 Which will self-compile autos, then emulate the resulting LLLVM
@@ -51,11 +51,11 @@ and self-compile itself again.
 
 While questionable, Autos also allows you to skip the
 semantic analysis phase of the compiler, which leads to
-faster compile times, but can silently generate incorrect
-or invalid LLLVM, if the given source program is not a correct RawRust program:
+faster compile times, but can silently generate semantically incorrect
+or invalid LLLVM, if the given source program is not a semantically correct RawRust program:
 
 ```bash
-./autos -c src/main.rs -o autos.ll --unsafe
+./autos -c src/main.rs --unsafe
 ```
 
 ## Components
