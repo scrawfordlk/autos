@@ -347,7 +347,7 @@ fn rLexer_scan_identifier(lexer: &mut RLexer) -> String {
             _ => return ident,
         }
     }
-    ident // satisfy compiler
+    unreachable()
 }
 
 /// Convert an identifier to a keyword token if applicable.
@@ -453,7 +453,7 @@ fn rLexer_scan_string_literal(lexer: &mut RLexer) -> String {
             _ => rLexer_error(lexer, &string("unexpected end of string literal")),
         }
     }
-    s // satisfy compiler
+    unreachable()
 }
 
 /// Scan an escape sequence after backslash.
@@ -4771,7 +4771,7 @@ fn lLexer_scan_cstring(lexer: &mut LLexer) -> String {
             Option::None => panic("unterminated LLVM c-string"),
         }
     }
-    literal // satisfy compiler
+    unreachable()
 }
 
 fn lLexer_scan_escape(lexer: &mut LLexer) -> char {
@@ -4811,7 +4811,7 @@ fn lLexer_scan_identifier_or_keyword(lexer: &mut LLexer) -> String {
             Option::None => return identifier,
         }
     }
-    identifier // satisfy compiler
+    unreachable()
 }
 
 fn lLexer_scan_keyword_or_label(lexer: &mut LLexer) -> LToken {
@@ -6254,7 +6254,7 @@ fn emu_execute_function(
                     },
                 }
             }
-            Value::Int(0) // satisfy compiler
+            unreachable()
         },
     }
 }
@@ -8423,7 +8423,7 @@ fn read_file(mut filename: String) -> String {
             }
         }
     }
-    string_new() // satisfy compiler
+    unreachable()
 }
 
 /// Write the given `buffer` to `path` and return an IOResult. Creates the file if it does not
