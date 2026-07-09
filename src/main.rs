@@ -6986,7 +6986,7 @@ fn vec_extend<T>(vec: &mut Vec<T>, other: &Vec<T>) {
 
 /// Remove the element at index `index` and return true if it was removed.
 fn vec_remove<T>(Vec::Vec(ptr, len, _): &mut Vec<T>, index: usize) -> bool {
-    if index >= *len {
+    if or(index >= *len, *len == 0) {
         return false;
     }
     unsafe {
