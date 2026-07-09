@@ -6937,7 +6937,10 @@ fn vec_push<T>(vec: &mut Vec<T>, value: T) {
 }
 
 /// Set vector length after writing raw bytes/elements.
-fn vec_set_len<T>(Vec::Vec(_, old_len, _): &mut Vec<T>, len: usize) {
+fn vec_set_len<T>(Vec::Vec(_, old_len, capacity): &mut Vec<T>, len: usize) {
+    if len > *capacity {
+        panic("Trying to set the length of a vector to more than its capacity!")
+    };
     *old_len = len;
 }
 
