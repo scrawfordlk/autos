@@ -1,4 +1,50 @@
 fn test() -> usize {
+    (test_mutation() == 42) as usize + (test_matrix() == 42) as usize + 40
+}
+
+fn test_mutation() -> usize {
+    let mut result_counter: usize = 42 - 11 - 9;
+
+    let mut vec: Vec<usize> = vec_new::<usize>();
+    let mut i: usize = 0;
+    while i < 10 {
+        vec_push::<usize>(&mut vec, i);
+        i = i + 1;
+    }
+
+    result_counter = result_counter + (vec_len::<usize>(&vec) == 10) as usize;
+    vec_remove::<usize>(&mut vec, 5);
+
+    result_counter = result_counter + (vec_len::<usize>(&vec) == 9) as usize;
+
+    result_counter = result_counter + (*vec_at::<usize>(&vec, 0) == 0) as usize;
+    result_counter = result_counter + (*vec_at::<usize>(&vec, 1) == 1) as usize;
+    result_counter = result_counter + (*vec_at::<usize>(&vec, 2) == 2) as usize;
+    result_counter = result_counter + (*vec_at::<usize>(&vec, 3) == 3) as usize;
+    result_counter = result_counter + (*vec_at::<usize>(&vec, 4) == 4) as usize;
+    result_counter = result_counter + (*vec_at::<usize>(&vec, 5) == 6) as usize;
+    result_counter = result_counter + (*vec_at::<usize>(&vec, 6) == 7) as usize;
+    result_counter = result_counter + (*vec_at::<usize>(&vec, 7) == 8) as usize;
+    result_counter = result_counter + (*vec_at::<usize>(&vec, 8) == 9) as usize;
+
+    // Swap values at indices 2 and 6 (2 <-> 7)
+    vec_set::<usize>(&mut vec, 2, 7);
+    vec_set::<usize>(&mut vec, 6, 2);
+
+    result_counter = result_counter + (*vec_at::<usize>(&vec, 0) == 0) as usize;
+    result_counter = result_counter + (*vec_at::<usize>(&vec, 1) == 1) as usize;
+    result_counter = result_counter + (*vec_at::<usize>(&vec, 2) == 7) as usize;
+    result_counter = result_counter + (*vec_at::<usize>(&vec, 3) == 3) as usize;
+    result_counter = result_counter + (*vec_at::<usize>(&vec, 4) == 4) as usize;
+    result_counter = result_counter + (*vec_at::<usize>(&vec, 5) == 6) as usize;
+    result_counter = result_counter + (*vec_at::<usize>(&vec, 6) == 2) as usize;
+    result_counter = result_counter + (*vec_at::<usize>(&vec, 7) == 8) as usize;
+    result_counter = result_counter + (*vec_at::<usize>(&vec, 8) == 9) as usize;
+
+    result_counter
+}
+
+fn test_matrix() -> usize {
     let mut matrix: Vec<Vec<Value<char>>> = create_matrix::<Value<char>>(3);
 
     let mut row_idx: usize = 0;
@@ -145,6 +191,31 @@ fn vec_at_mut<T>(vec: &mut Vec<T>, index: usize) -> &mut T {
     unwrap::<&mut T>(vec_get_mut::<T>(vec, index))
 }
 
+fn vec_set<T>(vec: &mut Vec<T>, index: usize, value: T) -> bool {
+    if index >= vec_len::<T>(vec) {
+        false
+    } else {
+        let elem: &mut T = vec_at_mut::<T>(vec, index);
+        *elem = value;
+        true
+    }
+}
+
+/// Remove the element at index `index` and return true if it was removed.
+fn vec_remove<T>(Vec::Vec(ptr, len, _): &mut Vec<T>, index: usize) -> bool {
+    if index >= *len {
+        return false;
+    }
+    unsafe {
+        let start: *mut T = ptr_add::<T>(*ptr, index);
+        let after_index: *mut T = ptr_add::<T>(*ptr, index + 1);
+        memcopy::<T>(start, after_index, *len - index - 1);
+
+        *len = *len - 1;
+    }
+    true
+}
+
 unsafe fn memcopy<T>(dest: *mut T, src: *mut T, n: usize) {
     let byte_count: usize = n * size_of::<T>();
     let dest_u8: *mut u8 = dest as *mut u8;
@@ -161,7 +232,6 @@ fn ptr_add<T>(ptr: *mut T, n: usize) -> *mut T {
 }
 
 unsafe fn alloc<T>(count: usize) -> *mut T {
-    // count == 10, size_of::<T> = 32
     unsafe {
         let p: *mut u8 = malloc(size_of::<T>() * count);
         if p as usize == 0 {
