@@ -6858,7 +6858,7 @@ enum Vec<T> {
 
 /// Create an empty vector.
 fn vec_new<T>() -> Vec<T> {
-    vec_with_capacity::<T>(10)
+    vec_with_capacity::<T>(1)
 }
 
 /// Create a vector with fixed starting capacity.
@@ -7030,7 +7030,7 @@ enum StringMap<T> {
 
 /// Create a map with default len.
 fn stringMap_new<T>() -> StringMap<T> {
-    stringMap_with_len::<T>(1024)
+    stringMap_with_len::<T>(100)
 }
 
 /// Create a map with explicit len.
