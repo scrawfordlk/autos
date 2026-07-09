@@ -7058,7 +7058,7 @@ enum StringMap<T> {
 
 /// Create a map with default len.
 fn stringMap_new<T>() -> StringMap<T> {
-    stringMap_with_len::<T>(1024)
+    stringMap_with_len::<T>(100)
 }
 
 /// Create a map with explicit len.
@@ -7144,7 +7144,7 @@ fn stringMap_remove<T>(map: &mut StringMap<T>, key: &String) -> bool {
         let entry: &StringMapEntry<T> = vec_at::<StringMapEntry<T>>(bucket, nth - 1);
         let other_key: &String = stringMapEntry_get_key::<T>(entry);
         if string_eq(other_key, key) {
-            vec_remove::<StringMapEntry<T>>(bucket, length - nth);
+            vec_remove::<StringMapEntry<T>>(bucket, nth - 1);
             return true;
         }
         nth = nth - 1;
