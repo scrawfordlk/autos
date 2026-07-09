@@ -887,7 +887,10 @@ fn rAstEnum_size(codegen: &Codegen, icg: &ICodegen, e: &RAstEnum, generic: &Opti
         max_size = max(max_size, size);
         i = i + 1;
     }
-    8 + max_size // 8 bytes for the discriminant
+    // The size is aligned to 8, because the current implementation uses i64 arrays (8 byte wide elements).
+    // If the size were not aligned to 8, there would be a size mismatch between size_of::<T>() (which is
+    // the size returned here) and the actual size of the LLVM array (which is always a multiple of 8).
+    round_to_next_multiple(8 + max_size, 8) // + 8 bytes for the discriminant
 }
 
 /// Get the types of the given enum variant's fields.
@@ -929,16 +932,15 @@ fn rType_to_llvm_name(codegen: &Codegen, icg: &ICodegen, ty: &RType) -> String {
             Option::Some(instance) => rType_to_llvm_name(codegen, icg, &instance),
             _ => panic("can't determine a LLVM type for an uninstantiated generic type"),
         },
-        enum_type => {
-            let mut size: usize = rType_size(codegen, icg, enum_type);
-            size = round_to_next_multiple(size, 8);
-            size_to_llvm_array(size)
-        },
+        enum_type => size_to_llvm_array(rType_size(codegen, icg, enum_type)),
     }
 }
 
 /// Given a size, return an LLVM array type (`[<size / 8> x i64]`.
 fn size_to_llvm_array(size: usize) -> String {
+    if size % 8 != 0 {
+        panic("size for array must be aligned to 8!")
+    }
     let mut array: String = string("[");
     string_push_string(&mut array, &integer_to_string(size / 8));
     string_push_str(&mut array, " x i64]");
@@ -6881,7 +6883,7 @@ enum Vec<T> {
 
 /// Create an empty vector.
 fn vec_new<T>() -> Vec<T> {
-    vec_with_capacity::<T>(10)
+    vec_with_capacity::<T>(1)
 }
 
 /// Create a vector with fixed starting capacity.
