@@ -202,7 +202,4 @@ fn exit_process(code: usize) -> ! {
 unsafe extern "C" {
     fn exit(code: usize) -> !;
     fn malloc(size: usize) -> *mut u8;
-    fn open(path: *mut u8, flags: usize, mode: usize) -> usize;
-    fn write(fd: usize, buf: *mut u8, count: usize) -> usize;
-    fn read(fd: usize, buf: *mut u8, count: usize) -> usize;
 }
