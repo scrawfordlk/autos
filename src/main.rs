@@ -7156,7 +7156,7 @@ fn stringMap_bucket<T>(StringMap::Map(b): &StringMap<T>, k: String) -> &Vec<Stri
 /// Get a mutable reference to the bucket by hashing the given key `k` and indexing into the hashtable `b`.
 fn stringMap_bucket_mut<T>(StringMap::Map(b): &mut StringMap<T>, k: String) -> &mut Vec<StringMapEntry<T>> {
     let bucket_index: usize = string_hash(&k, vec_len::<Vec<StringMapEntry<T>>>(b));
-    unwrap::<&mut Vec<StringMapEntry<T>>>(vec_get_mut::<Vec<StringMapEntry<T>>>(b, bucket_index))
+    vec_at_mut::<Vec<StringMapEntry<T>>>(b, bucket_index)
 }
 
 // ---------------------- StringMapStack<T> -----------------------
@@ -7202,7 +7202,7 @@ fn stringMapStack_insert<T>(stack: &mut StringMapStack<T>, name: String, value: 
     }
 
     let idx: usize = *top - 1;
-    let scope: &mut StringMap<T> = unwrap::<&mut StringMap<T>>(vec_get_mut::<StringMap<T>>(scopes, idx));
+    let scope: &mut StringMap<T> = vec_at_mut::<StringMap<T>>(scopes, idx);
     let already_used: bool = stringMap_contains::<T>(scope, &name);
     stringMap_insert::<T>(scope, name, value);
     already_used
@@ -7214,7 +7214,7 @@ fn stringMapStack_lookup<T>(stack: &StringMapStack<T>, name: String) -> Option<&
     let mut i: usize = *top;
     while i > 0 {
         i = i - 1;
-        let scope: &StringMap<T> = unwrap::<&StringMap<T>>(vec_get::<StringMap<T>>(scopes, i));
+        let scope: &StringMap<T> = vec_at::<StringMap<T>>(scopes, i);
         match stringMap_get::<T>(scope, string_clone(&name)) {
             Option::Some(value) => return Option::<&T>::Some(value),
             Option::None => {},
