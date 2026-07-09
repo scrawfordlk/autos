@@ -755,6 +755,8 @@ enum RAstUnaryOp {
     Dereference,
     /// `&` / `&mut`
     Reference(bool),
+    /// `&*` / `&mut *`
+    DereferenceReference(bool),
 }
 
 /// An if expression.
@@ -1602,8 +1604,14 @@ fn parse_unary(lexer: &mut RLexer) -> RAstExpr {
         RToken::Ampersand => {
             rLexer_next_token(lexer);
             let mutable: bool = rLexer_try_consume(lexer, &RToken::Mut);
+            let op: RAstUnaryOp = if rLexer_current_token_eq(lexer, &RToken::Star) {
+                rLexer_next_token(lexer);
+                RAstUnaryOp::DereferenceReference(mutable)
+            } else {
+                RAstUnaryOp::Reference(mutable)
+            };
             let inner: RAstExpr = parse_unary(lexer);
-            RAstExpr::Unary(RAstUnaryOp::Reference(mutable), box_new::<RAstExpr>(inner))
+            RAstExpr::Unary(op, box_new::<RAstExpr>(inner))
         },
         RToken::Star => {
             rLexer_next_token(lexer);
@@ -2506,21 +2514,28 @@ fn semantic_check_unary_op(
                 RType::Reference(box_new::<RType>(ty), *mutable_ref)
             },
         },
-        RAstUnaryOp::Dereference => {
-            let ty: RType = semantic_check_expression(semantic, value, globals);
-            match ty {
-                RType::Reference(pointed, _) => rType_clone(box_deref::<RType>(&pointed)),
-                RType::RawPointerMut(pointed) => {
+        RAstUnaryOp::Dereference | RAstUnaryOp::DereferenceReference(_) => {
+            let expr_type: RType = semantic_check_expression(semantic, value, globals);
+            let result_type: RType = match expr_type {
+                RType::Reference(pointee, _) => rType_clone(box_deref::<RType>(&pointee)),
+                RType::RawPointerMut(pointee) => {
                     if not(semantic_is_unsafe_context(semantic)) {
                         semantic_error(&string("raw pointer dereference requires unsafe context"));
                     }
-                    rType_clone(box_deref::<RType>(&pointed))
+                    rType_clone(box_deref::<RType>(&pointee))
                 },
                 _ => {
                     let mut message: String = string("cannot dereference an expression of type ");
-                    string_push_string(&mut message, &rType_to_string(&ty));
+                    string_push_string(&mut message, &rType_to_string(&expr_type));
                     semantic_error(&message);
                 },
+            };
+            match operator {
+                RAstUnaryOp::Dereference => result_type,
+                RAstUnaryOp::DereferenceReference(mutable) => {
+                    RType::Reference(box_new::<RType>(result_type), *mutable)
+                },
+                _ => unreachable(),
             }
         },
     }
@@ -3346,17 +3361,25 @@ fn codegen_unary_op(
                 }
             },
         },
-        RAstUnaryOp::Dereference => {
+        RAstUnaryOp::Dereference | RAstUnaryOp::DereferenceReference(_) => {
             let STPair::ST(mut name, ty): STPair = codegen_expression(codegen, icg, value);
             let inner_type: RType = match ty {
-                RType::Reference(pointed, _) => rType_clone(box_deref::<RType>(&pointed)),
-                RType::RawPointerMut(pointed) => rType_clone(box_deref::<RType>(&pointed)),
+                RType::Reference(pointee, _) => rType_clone(box_deref::<RType>(&pointee)),
+                RType::RawPointerMut(pointee) => rType_clone(box_deref::<RType>(&pointee)),
                 _ => RType::Unit, // assume this case never occurs
             };
-            if not(rType_is_enum(codegen, &inner_type)) {
-                name = codegen_emit_load(codegen, icg, &inner_type, &name);
+            match operator {
+                RAstUnaryOp::Dereference => {
+                    if not(rType_is_enum(codegen, &inner_type)) {
+                        name = codegen_emit_load(codegen, icg, &inner_type, &name);
+                    }
+                    STPair::ST(name, inner_type)
+                },
+                RAstUnaryOp::DereferenceReference(mutable) => {
+                    STPair::ST(name, RType::Reference(box_new::<RType>(inner_type), *mutable))
+                },
+                _ => unreachable(),
             }
-            STPair::ST(name, inner_type)
         },
     }
 }
