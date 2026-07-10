@@ -5255,6 +5255,7 @@ enum LFunction {
 enum BuiltIn {
     Exit,
     Malloc,
+    Free,
     Open,
     Read,
     Write,
@@ -5506,6 +5507,8 @@ fn parser_parse_declare(parser: &mut Parser) {
         BuiltIn::Exit
     } else if string_eq(&function_name, &string("malloc")) {
         BuiltIn::Malloc
+    } else if string_eq(&function_name, &string("free")) {
+        BuiltIn::Free
     } else if string_eq(&function_name, &string("open")) {
         BuiltIn::Open
     } else if string_eq(&function_name, &string("read")) {
@@ -6214,16 +6217,14 @@ fn emu_execute_function(
     function: &LFunction,
     arguments: &Vec<Value>,
 ) -> Value {
-    let previous_frame_size: usize = emu_get_frame_size(emulator);
-    emu_set_frame_size(emulator, 0);
-
     match function {
         LFunction::BuiltIn(builtin, _, _) => {
             let value: usize = emu_execute_builtin(emulator, builtin, arguments);
-            emu_set_frame_size(emulator, previous_frame_size);
             Value::Int(value)
         },
         LFunction::Function(_, parameters, blocks) => {
+            let previous_frame_size: usize = emu_get_frame_size(emulator);
+            emu_set_frame_size(emulator, 0);
             let mut virtual_registers: StringMap<Value> = stringMap_new::<Value>();
 
             let mut i: usize = 0;
@@ -6264,17 +6265,22 @@ fn emu_execute_function(
 /// Execute one builtin function and return its value.
 fn emu_execute_builtin(emulator: &mut Emu, builtin: &BuiltIn, arguments: &Vec<Value>) -> usize {
     match builtin {
+        BuiltIn::Exit => {
+            let exit_code: usize = value_get_int(vec_at::<Value>(arguments, 0));
+            emu_set_exit_code(emulator, exit_code);
+            exit_code
+        },
         BuiltIn::Malloc => {
-            let value: usize = value_get_int(vec_at::<Value>(arguments, 0));
-            match emu_allocate_heap(emulator, value) {
+            let size: usize = value_get_int(vec_at::<Value>(arguments, 0));
+            match emu_allocate_heap(emulator, size) {
                 Option::Some(address) => address,
                 Option::None => 0, // = NULL
             }
         },
-        BuiltIn::Exit => {
-            let value: usize = value_get_int(vec_at::<Value>(arguments, 0));
-            emu_set_exit_code(emulator, value);
-            value
+        BuiltIn::Free => {
+            let ptr: usize = value_get_int(vec_at::<Value>(arguments, 0));
+            // TODO: allocator frees the memory
+            0
         },
         BuiltIn::Open => {
             let path: usize = value_get_int(vec_at::<Value>(arguments, 0));
