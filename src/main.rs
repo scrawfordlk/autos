@@ -6251,6 +6251,7 @@ fn emu_execute_function(
                     ExecFlow::Continue => panic("LLVM block did not terminate"),
                     ExecFlow::Jump(next_label) => current_label = next_label,
                     ExecFlow::Return(value) => {
+                        drop_stringValueMap(virtual_registers);
                         emu_deallocate_stack_frame(emulator);
                         emu_set_frame_size(emulator, previous_frame_size);
                         return value;
@@ -7973,8 +7974,8 @@ fn drop_stringValueMap(StringMap::Map(buckets): StringMap<Value>) {
                     _ => {},
                 }
                 j = j + 1;
-                free(vec_ptr::<StringMapEntry<Value>>(bucket) as *mut u8);
             }
+            free(vec_ptr::<StringMapEntry<Value>>(bucket) as *mut u8);
             i = i + 1;
         }
         free(vec_ptr::<Vec<StringMapEntry<Value>>>(&buckets) as *mut u8);
