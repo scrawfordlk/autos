@@ -6200,40 +6200,30 @@ fn emulate(source: String, memory_size: usize, args: &Args) -> usize {
 }
 
 /// Lookup a function by name and execute it.
-fn emu_execute_function_named(
-    emulator: &mut Emu,
-    ast: &LAst,
-    function_name: &String,
-    arguments: &Vec<Value>,
-) -> Value {
-    let function: &LFunction = lAst_lookup_function(ast, string_clone(function_name));
-    emu_execute_function(emulator, ast, function, arguments)
+fn emu_execute_function_named(emulator: &mut Emu, ast: &LAst, name: &String, args: &Vec<Value>) -> Value {
+    let function: &LFunction = lAst_lookup_function(ast, string_clone(name));
+    emu_execute_function(emulator, ast, function, args)
 }
 
 /// Execute the given function's body.
-fn emu_execute_function(
-    emulator: &mut Emu,
-    ast: &LAst,
-    function: &LFunction,
-    arguments: &Vec<Value>,
-) -> Value {
+fn emu_execute_function(emulator: &mut Emu, ast: &LAst, function: &LFunction, args: &Vec<Value>) -> Value {
     match function {
         LFunction::BuiltIn(builtin, _, _) => {
-            let value: usize = emu_execute_builtin(emulator, builtin, arguments);
+            let value: usize = emu_execute_builtin(emulator, builtin, args);
             Value::Int(value)
         },
         LFunction::Function(_, parameters, blocks) => {
             let previous_frame_size: usize = emu_get_frame_size(emulator);
             emu_set_frame_size(emulator, 0);
-            let mut virtual_registers: StringMap<Value> = stringMap_new::<Value>();
+            let mut locals: StringMap<Value> = stringMap_new::<Value>();
 
             let mut i: usize = 0;
             while i < vec_len::<LParameter>(parameters) {
                 let parameter: &LParameter = vec_at::<LParameter>(parameters, i);
                 let LParameter::Parameter(name, _): &LParameter = parameter;
 
-                let value: &Value = vec_at::<Value>(arguments, i);
-                stringMap_insert::<Value>(&mut virtual_registers, string_clone(name), value_clone(value));
+                let value: &Value = vec_at::<Value>(args, i);
+                stringMap_insert::<Value>(&mut locals, string_clone(name), value_clone(value));
 
                 i = i + 1;
             }
@@ -6244,14 +6234,13 @@ fn emu_execute_function(
                 let instructions: &Vec<Instruction> =
                     instructionBlock_fetch_instructions(blocks, string_clone(&current_label));
 
-                let flow: ExecFlow =
-                    emu_execute_instructions(emulator, ast, &mut virtual_registers, instructions);
+                let flow: ExecFlow = emu_execute_instructions(emulator, ast, &mut locals, instructions);
 
                 match flow {
                     ExecFlow::Continue => panic("LLVM block did not terminate"),
                     ExecFlow::Jump(next_label) => current_label = next_label,
                     ExecFlow::Return(value) => {
-                        drop_stringValueMap(virtual_registers);
+                        drop_stringValueMap(locals);
                         emu_deallocate_stack_frame(emulator);
                         emu_set_frame_size(emulator, previous_frame_size);
                         return value;
@@ -6317,7 +6306,7 @@ fn emu_execute_builtin(emulator: &mut Emu, builtin: &BuiltIn, arguments: &Vec<Va
 fn emu_execute_instructions(
     emulator: &mut Emu,
     ast: &LAst,
-    registers: &mut StringMap<Value>,
+    locals: &mut StringMap<Value>,
     instructions: &Vec<Instruction>,
 ) -> ExecFlow {
     let mut i: usize = 0;
@@ -6326,19 +6315,19 @@ fn emu_execute_instructions(
 
         match instruction {
             Instruction::Assignment(assign_instruction) => {
-                emu_execute_assignment(emulator, ast, registers, assign_instruction);
+                emu_execute_assignment(emulator, ast, locals, assign_instruction);
             },
             Instruction::Store(ty, value, address) => {
-                emu_execute_store(emulator, registers, ty, value, address);
+                emu_execute_store(emulator, locals, ty, value, address);
             },
             Instruction::Call(Call::Call(call_type, callee, arguments)) => {
-                emu_execute_call(emulator, ast, registers, call_type, callee, arguments);
+                emu_execute_call(emulator, ast, locals, call_type, callee, arguments);
             },
 
             Instruction::Ret(return_type, return_value) => {
                 return ExecFlow::Return(match return_value {
                     Option::Some(value) => {
-                        let mut value: Value = llvm_eval_value(emulator, registers, value);
+                        let mut value: Value = llvm_eval_value(emulator, locals, value);
                         llvm_overflow_value(&mut value, return_type);
                         value
                     },
@@ -6350,7 +6339,7 @@ fn emu_execute_instructions(
                     Branch::Unconditional(target_label) => ExecFlow::Jump(string_clone(target_label)),
                     Branch::Conditional(condition, then_label, else_label) => {
                         let condition_value: usize =
-                            value_get_int(&llvm_eval_value(emulator, registers, condition));
+                            value_get_int(&llvm_eval_value(emulator, locals, condition));
 
                         if condition_value == 1 {
                             ExecFlow::Jump(string_clone(then_label))
@@ -6376,24 +6365,19 @@ fn emu_execute_instructions(
 fn emu_execute_assignment(
     emulator: &mut Emu,
     ast: &LAst,
-    registers: &mut StringMap<Value>,
+    locals: &mut StringMap<Value>,
     AssignInstruction::Assign(target, operation): &AssignInstruction,
 ) {
-    let value: Value = emu_evaluate_assign_op(emulator, ast, registers, operation);
-    stringMap_insert::<Value>(registers, string_clone(target), value);
+    let value: Value = emu_evaluate_assign_op(emulator, ast, locals, operation);
+    stringMap_insert::<Value>(locals, string_clone(target), value);
 }
 
 /// Evaluate the value of the assignment operation.
-fn emu_evaluate_assign_op(
-    emulator: &mut Emu,
-    ast: &LAst,
-    registers: &StringMap<Value>,
-    operation: &AssignOp,
-) -> Value {
-    match operation {
+fn emu_evaluate_assign_op(emulator: &mut Emu, ast: &LAst, locals: &StringMap<Value>, op: &AssignOp) -> Value {
+    match op {
         AssignOp::Binary(operator, result_type, left, right) => {
-            let mut lhs: Value = llvm_eval_value(emulator, registers, left);
-            let mut rhs: Value = llvm_eval_value(emulator, registers, right);
+            let mut lhs: Value = llvm_eval_value(emulator, locals, left);
+            let mut rhs: Value = llvm_eval_value(emulator, locals, right);
             llvm_overflow_value(&mut lhs, result_type);
             llvm_overflow_value(&mut rhs, result_type);
             let lhs: usize = value_get_int(&lhs);
@@ -6409,8 +6393,8 @@ fn emu_evaluate_assign_op(
             Value::Int(value)
         },
         AssignOp::Icmp(predicate, operand_type, left, right) => {
-            let mut lhs: Value = llvm_eval_value(emulator, registers, left);
-            let mut rhs: Value = llvm_eval_value(emulator, registers, right);
+            let mut lhs: Value = llvm_eval_value(emulator, locals, left);
+            let mut rhs: Value = llvm_eval_value(emulator, locals, right);
             llvm_overflow_value(&mut lhs, operand_type);
             llvm_overflow_value(&mut rhs, operand_type);
             let lhs: usize = value_get_int(&lhs);
@@ -6427,7 +6411,7 @@ fn emu_evaluate_assign_op(
             Value::Int(result as usize)
         },
         AssignOp::Cast(cast_op, to_type, value) => {
-            let mut evaluated_value: Value = llvm_eval_value(emulator, registers, value);
+            let mut evaluated_value: Value = llvm_eval_value(emulator, locals, value);
             llvm_overflow_value(&mut evaluated_value, to_type);
             evaluated_value
         },
@@ -6439,13 +6423,13 @@ fn emu_evaluate_assign_op(
             }
         },
         AssignOp::Load(loaded_type, address_value) => {
-            let address: usize = value_get_int(&llvm_eval_value(emulator, registers, address_value));
+            let address: usize = value_get_int(&llvm_eval_value(emulator, locals, address_value));
             let mut value: Value = emu_load_bytes(emulator, address, llvmType_size(loaded_type));
             llvm_overflow_value(&mut value, loaded_type);
             value
         },
         AssignOp::Call(Call::Call(call_type, callee, arguments)) => {
-            emu_execute_call(emulator, ast, registers, call_type, callee, arguments)
+            emu_execute_call(emulator, ast, locals, call_type, callee, arguments)
         },
     }
 }
@@ -6454,7 +6438,7 @@ fn emu_evaluate_assign_op(
 fn emu_execute_call(
     emulator: &mut Emu,
     ast: &LAst,
-    registers: &StringMap<Value>,
+    locals: &StringMap<Value>,
     call_type: &LType,
     callee: &String,
     arguments: &Vec<LTypedValue>,
@@ -6465,7 +6449,7 @@ fn emu_execute_call(
         let argument: &LTypedValue = vec_at::<LTypedValue>(arguments, i);
         let LTypedValue::Pair(ty, argument_value): &LTypedValue = argument;
 
-        let mut value: Value = llvm_eval_value(emulator, registers, argument_value);
+        let mut value: Value = llvm_eval_value(emulator, locals, argument_value);
         llvm_overflow_value(&mut value, ty);
         vec_push::<Value>(&mut arg_values, value);
 
@@ -6493,14 +6477,14 @@ fn llvm_overflow_value(value: &mut Value, ty: &LType) {
 /// Execute the given store instruction.
 fn emu_execute_store(
     emulator: &mut Emu,
-    registers: &StringMap<Value>,
+    locals: &StringMap<Value>,
     store_type: &LType,
     value: &LValue,
     address: &LValue,
 ) {
-    let mut value: Value = llvm_eval_value(emulator, registers, value);
+    let mut value: Value = llvm_eval_value(emulator, locals, value);
     llvm_overflow_value(&mut value, store_type);
-    let target_address: usize = value_get_int(&llvm_eval_value(emulator, registers, address));
+    let target_address: usize = value_get_int(&llvm_eval_value(emulator, locals, address));
     let byte_count: usize = llvmType_size(store_type);
 
     if not(emu_store_bytes(emulator, target_address, &value, byte_count)) {
@@ -6509,10 +6493,10 @@ fn emu_execute_store(
 }
 
 /// Evaluate the value of a virtual register, global name or literal.
-fn llvm_eval_value(emulator: &Emu, registers: &StringMap<Value>, value: &LValue) -> Value {
+fn llvm_eval_value(emulator: &Emu, locals: &StringMap<Value>, value: &LValue) -> Value {
     match value {
         LValue::Literal(number) => Value::Int(*number),
-        LValue::Register(name) => match stringMap_get::<Value>(registers, string_clone(name)) {
+        LValue::Register(name) => match stringMap_get::<Value>(locals, string_clone(name)) {
             Option::Some(register_value) => value_clone(register_value),
             Option::None => panic("unknown LLVM register"),
         },
