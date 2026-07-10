@@ -7948,6 +7948,33 @@ fn string_clone(string: &String) -> String {
     clone
 }
 
+// --------------------------------- Drop ---------------------------------
+
+/// Drops a StringMap<Value> map, i.e. it deallocates all associated values.
+fn drop_stringValueMap(StringMap::Map(buckets): StringMap<Value>) {
+    unsafe {
+        let mut i: usize = 0;
+        while i < vec_len::<Vec<StringMapEntry<Value>>>(&buckets) {
+            let bucket: &Vec<StringMapEntry<Value>> = vec_at::<Vec<StringMapEntry<Value>>>(&buckets, i);
+            let mut j: usize = 0;
+            while j < vec_len::<StringMapEntry<Value>>(bucket) {
+                let StringMapEntry::Entry(name, value): &StringMapEntry<Value> =
+                    vec_at::<StringMapEntry<Value>>(bucket, j);
+                let String::Inner(Vec::Vec(str_ptr, _, _)): &String = name;
+                free(*str_ptr);
+                match value {
+                    Value::Array(Vec::Vec(array_ptr, _, _)) => free(*array_ptr as *mut u8),
+                    _ => {},
+                }
+                j = j + 1;
+                free(vec_ptr::<StringMapEntry<Value>>(bucket) as *mut u8);
+            }
+            i = i + 1;
+        }
+        free(vec_ptr::<Vec<StringMapEntry<Value>>>(&buckets) as *mut u8);
+    }
+}
+
 // ------------------------- String -------------------------------
 
 /// A growable ASCII string.
@@ -8516,6 +8543,7 @@ fn exit_process(code: usize) -> ! {
 unsafe extern "C" {
     fn exit(code: usize) -> !;
     fn malloc(size: usize) -> *mut u8;
+    fn free(ptr: *mut u8);
     fn open(path: *mut u8, flags: usize, mode: usize) -> usize;
     fn write(fd: usize, buf: *mut u8, count: usize) -> usize;
     fn read(fd: usize, buf: *mut u8, count: usize) -> usize;
