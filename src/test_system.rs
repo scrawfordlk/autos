@@ -273,7 +273,11 @@ mod tests {
 
         let stem = source.file_stem().and_then(|s| s.to_str()).unwrap_or("code");
         let output = PathBuf::from(format!("{}.ll", stem));
-        (status.code().expect("returns an exit code"), output)
+        let error_msg = format!(
+            "returns an exit code for source {}",
+            source.as_os_str().to_string_lossy()
+        );
+        (status.code().expect(&error_msg), output)
     }
 
     fn emulate_llvm(path: &Path) -> i32 {
