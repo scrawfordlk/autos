@@ -8427,23 +8427,21 @@ fn read_file(mut filename: String) -> String {
             ioResult_check_error(&IOResult::OpenFailure, &filename);
         }
 
-        let mut content: String = string_new();
-        let buffer: Vec<u8> = vec_with_len::<u8>(2048);
+        let mut string: Vec<u8> = vec_new::<u8>();
+        let buffer_len: usize = 1048576;
+        let mut buffer: Vec<u8> = vec_with_len::<u8>(buffer_len);
         let buffer_ptr: *mut u8 = vec_ptr::<u8>(&buffer);
         while true {
-            let bytes_read: usize = read(fd, buffer_ptr, 2048);
+            let bytes_read: usize = read(fd, buffer_ptr, buffer_len);
             if is_negative(bytes_read) {
                 ioResult_check_error(&IOResult::ReadFailure, &filename);
             }
             if bytes_read == 0 {
-                return content;
+                return String::Inner(string);
             }
-            let mut i: usize = 0;
-            while i < bytes_read {
-                let character: char = *vec_at::<u8>(&buffer, i) as char;
-                string_push(&mut content, character);
-                i = i + 1;
-            }
+            vec_set_len::<u8>(&mut buffer, bytes_read);
+            vec_extend::<u8>(&mut string, &buffer);
+            vec_set_len::<u8>(&mut buffer, buffer_len);
         }
     }
     unreachable()
