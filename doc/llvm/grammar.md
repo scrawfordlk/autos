@@ -36,7 +36,6 @@ operation   -> binary
              | call
              | alloca
              | load
-             | gep
 
 store       -> "store" type value "," "ptr" value
 
