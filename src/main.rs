@@ -7053,7 +7053,7 @@ fn stringMap_new<T>() -> StringMap<T> {
 
 /// Create a map with explicit len.
 fn stringMap_with_len<T>(len: usize) -> StringMap<T> {
-    let bucket_len: usize = if len == 0 { 1 } else { len };
+    let bucket_len: usize = max(1, len);
     let mut buckets: Vec<Vec<StringMapEntry<T>>> = vec_with_capacity::<Vec<StringMapEntry<T>>>(bucket_len);
     let mut i: usize = 0;
     while i < bucket_len {
