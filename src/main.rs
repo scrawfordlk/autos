@@ -3035,12 +3035,11 @@ fn codegen_is_instantiated(Codegen::Gen(_, _, _, _, generic): &Codegen, name: &S
 }
 
 /// Get a unique virtual register name.
-/// Returns `%<prefix><internal counter>`.
-fn codegen_next_register(codegen: &mut Codegen, prefix: &str) -> String {
+/// Returns `%t<internal counter>`.
+fn codegen_next_register(codegen: &mut Codegen) -> String {
     let id: usize = codegen_ssa_counter(codegen);
     codegen_increment_ssa_counter(codegen);
-    let mut name: String = string("%");
-    string_push_str(&mut name, prefix);
+    let mut name: String = string("%t");
     string_push_string(&mut name, &integer_to_string(id));
     name
 }
@@ -4102,7 +4101,7 @@ fn codegen_emit_binary(
         RAstArithmeticOp::Div => "udiv",
         RAstArithmeticOp::Rem => "urem",
     };
-    let name: String = codegen_next_register(codegen, "binop");
+    let name: String = codegen_next_register(codegen);
     let mut line: String = string_new();
     string_push_str(&mut line, "  ");
     string_push_string(&mut line, &name);
@@ -4139,7 +4138,7 @@ fn codegen_emit_icmp(
         RAstComparisonOp::Ge => "uge",
         RAstComparisonOp::Le => "ule",
     };
-    let name: String = codegen_next_register(codegen, "cmp");
+    let name: String = codegen_next_register(codegen);
     let mut line: String = string_new();
     string_push_str(&mut line, "  ");
     string_push_string(&mut line, &name);
@@ -4236,7 +4235,7 @@ fn codegen_emit_cast(
         CastOperation::Invalid => "invalid", // assume this case never occurs
         CastOperation::None => return string_clone(x),
     };
-    let name: String = codegen_next_register(code, "cast");
+    let name: String = codegen_next_register(code);
     let mut line: String = string_new();
     string_push_str(&mut line, "  ");
     string_push_string(&mut line, &name);
@@ -4258,7 +4257,7 @@ fn codegen_emit_cast(
 /// ```
 /// Returns `%<name>`.
 fn codegen_emit_alloca(codegen: &mut Codegen, icg: &ICodegen, ty: &RType) -> String {
-    let name: String = codegen_next_register(codegen, "p");
+    let name: String = codegen_next_register(codegen);
     let mut line: String = string_new();
     string_push_str(&mut line, "  ");
     string_push_string(&mut line, &name);
@@ -4290,7 +4289,7 @@ fn codegen_emit_store(codegen: &mut Codegen, icg: &ICodegen, ty: &RType, value: 
 /// ```
 /// Returns `%<name>`.
 fn codegen_emit_load(codegen: &mut Codegen, icg: &ICodegen, ty: &RType, pointer: &String) -> String {
-    let name: String = codegen_next_register(codegen, "val");
+    let name: String = codegen_next_register(codegen);
     let mut line: String = string_new();
     string_push_str(&mut line, "  ");
     string_push_string(&mut line, &name);
@@ -4353,7 +4352,7 @@ fn codegen_emit_call_assign(
     arg_types: &Vec<RType>,
     args: &Vec<String>,
 ) -> String {
-    let register: String = codegen_next_register(codegen, "ret");
+    let register: String = codegen_next_register(codegen);
     let mut line: String = string_new();
     string_push_str(&mut line, "  ");
     string_push_string(&mut line, &register);
