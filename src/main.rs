@@ -4987,42 +4987,55 @@ fn lLexer_skip_line(lexer: &mut LLexer) {
 
 /// The parser state for a LLVM-IR module.
 enum Parser {
-    Parser(LLexer, LAst, LLocalSymTable),
+    /// lexer, result AST, symbol table, number of registers
+    Parser(LLexer, LAst, LLocalSymTable, usize),
 }
 
 /// Create an LLVM parser and prime the first token.
 fn parser_new(source: String) -> Parser {
-    Parser::Parser(lLexer_new(source), lAst_new(), lLocalSymbolTable_new())
+    Parser::Parser(lLexer_new(source), lAst_new(), lLocalSymbolTable_new(), 0)
 }
 
 /// Get immutable parser lexer access.
-fn parser_lexer(Parser::Parser(lexer, _, _): &Parser) -> &LLexer {
+fn parser_lexer(Parser::Parser(lexer, _, _, _): &Parser) -> &LLexer {
     lexer
 }
 
 /// Get mutable parser lexer access.
-fn parser_lexer_mut(Parser::Parser(lexer, _, _): &mut Parser) -> &mut LLexer {
+fn parser_lexer_mut(Parser::Parser(lexer, _, _, _): &mut Parser) -> &mut LLexer {
     lexer
 }
 
 /// Get mutable parser AST access.
-fn parser_ast_mut(Parser::Parser(_, ast, _): &mut Parser) -> &mut LAst {
+fn parser_ast_mut(Parser::Parser(_, ast, _, _): &mut Parser) -> &mut LAst {
     ast
 }
 
-fn parser_local(Parser::Parser(_, _, local): &Parser) -> &LLocalSymTable {
+fn parser_local(Parser::Parser(_, _, local, _): &Parser) -> &LLocalSymTable {
     local
 }
 
-fn parser_local_mut(Parser::Parser(_, _, local): &mut Parser) -> &mut LLocalSymTable {
+fn parser_local_mut(Parser::Parser(_, _, local, _): &mut Parser) -> &mut LLocalSymTable {
     local
+}
+
+fn parser_register_count(Parser::Parser(_, _, _, counter): &Parser) -> usize {
+    *counter
+}
+
+fn parser_increment_register_count(Parser::Parser(_, _, _, counter): &mut Parser) {
+    *counter = *counter + 1;
+}
+
+fn parser_set_register_count(Parser::Parser(_, _, _, counter): &mut Parser, value: usize) {
+    *counter = value;
 }
 
 /// Parse LLVM source into LLVM AST.
 fn parser_parse_to_ast(source: String) -> LAst {
     let mut parser: Parser = parser_new(source);
     parser_parse_language(&mut parser);
-    let Parser::Parser(_, ast, _): Parser = parser;
+    let Parser::Parser(_, ast, _, _): Parser = parser;
     ast
 }
 
@@ -5243,9 +5256,9 @@ fn lLocalSymbolTable_lookup_register_type(
 
 /// An executable LLVM-IR function.
 enum LFunction {
-    /// return type, parameters, basic blocks
+    /// parameters, basic blocks, instruction count
     // TODO: use StringMap for InstructionBlocks
-    Function(LType, Vec<LParameter>, Vec<InstructionBlock>),
+    Function(Vec<LParameter>, Vec<InstructionBlock>, usize),
     /// return type, parameters, builtin
     BuiltIn(BuiltIn, LType, Vec<LParameter>),
 }
@@ -5473,18 +5486,19 @@ fn parser_parse_string(parser: &mut Parser) {
 
 fn parser_parse_function(parser: &mut Parser) {
     parser_expect_token(parser, &LToken::Define);
-    let return_type: LType = parser_parse_type(parser);
+    let return_type: LType = parser_parse_type(parser); // TODO: check type of ret using this
     let function_name: String = parser_expect_identifier(parser, false);
 
     lLocalSymbolTable_clear(parser_local_mut(parser));
 
     let parameters: Vec<LParameter> = parser_parse_parameters(parser, true);
+    parser_set_register_count(parser, vec_len::<LParameter>(&parameters));
 
     parser_expect_token(parser, &LToken::LBrace);
     let blocks: Vec<InstructionBlock> = parser_parse_blocks(parser);
     parser_expect_token(parser, &LToken::RBrace);
 
-    let function: LFunction = LFunction::Function(return_type, parameters, blocks);
+    let function: LFunction = LFunction::Function(parameters, blocks, parser_register_count(parser));
     if not(lAst_insert_function(
         parser_ast_mut(parser),
         function_name,
@@ -5679,6 +5693,7 @@ fn parser_parse_assignment(parser: &mut Parser) -> AssignInstruction {
         },
     };
 
+    parser_increment_register_count(parser);
     if not(lLocalSymbolTable_insert_register(
         parser_local_mut(parser),
         string_clone(&target_register),
@@ -6211,10 +6226,10 @@ fn emu_execute_function(emulator: &mut Emu, ast: &LAst, function: &LFunction, ar
             let value: usize = emu_execute_builtin(emulator, builtin, args);
             Value::Int(value)
         },
-        LFunction::Function(_, parameters, blocks) => {
+        LFunction::Function(parameters, blocks, register_count) => {
             let previous_frame_size: usize = emu_get_frame_size(emulator);
             emu_set_frame_size(emulator, 0);
-            let mut locals: StringMap<Value> = stringMap_new::<Value>();
+            let mut locals: StringMap<Value> = stringMap_with_len::<Value>(*register_count * 2);
 
             let mut i: usize = 0;
             while i < vec_len::<LParameter>(parameters) {
