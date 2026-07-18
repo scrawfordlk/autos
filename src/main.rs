@@ -8415,6 +8415,7 @@ fn read_file(mut filename: String) -> String {
                 ioResult_check_error(&IOResult::ReadFailure, &filename);
             }
             if bytes_read == 0 {
+                free(buffer_ptr);
                 return String::Inner(string);
             }
             vec_set_len::<u8>(&mut buffer, bytes_read);
