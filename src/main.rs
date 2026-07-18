@@ -6892,23 +6892,15 @@ fn vec_len<T>(Vec::Vec(_, len, _): &Vec<T>) -> usize {
     *len
 }
 
-/// Get the capacity.
-fn vec_capacity<T>(Vec::Vec(_, _, capacity): &Vec<T>) -> usize {
-    *capacity
-}
-
 /// Ensure capacity for extra elements.
-fn vec_accomodate_extra_space<T>(vec: &mut Vec<T>, space: usize) {
-    let len: usize = vec_len::<T>(vec);
-    let capacity: usize = vec_capacity::<T>(vec);
-    if capacity < len + space {
-        let Vec::Vec(ptr, len_ref, capacity_ref): &mut Vec<T> = vec;
-        while len + space > *capacity_ref {
-            *capacity_ref = *capacity_ref * 2;
+fn vec_accomodate_extra_space<T>(Vec::Vec(ptr, len, cap): &mut Vec<T>, space: usize) {
+    if *cap < *len + space {
+        while *cap < *len + space {
+            *cap = *cap * 2;
         }
         unsafe {
-            let new_ptr: *mut T = alloc::<T>(*capacity_ref);
-            memcopy::<T>(new_ptr, *ptr, *len_ref);
+            let new_ptr: *mut T = alloc::<T>(*cap);
+            memcopy::<T>(new_ptr, *ptr, *len);
             free(*ptr as *mut u8);
             *ptr = new_ptr;
         };
@@ -6926,7 +6918,7 @@ fn vec_push<T>(vec: &mut Vec<T>, value: T) {
 /// Set vector length after writing raw bytes/elements.
 fn vec_set_len<T>(Vec::Vec(_, old_len, capacity): &mut Vec<T>, len: usize) {
     if len > *capacity {
-        panic("Trying to set the length of a vector to more than its capacity!")
+        panic("Trying to set the length of a vector to more than its capacity")
     };
     *old_len = len;
 }
@@ -6936,10 +6928,7 @@ fn vec_get<T>(vec: &Vec<T>, index: usize) -> Option<&T> {
     if index >= vec_len::<T>(vec) {
         Option::<&T>::None
     } else {
-        unsafe {
-            let ptr: *mut T = ptr_add::<T>(vec_ptr::<T>(vec), index);
-            Option::<&T>::Some(&*ptr)
-        }
+        unsafe { Option::<&T>::Some(&*ptr_add::<T>(vec_ptr::<T>(vec), index)) }
     }
 }
 
@@ -6948,10 +6937,7 @@ fn vec_get_mut<T>(vec: &mut Vec<T>, index: usize) -> Option<&mut T> {
     if index >= vec_len::<T>(vec) {
         Option::<&mut T>::None
     } else {
-        unsafe {
-            let ptr: *mut T = ptr_add::<T>(vec_ptr::<T>(vec), index);
-            Option::<&mut T>::Some(&mut *ptr)
-        }
+        unsafe { Option::<&mut T>::Some(&mut *ptr_add::<T>(vec_ptr::<T>(vec), index)) }
     }
 }
 
@@ -6961,7 +6947,7 @@ fn vec_at<T>(vec: &Vec<T>, index: usize) -> &T {
     if index >= vec_len::<T>(vec) {
         panic("Out-of-bounds vector access\n");
     }
-    unwrap::<&T>(vec_get::<T>(vec, index))
+    unsafe { &*ptr_add::<T>(vec_ptr::<T>(vec), index) }
 }
 
 /// Get a mutable reference to an element by index.
@@ -6970,7 +6956,7 @@ fn vec_at_mut<T>(vec: &mut Vec<T>, index: usize) -> &mut T {
     if index >= vec_len::<T>(vec) {
         panic("Out-of-bounds vector access!");
     }
-    unwrap::<&mut T>(vec_get_mut::<T>(vec, index))
+    unsafe { &mut *ptr_add::<T>(vec_ptr::<T>(vec), index) }
 }
 
 /// Set a value at the given index. Return false if the index is out of bounds.
@@ -6978,8 +6964,7 @@ fn vec_set<T>(vec: &mut Vec<T>, index: usize, value: T) -> bool {
     if index >= vec_len::<T>(vec) {
         false
     } else {
-        let elem: &mut T = vec_at_mut::<T>(vec, index);
-        *elem = value;
+        *vec_at_mut::<T>(vec, index) = value;
         true
     }
 }
