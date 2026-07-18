@@ -7041,7 +7041,7 @@ fn stringMap_insert<T>(map: &mut StringMap<T>, key: String, value: T) {
 
 /// Get a shared reference to the value for a key.
 fn stringMap_get<'a, T>(map: &'a StringMap<T>, key: &String) -> Option<&'a T> {
-    let bucket: &Vec<StringMapEntry<T>> = stringMap_bucket::<T>(map, string_clone(key));
+    let bucket: &Vec<StringMapEntry<T>> = stringMap_bucket::<T>(map, key);
 
     let length: usize = vec_len::<StringMapEntry<T>>(bucket);
     if length == 0 {
@@ -7113,8 +7113,8 @@ fn stringMap_remove<T>(map: &mut StringMap<T>, key: &String) -> bool {
 }
 
 /// Get a shared reference to the bucket by hashing the given key `k` and indexing into the hashtable `b`.
-fn stringMap_bucket<T>(StringMap::Map(b): &StringMap<T>, k: String) -> &Vec<StringMapEntry<T>> {
-    let bucket_index: usize = string_hash(&k, vec_len::<Vec<StringMapEntry<T>>>(b));
+fn stringMap_bucket<'a, T>(StringMap::Map(b): &'a StringMap<T>, k: &String) -> &'a Vec<StringMapEntry<T>> {
+    let bucket_index: usize = string_hash(k, vec_len::<Vec<StringMapEntry<T>>>(b));
     vec_at::<Vec<StringMapEntry<T>>>(b, bucket_index)
 }
 
