@@ -6881,7 +6881,9 @@ unsafe fn vec_with_len<T>(len: usize) -> Vec<T> {
 }
 
 /// Get the backing pointer.
-fn vec_ptr<T>(Vec::Vec(ptr, _, _): &Vec<T>) -> *mut T {
+/// The caller must ensure to not mutate the vector during the use of this pointer.
+/// Otherwise, the vector may be reallocated, causing this pointer to become a dangling pointer.
+unsafe fn vec_ptr<T>(Vec::Vec(ptr, _, _): &Vec<T>) -> *mut T {
     *ptr
 }
 
@@ -6904,9 +6906,12 @@ fn vec_accomodate_extra_space<T>(vec: &mut Vec<T>, space: usize) {
         while len + space > *capacity_ref {
             *capacity_ref = *capacity_ref * 2;
         }
-        let new_ptr: *mut T = unsafe { alloc::<T>(*capacity_ref) };
-        unsafe { memcopy::<T>(new_ptr, *ptr, *len_ref) };
-        *ptr = new_ptr;
+        unsafe {
+            let new_ptr: *mut T = alloc::<T>(*capacity_ref);
+            memcopy::<T>(new_ptr, *ptr, *len_ref);
+            free(*ptr as *mut u8);
+            *ptr = new_ptr;
+        };
     }
 }
 
@@ -6931,8 +6936,10 @@ fn vec_get<T>(vec: &Vec<T>, index: usize) -> Option<&T> {
     if index >= vec_len::<T>(vec) {
         Option::<&T>::None
     } else {
-        let ptr: *mut T = ptr_add::<T>(vec_ptr::<T>(vec), index);
-        unsafe { Option::<&T>::Some(&*ptr) }
+        unsafe {
+            let ptr: *mut T = ptr_add::<T>(vec_ptr::<T>(vec), index);
+            Option::<&T>::Some(&*ptr)
+        }
     }
 }
 
@@ -6941,8 +6948,10 @@ fn vec_get_mut<T>(vec: &mut Vec<T>, index: usize) -> Option<&mut T> {
     if index >= vec_len::<T>(vec) {
         Option::<&mut T>::None
     } else {
-        let ptr: *mut T = ptr_add::<T>(vec_ptr::<T>(vec), index);
-        unsafe { Option::<&mut T>::Some(&mut *ptr) }
+        unsafe {
+            let ptr: *mut T = ptr_add::<T>(vec_ptr::<T>(vec), index);
+            Option::<&mut T>::Some(&mut *ptr)
+        }
     }
 }
 
@@ -6979,11 +6988,12 @@ fn vec_set<T>(vec: &mut Vec<T>, index: usize, value: T) -> bool {
 fn vec_extend<T>(vec: &mut Vec<T>, other: &Vec<T>) {
     let other_len: usize = vec_len::<T>(other);
     vec_accomodate_extra_space::<T>(vec, other_len);
-
     let len: usize = vec_len::<T>(vec);
-    let dest: *mut T = ptr_add::<T>(vec_ptr::<T>(vec), len);
-    let src: *mut T = vec_ptr::<T>(other);
-    unsafe { memcopy::<T>(dest, src, other_len) };
+    unsafe {
+        let dest: *mut T = ptr_add::<T>(vec_ptr::<T>(vec), len);
+        let src: *mut T = vec_ptr::<T>(other);
+        memcopy::<T>(dest, src, other_len);
+    };
     vec_set_len::<T>(vec, len + other_len);
 }
 
@@ -7998,11 +8008,6 @@ fn string_len(String::Inner(bytes): &String) -> usize {
     vec_len::<u8>(bytes)
 }
 
-/// Get the internal raw pointer to the start of the string.
-fn string_ptr(String::Inner(bytes): &String) -> *mut u8 {
-    vec_ptr::<u8>(bytes)
-}
-
 /// Get the character at the given index.
 fn string_get(String::Inner(bytes): &String, index: usize) -> Option<char> {
     match vec_get::<u8>(bytes, index) {
@@ -8030,13 +8035,13 @@ fn string_push(String::Inner(bytes): &mut String, character: char) {
 fn string_push_str(String::Inner(bytes): &mut String, str: &str) {
     let str_len: usize = str::len(str);
     vec_accomodate_extra_space::<u8>(bytes, str_len);
-
     let str_ptr: *mut u8 = str::as_ptr(str) as *mut u8;
     let len: usize = vec_len::<u8>(bytes);
-    let dest: *mut u8 = ptr_add::<u8>(vec_ptr::<u8>(bytes), len);
-
-    unsafe { memcopy::<u8>(dest, str_ptr, str_len) };
-    vec_set_len::<u8>(bytes, len + str_len);
+    unsafe {
+        let dest: *mut u8 = ptr_add::<u8>(vec_ptr::<u8>(bytes), len);
+        memcopy::<u8>(dest, str_ptr, str_len);
+        vec_set_len::<u8>(bytes, len + str_len);
+    };
 }
 
 /// Push a string onto another string.
@@ -8391,8 +8396,8 @@ fn ioResult_check_error(result: &IOResult, filename: &String) {
 }
 
 /// Print a string to stderr.
-fn print_string(message: &String) {
-    match unsafe { io_write_stdout(string_ptr(message), string_len(message)) } {
+fn print_string(String::Inner(vec): &String) {
+    match unsafe { io_write_stdout(vec_ptr::<u8>(vec), vec_len::<u8>(vec)) } {
         IOResult::WriteFailure => exit_process(12),
         _ => {},
     }
