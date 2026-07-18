@@ -1862,7 +1862,7 @@ fn insert_item_into_global_table(table: &mut StringMap<Item>, item: &RAstItem) {
             }
 
             let item: Item = Item::Function(rType_clone(return_type), param_types, *is_unsafe, *is_generic);
-            stringMap_insert::<Item>(table, string_clone(name), item);
+            stringMap_insert_or_update::<Item>(table, name, item);
         },
         RAstItem::Enum(RAstEnum::Enum(name, variants, is_generic)) => {
             let mut cloned_variants: Vec<RAstVariant> = vec_new::<RAstVariant>();
@@ -1877,7 +1877,7 @@ fn insert_item_into_global_table(table: &mut StringMap<Item>, item: &RAstItem) {
                 i = i + 1;
             }
             let item: Item = Item::Enum(RAstEnum::Enum(string_clone(name), cloned_variants, *is_generic));
-            stringMap_insert::<Item>(table, string_clone(name), item);
+            stringMap_insert_or_update::<Item>(table, name, item);
         },
         RAstItem::ExternBlock(functions) => {
             let mut i: usize = 0;
@@ -1895,7 +1895,7 @@ fn insert_item_into_global_table(table: &mut StringMap<Item>, item: &RAstItem) {
                 }
 
                 let item: Item = Item::Function(rType_clone(return_type), types, true, false);
-                stringMap_insert::<Item>(table, string_clone(name), item);
+                stringMap_insert_or_update::<Item>(table, name, item);
                 i = i + 1;
             }
         },
@@ -1910,18 +1910,18 @@ fn insert_builtin_functions(table: &mut StringMap<Item>) {
     vec_push::<RType>(&mut parameters, str_type);
     let return_type: RType = RType::RawPointerMut(box_new::<RType>(RType::U8));
     let item: Item = Item::Function(return_type, parameters, false, false);
-    stringMap_insert::<Item>(table, as_ptr, item);
+    stringMap_insert_or_update::<Item>(table, &as_ptr, item);
 
     let len: String = string("str::len");
     let mut parameters: Vec<RType> = vec_new::<RType>();
     let str_type: RType = RType::Enum(string("&str"), Option::<Box<RType>>::None);
     vec_push::<RType>(&mut parameters, str_type);
     let item: Item = Item::Function(RType::Usize, parameters, false, false);
-    stringMap_insert::<Item>(table, len, item);
+    stringMap_insert_or_update::<Item>(table, &len, item);
 
     let sizeof: String = string("size_of");
     let item: Item = Item::Function(RType::Usize, vec_new::<RType>(), false, true);
-    stringMap_insert::<Item>(table, sizeof, item);
+    stringMap_insert_or_update::<Item>(table, &sizeof, item);
 }
 
 /// Semantic analysis state.
@@ -2078,7 +2078,7 @@ fn semantic_leave_scope(semantic: &mut Semantic) -> bool {
 /// If the name is already taken, the variable is still inserted (= shadowing).
 fn semantic_insert_variable(
     semantic: &mut Semantic,
-    name: String,
+    name: &String,
     variable_type: RType,
     mutable: bool,
 ) -> bool {
@@ -2842,7 +2842,7 @@ fn semantic_check_pattern(
         },
         RAstPattern::Identifier(mutable, name) => {
             let variable_type: RType = scrutinee_binding_type(&scrutinee);
-            semantic_insert_variable(semantic, string_clone(name), variable_type, *mutable);
+            semantic_insert_variable(semantic, name, variable_type, *mutable);
             semantic_check_generic_usage(semantic, expression_type);
             return; // type agnostic
         },
@@ -2883,7 +2883,7 @@ fn semantic_check_pattern(
                 field_type = scrutinee_inherit_borrow(&scrutinee, &field_type);
                 match pattern {
                     RAstPattern::Identifier(mutable, name) => {
-                        semantic_insert_variable(semantic, string_clone(name), field_type, *mutable);
+                        semantic_insert_variable(semantic, name, field_type, *mutable);
                     },
                     RAstPattern::EnumVariant(_, _, _) => {
                         semantic_check_pattern(semantic, pattern, &field_type, false, globals);
@@ -2979,7 +2979,7 @@ fn codegen_pop_scope(Codegen::Gen(_, _, _, stack, _): &mut Codegen) -> bool {
 }
 
 /// Insert one variable slot into the current scope.
-fn codegen_scope_insert(codegen: &mut Codegen, name: String, ty: RType, pointer_name: String) {
+fn codegen_scope_insert(codegen: &mut Codegen, name: &String, ty: RType, pointer_name: String) {
     let Codegen::Gen(_, _, _, stack, _): &mut Codegen = codegen;
     stringMapStack_insert::<STPair>(stack, name, STPair::ST(pointer_name, ty));
 }
@@ -3874,7 +3874,7 @@ fn codegen_bind_or_destructure(
             let ptr: String = codegen_emit_alloca(codegen, icg, &expr_type);
             let name: String = codegen_emit_load_if_enum(codegen, icg, string_clone(expr_name), &expr_type);
             codegen_emit_store(codegen, icg, &expr_type, &name, &ptr);
-            codegen_scope_insert(codegen, string_clone(identifier), expr_type, ptr);
+            codegen_scope_insert(codegen, identifier, expr_type, ptr);
         },
         RAstPattern::EnumVariant(name, variant, inner_patterns) => {
             // assume all inner patterns are irrefutable
@@ -3940,7 +3940,7 @@ fn codegen_enum_destructure(
                     let field_value: String = codegen_emit_load(codegen, icg, &variable_type, &offset);
                     codegen_emit_store(codegen, icg, &variable_type, &field_value, &pointer);
                 }
-                codegen_scope_insert(codegen, string_clone(name), variable_type, pointer);
+                codegen_scope_insert(codegen, name, variable_type, pointer);
             },
             RAstPattern::EnumVariant(name, variant, inner_patterns) => {
                 if vec_len::<RAstPattern>(inner_patterns) > 0 {
@@ -3977,7 +3977,7 @@ fn generic_instantiate(generic: &mut Generic, name: &String, ty: &RType) -> bool
             let mut i: usize = 0;
             while i < vec_len::<RType>(instances) {
                 if rType_eq(ty, vec_at::<RType>(instances, i)) {
-                    stringMap_insert::<RType>(mappings, string_clone(name), rType_clone(ty));
+                    stringMap_insert_or_update::<RType>(mappings, name, rType_clone(ty));
                     return false; // already generated code for the given type
                 }
                 i = i + 1;
@@ -3987,10 +3987,10 @@ fn generic_instantiate(generic: &mut Generic, name: &String, ty: &RType) -> bool
         _ => {
             let mut instances: Vec<RType> = vec_new::<RType>();
             vec_push::<RType>(&mut instances, rType_clone(ty));
-            stringMap_insert::<Vec<RType>>(generated, string_clone(name), instances);
+            stringMap_insert_or_update::<Vec<RType>>(generated, name, instances);
         },
     }
-    stringMap_insert::<RType>(mappings, string_clone(name), rType_clone(ty));
+    stringMap_insert_or_update::<RType>(mappings, name, rType_clone(ty));
     true
 }
 
@@ -5020,9 +5020,9 @@ fn parser_ast_mut(Parser::Parser(_, ast, _): &mut Parser) -> &mut LAst {
 }
 
 /// Insert register name. Returns false on duplicate.
-fn parser_symtable_insert(Parser::Parser(_, _, registers): &mut Parser, name: String, ty: LType) -> bool {
-    let is_defined: bool = stringMap_contains::<LType>(registers, &name);
-    stringMap_insert::<LType>(registers, name, ty);
+fn parser_symtable_insert(Parser::Parser(_, _, registers): &mut Parser, name: &String, ty: LType) -> bool {
+    let is_defined: bool = stringMap_contains::<LType>(registers, name);
+    stringMap_insert_or_update::<LType>(registers, name, ty);
     not(is_defined)
 }
 
@@ -5204,11 +5204,11 @@ fn lAst_functions_mut(LAst::AST(_, functions): &mut LAst) -> &mut StringMap<LFun
 }
 
 /// Insert a function entry into the AST. Returns false on duplicate name.
-fn lAst_insert_function(ast: &mut LAst, name: String, function: LFunction) -> bool {
-    if stringMap_contains::<LFunction>(lAst_functions(ast), &name) {
+fn lAst_insert_function(ast: &mut LAst, name: &String, function: LFunction) -> bool {
+    if stringMap_contains::<LFunction>(lAst_functions(ast), name) {
         false
     } else {
-        stringMap_insert::<LFunction>(lAst_functions_mut(ast), name, function);
+        stringMap_insert_or_update::<LFunction>(lAst_functions_mut(ast), name, function);
         true
     }
 }
@@ -5466,7 +5466,7 @@ fn parser_parse_function(parser: &mut Parser) {
     let function: LFunction = LFunction::Function(return_type, parameters, blocks);
     if not(lAst_insert_function(
         parser_ast_mut(parser),
-        function_name,
+        &function_name,
         function,
     )) {
         parser_error(parser, &string("duplicate LLVM function definition"));
@@ -5500,7 +5500,7 @@ fn parser_parse_declare(parser: &mut Parser) {
     let function: LFunction = LFunction::BuiltIn(builtin, return_type, parameters);
     if not(lAst_insert_function(
         parser_ast_mut(parser),
-        function_name,
+        &function_name,
         function,
     )) {
         parser_error(parser, &string("duplicate LLVM function declaration"));
@@ -5519,7 +5519,7 @@ fn parser_parse_parameters(parser: &mut Parser, named: bool) -> Vec<LParameter> 
     if not(parser_current_token_eq(parser, &LToken::RParen)) {
         let parameter_type: LType = parser_parse_type(parser);
         let param_name: String = parser_parse_parameter_name(parser, 0);
-        parser_symtable_insert(parser, string_clone(&param_name), llvmType_clone(&parameter_type));
+        parser_symtable_insert(parser, &param_name, llvmType_clone(&parameter_type));
 
         let parameter: LParameter = LParameter::Parameter(param_name, parameter_type);
         vec_push::<LParameter>(&mut parameters, parameter);
@@ -5534,7 +5534,7 @@ fn parser_parse_parameters(parser: &mut Parser, named: bool) -> Vec<LParameter> 
                 named,
                 not(parser_symtable_insert(
                     parser,
-                    string_clone(&param_name),
+                    &param_name,
                     llvmType_clone(&parameter_type),
                 )),
             ) {
@@ -5656,7 +5656,7 @@ fn parser_parse_assignment(parser: &mut Parser) -> AssignInstruction {
 
     if not(parser_symtable_insert(
         parser,
-        string_clone(&target_register),
+        &target_register,
         assignOp_get_type(&operation),
     )) {
         parser_warning(parser, &string("SSA: duplicate register assignment"));
@@ -6066,7 +6066,7 @@ fn emu_initialise_global_data(emulator: &mut Emu, ast: &LAst) -> usize {
             j = j + 1;
         }
 
-        stringMap_insert::<usize>(emu_globals_mut(emulator), string_clone(name), address);
+        stringMap_insert_or_update::<usize>(emu_globals_mut(emulator), name, address);
         data_pointer = data_pointer + alloc_size;
         i = i + 1;
     }
@@ -6197,7 +6197,7 @@ fn emu_execute_function(emulator: &mut Emu, ast: &LAst, function: &LFunction, ar
                 let LParameter::Parameter(name, _): &LParameter = parameter;
 
                 let value: &Value = vec_at::<Value>(args, i);
-                stringMap_insert::<Value>(&mut locals, string_clone(name), value_clone(value));
+                stringMap_insert_or_update::<Value>(&mut locals, name, value_clone(value));
 
                 i = i + 1;
             }
@@ -6343,7 +6343,7 @@ fn emu_execute_assignment(
     AssignInstruction::Assign(target, operation): &AssignInstruction,
 ) {
     let value: Value = emu_evaluate_assign_op(emulator, ast, locals, operation);
-    stringMap_insert::<Value>(locals, string_clone(target), value);
+    stringMap_insert_or_update::<Value>(locals, target, value);
 }
 
 /// Evaluate the value of the assignment operation.
@@ -6420,13 +6420,10 @@ fn emu_execute_call(
     let mut arg_values: Vec<Value> = vec_new::<Value>();
     let mut i: usize = 0;
     while i < vec_len::<LTypedValue>(arguments) {
-        let argument: &LTypedValue = vec_at::<LTypedValue>(arguments, i);
-        let LTypedValue::Pair(ty, argument_value): &LTypedValue = argument;
-
+        let LTypedValue::Pair(ty, argument_value): &LTypedValue = vec_at::<LTypedValue>(arguments, i);
         let mut value: Value = llvm_eval_value(emulator, locals, argument_value);
         llvm_overflow_value(&mut value, ty);
         vec_push::<Value>(&mut arg_values, value);
-
         i = i + 1;
     }
 
@@ -7033,10 +7030,20 @@ fn stringMap_with_len<T>(len: usize) -> StringMap<T> {
     StringMap::<T>::Map(buckets)
 }
 
-/// Insert a key/value pair by prepending it to the bucket list.
-fn stringMap_insert<T>(map: &mut StringMap<T>, key: String, value: T) {
-    let bucket: &mut Vec<StringMapEntry<T>> = stringMap_bucket_mut::<T>(map, &key);
-    vec_push::<StringMapEntry<T>>(bucket, StringMapEntry::<T>::Entry(key, value));
+/// Insert a key/value pair into the map or update the value if the key is already present.
+fn stringMap_insert_or_update<T>(map: &mut StringMap<T>, key: &String, value: T) {
+    let bucket: &mut Vec<StringMapEntry<T>> = stringMap_bucket_mut::<T>(map, key);
+    let mut i: usize = 0;
+    while i < vec_len::<StringMapEntry<T>>(bucket) {
+        let StringMapEntry::Entry(other_key, entry_value): &mut StringMapEntry<T> =
+            vec_at_mut::<StringMapEntry<T>>(bucket, i);
+        if string_eq(key, other_key) {
+            *entry_value = value;
+            return;
+        }
+        i = i + 1;
+    }
+    vec_push::<StringMapEntry<T>>(bucket, StringMapEntry::<T>::Entry(string_clone(key), value));
 }
 
 /// Get a shared reference to the value for a key.
@@ -7163,7 +7170,7 @@ fn stringMapStack_pop<T>(StringMapStack::Stack(_, top): &mut StringMapStack<T>) 
 }
 
 /// Insert into the current scope and return whether the name already existed there.
-fn stringMapStack_insert<T>(stack: &mut StringMapStack<T>, name: String, value: T) -> bool {
+fn stringMapStack_insert<T>(stack: &mut StringMapStack<T>, name: &String, value: T) -> bool {
     let StringMapStack::Stack(scopes, top): &mut StringMapStack<T> = stack;
     if *top == 0 {
         return true;
@@ -7171,8 +7178,8 @@ fn stringMapStack_insert<T>(stack: &mut StringMapStack<T>, name: String, value: 
 
     let idx: usize = *top - 1;
     let scope: &mut StringMap<T> = vec_at_mut::<StringMap<T>>(scopes, idx);
-    let already_used: bool = stringMap_contains::<T>(scope, &name);
-    stringMap_insert::<T>(scope, name, value);
+    let already_used: bool = stringMap_contains::<T>(scope, name);
+    stringMap_insert_or_update::<T>(scope, name, value);
     already_used
 }
 
