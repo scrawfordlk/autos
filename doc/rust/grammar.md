@@ -7,8 +7,10 @@ language  -> { function | extern | enum }
 
 function  -> signature block
 
-signature -> [ "unsafe" ] "fn" identifier [ "<" "T" ">" ]
+signature -> [ "unsafe" ] "fn" identifier [ generic ]
              "(" [ variable { "," variable } [ "," ] ] ")" [ "->" type ]
+
+generic   -> "<" ( T | "'" identifier [ "," "T" ] ) ">"
 
 extern    -> "unsafe" "extern" ""C"" "{" { signature ";" } "}"
 
@@ -82,7 +84,7 @@ type       -> "u8"
             | "bool"
             | "char"
             | identifier [ "<" type ">" ]
-            | ( "&" [ "mut" ] | "*" "mut" ) type
+            | ( "&" [ "'" identifier ] [ "mut" ] | "*" "mut" ) type
 
 literal    -> integer | string | character | boolean
 

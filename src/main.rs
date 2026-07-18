@@ -153,6 +153,7 @@ enum RToken {
     Bool,        // "bool"
     Char,        // "char"
     Arrow,       // "->"
+    Lifetime,    // "'.."
     Literal(RLiteral),
     Identifier(String),
     Eof,
@@ -315,8 +316,7 @@ fn rLexer_next_token(lexer: &mut RLexer) -> RToken {
                 let value: usize = rLexer_scan_integer(lexer);
                 RToken::Literal(RLiteral::Int(value))
             } else if c == '\'' {
-                let ch: char = rLexer_scan_char_literal(lexer);
-                RToken::Literal(RLiteral::Char(ch))
+                rLexer_scan_char_literal_or_lifetime(lexer)
             } else if c == '"' {
                 let s: String = rLexer_scan_string_literal(lexer);
                 RToken::Literal(RLiteral::String(s))
@@ -420,7 +420,7 @@ fn rLexer_scan_integer(lexer: &mut RLexer) -> usize {
     }
 }
 
-fn rLexer_scan_char_literal(lexer: &mut RLexer) -> char {
+fn rLexer_scan_char_literal_or_lifetime(lexer: &mut RLexer) -> RToken {
     rLexer_expect_char(lexer, '\'');
     let c: char = match rLexer_consume_char(lexer) {
         Option::Some(ch) => {
@@ -432,8 +432,12 @@ fn rLexer_scan_char_literal(lexer: &mut RLexer) -> char {
         },
         _ => rLexer_error(lexer, &string("unexpected end of file")),
     };
-    rLexer_expect_char(lexer, '\'');
-    c
+    if rLexer_try_consume_char(lexer, '\'') {
+        RToken::Literal(RLiteral::Char(c))
+    } else {
+        rLexer_scan_identifier(lexer); // lifetimes are ignored, so ignore identifier
+        RToken::Lifetime
+    }
 }
 
 fn rLexer_scan_string_literal(lexer: &mut RLexer) -> String {
@@ -815,7 +819,7 @@ fn rAstPattern_is_refutable(globals: &StringMap<Item>, pattern: &RAstPattern) ->
     match pattern {
         RAstPattern::Literal(_) => true,
         RAstPattern::Wildcard | RAstPattern::Identifier(_, _) => false,
-        RAstPattern::EnumVariant(name, _, _) => match stringMap_get::<Item>(globals, string_clone(name)) {
+        RAstPattern::EnumVariant(name, _, _) => match stringMap_get::<Item>(globals, name) {
             Option::Some(item) => match item {
                 Item::Enum(RAstEnum::Enum(_, variants, _)) => vec_len::<RAstVariant>(variants) > 1,
                 _ => true,
@@ -852,7 +856,7 @@ fn rType_size(codegen: &Codegen, icg: &ICodegen, ty: &RType) -> usize {
                 Option::Some(instance) => Option::<RType>::Some(rType_clone(box_deref::<RType>(instance))),
                 _ => Option::<RType>::None,
             };
-            match iCodegen_search_global(icg, string_clone(name)) {
+            match iCodegen_search_global(icg, name) {
                 Option::Some(item) => match item {
                     Item::Enum(rast_enum) => rAstEnum_size(codegen, icg, rast_enum, &generic),
                     _ => 16, // assume that it is the built-in &str (8 bytes for pointer, 8 bytes for length)
@@ -1043,7 +1047,7 @@ fn rType_instantiate_generic(ty: &RType, mapping: &Option<RType>, items: &String
             ),
             // set instantiation only if the enum is generic
             _ => match mapping {
-                Option::Some(instance) => match stringMap_get::<Item>(items, string_clone(name)) {
+                Option::Some(instance) => match stringMap_get::<Item>(items, name) {
                     Option::Some(item) => match item {
                         Item::Enum(RAstEnum::Enum(_, _, is_generic)) => {
                             if *is_generic {
@@ -1160,18 +1164,22 @@ fn expect_identifier(lexer: &mut RLexer) -> String {
 
 /// Try to parse a generic type parameter. If there is none, return false.
 fn parse_generic(lexer: &mut RLexer) -> bool {
-    if rLexer_try_consume(lexer, &RToken::LAngle) {
-        let type_param: String = expect_identifier(lexer);
-        if not(string_eq(&type_param, &string("T"))) {
-            parse_error(lexer, &string("generic type parameter must be \"T\""));
-        } else if rLexer_current_token_eq(lexer, &RToken::Comma) {
-            parse_error(lexer, &string("only a single generic type is supported"))
-        }
-        expect_token(lexer, &RToken::RAngle);
-        true
-    } else {
-        false
+    if not(rLexer_try_consume(lexer, &RToken::LAngle)) {
+        return false;
     }
+    // lifetime parameter is ignored
+    if rLexer_try_consume(lexer, &RToken::Lifetime) {
+        if rLexer_try_consume(lexer, &RToken::RAngle) {
+            return false;
+        }
+        expect_token(lexer, &RToken::Comma);
+    }
+    let type_param: String = expect_identifier(lexer);
+    if not(string_eq(&type_param, &string("T"))) {
+        parse_error(lexer, &string("generic type parameter must be \"T\""));
+    }
+    expect_token(lexer, &RToken::RAngle);
+    true
 }
 
 fn parse_language(lexer: &mut RLexer) -> RAst {
@@ -1441,6 +1449,7 @@ fn parse_type(lexer: &mut RLexer) -> RType {
         },
         RToken::Ampersand => {
             rLexer_next_token(lexer);
+            rLexer_try_consume(lexer, &RToken::Lifetime); // ignore lifetime annotation
             match rLexer_current_token(lexer) {
                 RToken::Identifier(name) => {
                     if string_eq(name, &string("str")) {
@@ -2045,7 +2054,7 @@ fn semantic_expect_bool_type(ty: &RType) {
 
 /// Lookup a variable in local scopes.
 fn semantic_lookup_variable(semantic: &Semantic, name: &String) -> Option<Variable> {
-    match stringMapStack_lookup::<Variable>(semantic_locals(semantic), string_clone(name)) {
+    match stringMapStack_get::<Variable>(semantic_locals(semantic), name) {
         Option::Some(entry) => {
             let Variable::Variable(variable_type, mutable): &Variable = entry;
             Option::<Variable>::Some(Variable::Variable(rType_clone(variable_type), *mutable))
@@ -2254,7 +2263,7 @@ fn semantic_check_variant_field(
                 },
                 _ => {},
             };
-            match stringMap_get::<Item>(globals, string_clone(name)) {
+            match stringMap_get::<Item>(globals, name) {
                 Option::Some(item) => match item {
                     Item::Enum(_) => {},
                     _ => semantic_error(&string("cannot use an undefined enum in enum definition")),
@@ -2569,7 +2578,7 @@ fn semantic_check_path(
     generic: &Option<RType>,
 ) -> RType {
     let first_ident: &String = vec_at::<String>(path, 0);
-    match stringMap_get::<Item>(globals, string_clone(first_ident)) {
+    match stringMap_get::<Item>(globals, first_ident) {
         Option::Some(item) => match item {
             Item::Enum(e) => {
                 let variant: &String = vec_at::<String>(path, 1);
@@ -2591,7 +2600,7 @@ fn semantic_check_path(
         },
         _ => {
             let function_name: String = rAstPath_to_string(path);
-            match stringMap_get::<Item>(globals, string_clone(&function_name)) {
+            match stringMap_get::<Item>(globals, &function_name) {
                 Option::Some(item) => match item {
                     Item::Function(return_type, parameter_types, is_unsafe, is_generic) => {
                         return semantic_check_call(
@@ -2842,7 +2851,7 @@ fn semantic_check_pattern(
             let mut enum_type: RType = RType::Enum(string_clone(enum_name), Option::<Box<RType>>::None);
             let generic: Option<RType> = rType_extract_enum_generic(scrutinee_match_type(&scrutinee));
 
-            let fields: Vec<RType> = match stringMap_get::<Item>(globals, string_clone(enum_name)) {
+            let fields: Vec<RType> = match stringMap_get::<Item>(globals, enum_name) {
                 Option::Some(item) => match item {
                     Item::Enum(RAstEnum::Enum(_, variants, is_generic)) => {
                         if *is_generic {
@@ -2925,7 +2934,7 @@ fn iCodegen_ast_items(ICodegen::Static(RAst::Language(items), _): &ICodegen) -> 
 }
 
 /// Lookup a global item (function or enum).
-fn iCodegen_search_global(codegen: &ICodegen, name: String) -> Option<&Item> {
+fn iCodegen_search_global<'a>(codegen: &'a ICodegen, name: &String) -> Option<&'a Item> {
     stringMap_get::<Item>(iCodegen_globals(codegen), name)
 }
 
@@ -2977,7 +2986,7 @@ fn codegen_scope_insert(codegen: &mut Codegen, name: String, ty: RType, pointer_
 
 /// Lookup variable slot information.
 fn codegen_scope_lookup(Codegen::Gen(_, _, _, stack, _): &Codegen, name: &String) -> STPair {
-    match stringMapStack_lookup::<STPair>(stack, string_clone(name)) {
+    match stringMapStack_get::<STPair>(stack, name) {
         Option::Some(variable) => stPair_clone(variable),
         Option::None => STPair::ST(string_new(), RType::Unit), // semantic analysis makes this impossible
     }
@@ -3425,7 +3434,7 @@ fn codegen_path(
     generic: &Option<RType>,
 ) -> STPair {
     let enum_type: &String = vec_at::<String>(path, 0);
-    match iCodegen_search_global(icg, string_clone(enum_type)) {
+    match iCodegen_search_global(icg, enum_type) {
         Option::Some(item) => match item {
             Item::Enum(RAstEnum::Enum(_, variants, _)) => {
                 return codegen_enum(codegen, icg, path, variants, values, generic);
@@ -3491,7 +3500,7 @@ fn codegen_call(
         i = i + 1;
     }
 
-    let mut return_type: RType = match iCodegen_search_global(icg, string_clone(name)) {
+    let mut return_type: RType = match iCodegen_search_global(icg, name) {
         Option::Some(item) => match item {
             Item::Function(return_type, _, _, _) => rType_clone(return_type),
             _ => RType::Unit, // assume this case never occurs
@@ -3831,7 +3840,7 @@ fn codegen_arm_match(
             codegen_emit_br_conditional(codegen, &cond, arm_label, fail_label);
         },
         RAstPattern::EnumVariant(name, variant, _) => {
-            let tag: usize = match iCodegen_search_global(icg, string_clone(name)) {
+            let tag: usize = match iCodegen_search_global(icg, name) {
                 Option::Some(item) => match item {
                     Item::Enum(RAstEnum::Enum(_, variants, _)) => {
                         variants_get_discriminator(variants, variant)
@@ -3902,7 +3911,7 @@ fn codegen_enum_destructure(
     scrutinee: &Scrutinee,
 ) {
     let generic: Option<RType> = rType_extract_enum_generic(scrutinee_match_type(scrutinee));
-    let fields: Vec<RType> = match iCodegen_search_global(icg, string_clone(name)) {
+    let fields: Vec<RType> = match iCodegen_search_global(icg, name) {
         Option::Some(item) => match item {
             Item::Enum(RAstEnum::Enum(_, variants, _)) => {
                 match rAstEnum_get_variant_fields(variants, variant) {
@@ -3963,7 +3972,7 @@ fn generic_new() -> Generic {
 /// Returns false (but still inserts) if the code for the given type has already been generated.
 fn generic_instantiate(generic: &mut Generic, name: &String, ty: &RType) -> bool {
     let Generic::Manager(mappings, generated): &mut Generic = generic;
-    match stringMap_get_mut::<Vec<RType>>(generated, string_clone(name)) {
+    match stringMap_get_mut::<Vec<RType>>(generated, name) {
         Option::Some(instances) => {
             let mut i: usize = 0;
             while i < vec_len::<RType>(instances) {
@@ -3987,7 +3996,7 @@ fn generic_instantiate(generic: &mut Generic, name: &String, ty: &RType) -> bool
 
 /// Get the generic parameter's actual type for a given item.
 fn generic_get_type(Generic::Manager(mappings, _): &Generic, name: &String) -> Option<RType> {
-    match stringMap_get::<RType>(mappings, string_clone(name)) {
+    match stringMap_get::<RType>(mappings, name) {
         Option::Some(ty) => Option::<RType>::Some(rType_clone(ty)),
         _ => Option::<RType>::None,
     }
@@ -4987,12 +4996,12 @@ fn lLexer_skip_line(lexer: &mut LLexer) {
 
 /// The parser state for a LLVM-IR module.
 enum Parser {
-    Parser(LLexer, LAst, LLocalSymTable),
+    Parser(LLexer, LAst, StringMap<LType>),
 }
 
 /// Create an LLVM parser and prime the first token.
 fn parser_new(source: String) -> Parser {
-    Parser::Parser(lLexer_new(source), lAst_new(), lLocalSymbolTable_new())
+    Parser::Parser(lLexer_new(source), lAst_new(), stringMap_new::<LType>())
 }
 
 /// Get immutable parser lexer access.
@@ -5010,12 +5019,21 @@ fn parser_ast_mut(Parser::Parser(_, ast, _): &mut Parser) -> &mut LAst {
     ast
 }
 
-fn parser_local(Parser::Parser(_, _, local): &Parser) -> &LLocalSymTable {
-    local
+/// Insert register name. Returns false on duplicate.
+fn parser_symtable_insert(Parser::Parser(_, _, registers): &mut Parser, name: String, ty: LType) -> bool {
+    let is_defined: bool = stringMap_contains::<LType>(registers, &name);
+    stringMap_insert::<LType>(registers, name, ty);
+    not(is_defined)
 }
 
-fn parser_local_mut(Parser::Parser(_, _, local): &mut Parser) -> &mut LLocalSymTable {
-    local
+/// Lookup a register type in the local symbol table.
+fn parser_symtable_get<'a>(Parser::Parser(_, _, registers): &'a Parser, name: &String) -> Option<&'a LType> {
+    stringMap_get::<LType>(registers, name)
+}
+
+/// Clear local register table buckets.
+fn parser_symtable_reset(Parser::Parser(_, _, registers): &mut Parser) {
+    *registers = stringMap_new::<LType>();
 }
 
 /// Parse LLVM source into LLVM AST.
@@ -5109,11 +5127,9 @@ fn parser_expect_value_type(parser: &Parser, value: &LValue, expected: &LType) {
 
 fn parser_value_has_type(parser: &Parser, value: &LValue, expected: &LType) -> bool {
     match value {
-        LValue::Register(name) => {
-            match lLocalSymbolTable_lookup_register_type(parser_local(parser), string_clone(name)) {
-                Option::Some(actual) => llvmType_eq(actual, expected),
-                Option::None => false,
-            }
+        LValue::Register(name) => match parser_symtable_get(parser, name) {
+            Option::Some(actual) => llvmType_eq(actual, expected),
+            Option::None => false,
         },
         LValue::Literal(_) => match expected {
             LType::I1 | LType::I8 | LType::I64 => true, // allow overflows
@@ -5198,47 +5214,11 @@ fn lAst_insert_function(ast: &mut LAst, name: String, function: LFunction) -> bo
 }
 
 /// Lookup a function in the AST by name.
-fn lAst_lookup_function(ast: &LAst, name: String) -> &LFunction {
+fn lAst_lookup_function<'a>(ast: &'a LAst, name: &String) -> &'a LFunction {
     match stringMap_get::<LFunction>(lAst_functions(ast), name) {
         Option::Some(function) => function,
         Option::None => panic("unknown LLVM function"),
     }
-}
-
-/// Local symbol table for LLVM to track virtual register
-enum LLocalSymTable {
-    Registers(StringMap<LType>),
-}
-
-/// Create an empty LLVM local symbol table.
-fn lLocalSymbolTable_new() -> LLocalSymTable {
-    LLocalSymTable::Registers(stringMap_new::<LType>())
-}
-
-/// Clear local register table buckets.
-fn lLocalSymbolTable_clear(symtable: &mut LLocalSymTable) {
-    match symtable {
-        LLocalSymTable::Registers(registers) => *registers = stringMap_new::<LType>(),
-    }
-}
-
-/// Insert register name. Returns false on duplicate.
-fn lLocalSymbolTable_insert_register(
-    LLocalSymTable::Registers(registers): &mut LLocalSymTable,
-    name: String,
-    ty: LType,
-) -> bool {
-    let is_defined: bool = stringMap_contains::<LType>(registers, &name);
-    stringMap_insert::<LType>(registers, name, ty);
-    not(is_defined)
-}
-
-/// Lookup a register type in the local symbol table.
-fn lLocalSymbolTable_lookup_register_type(
-    LLocalSymTable::Registers(registers): &LLocalSymTable,
-    name: String,
-) -> Option<&LType> {
-    stringMap_get::<LType>(registers, name)
 }
 
 /// An executable LLVM-IR function.
@@ -5476,8 +5456,7 @@ fn parser_parse_function(parser: &mut Parser) {
     let return_type: LType = parser_parse_type(parser);
     let function_name: String = parser_expect_identifier(parser, false);
 
-    lLocalSymbolTable_clear(parser_local_mut(parser));
-
+    parser_symtable_reset(parser);
     let parameters: Vec<LParameter> = parser_parse_parameters(parser, true);
 
     parser_expect_token(parser, &LToken::LBrace);
@@ -5499,7 +5478,7 @@ fn parser_parse_declare(parser: &mut Parser) {
     let return_type: LType = parser_parse_type(parser);
     let function_name: String = parser_expect_identifier(parser, false);
 
-    lLocalSymbolTable_clear(parser_local_mut(parser));
+    parser_symtable_reset(parser);
     let parameters: Vec<LParameter> = parser_parse_parameters(parser, false);
 
     let builtin: BuiltIn = if string_eq(&function_name, &string("exit")) {
@@ -5540,11 +5519,7 @@ fn parser_parse_parameters(parser: &mut Parser, named: bool) -> Vec<LParameter> 
     if not(parser_current_token_eq(parser, &LToken::RParen)) {
         let parameter_type: LType = parser_parse_type(parser);
         let param_name: String = parser_parse_parameter_name(parser, 0);
-        lLocalSymbolTable_insert_register(
-            parser_local_mut(parser),
-            string_clone(&param_name),
-            llvmType_clone(&parameter_type),
-        );
+        parser_symtable_insert(parser, string_clone(&param_name), llvmType_clone(&parameter_type));
 
         let parameter: LParameter = LParameter::Parameter(param_name, parameter_type);
         vec_push::<LParameter>(&mut parameters, parameter);
@@ -5557,8 +5532,8 @@ fn parser_parse_parameters(parser: &mut Parser, named: bool) -> Vec<LParameter> 
 
             if and(
                 named,
-                not(lLocalSymbolTable_insert_register(
-                    parser_local_mut(parser),
+                not(parser_symtable_insert(
+                    parser,
                     string_clone(&param_name),
                     llvmType_clone(&parameter_type),
                 )),
@@ -5679,8 +5654,8 @@ fn parser_parse_assignment(parser: &mut Parser) -> AssignInstruction {
         },
     };
 
-    if not(lLocalSymbolTable_insert_register(
-        parser_local_mut(parser),
+    if not(parser_symtable_insert(
+        parser,
         string_clone(&target_register),
         assignOp_get_type(&operation),
     )) {
@@ -6200,7 +6175,7 @@ fn emulate(source: String, memory_size: usize, args: &Args) -> usize {
 
 /// Lookup a function by name and execute it.
 fn emu_execute_function_named(emulator: &mut Emu, ast: &LAst, name: &String, args: &Vec<Value>) -> Value {
-    let function: &LFunction = lAst_lookup_function(ast, string_clone(name));
+    let function: &LFunction = lAst_lookup_function(ast, name);
     emu_execute_function(emulator, ast, function, args)
 }
 
@@ -6495,11 +6470,11 @@ fn emu_execute_store(
 fn llvm_eval_value(emulator: &Emu, locals: &StringMap<Value>, value: &LValue) -> Value {
     match value {
         LValue::Literal(number) => Value::Int(*number),
-        LValue::Register(name) => match stringMap_get::<Value>(locals, string_clone(name)) {
+        LValue::Register(name) => match stringMap_get::<Value>(locals, name) {
             Option::Some(register_value) => value_clone(register_value),
             Option::None => panic("unknown LLVM register"),
         },
-        LValue::Global(name) => match stringMap_get::<usize>(emu_globals(emulator), string_clone(name)) {
+        LValue::Global(name) => match stringMap_get::<usize>(emu_globals(emulator), name) {
             Option::Some(value) => Value::Int(*value),
             Option::None => panic("unknown LLVM global value"),
         },
@@ -7060,13 +7035,13 @@ fn stringMap_with_len<T>(len: usize) -> StringMap<T> {
 
 /// Insert a key/value pair by prepending it to the bucket list.
 fn stringMap_insert<T>(map: &mut StringMap<T>, key: String, value: T) {
-    let bucket: &mut Vec<StringMapEntry<T>> = stringMap_bucket_mut::<T>(map, string_clone(&key));
+    let bucket: &mut Vec<StringMapEntry<T>> = stringMap_bucket_mut::<T>(map, &key);
     vec_push::<StringMapEntry<T>>(bucket, StringMapEntry::<T>::Entry(key, value));
 }
 
 /// Get a shared reference to the value for a key.
-fn stringMap_get<T>(map: &StringMap<T>, key: String) -> Option<&T> {
-    let bucket: &Vec<StringMapEntry<T>> = stringMap_bucket::<T>(map, string_clone(&key));
+fn stringMap_get<'a, T>(map: &'a StringMap<T>, key: &String) -> Option<&'a T> {
+    let bucket: &Vec<StringMapEntry<T>> = stringMap_bucket::<T>(map, string_clone(key));
 
     let length: usize = vec_len::<StringMapEntry<T>>(bucket);
     if length == 0 {
@@ -7077,7 +7052,7 @@ fn stringMap_get<T>(map: &StringMap<T>, key: String) -> Option<&T> {
     while nth > 0 {
         let entry: &StringMapEntry<T> = vec_at::<StringMapEntry<T>>(bucket, nth - 1);
         let other_key: &String = stringMapEntry_get_key::<T>(entry);
-        if string_eq(other_key, &key) {
+        if string_eq(other_key, key) {
             return Option::<&T>::Some(stringMapEntry_get_value::<T>(entry));
         }
         nth = nth - 1;
@@ -7086,8 +7061,8 @@ fn stringMap_get<T>(map: &StringMap<T>, key: String) -> Option<&T> {
 }
 
 /// Get a mutable reference to the value for a key.
-fn stringMap_get_mut<T>(map: &mut StringMap<T>, key: String) -> Option<&mut T> {
-    let bucket: &mut Vec<StringMapEntry<T>> = stringMap_bucket_mut::<T>(map, string_clone(&key));
+fn stringMap_get_mut<'a, T>(map: &'a mut StringMap<T>, key: &String) -> Option<&'a mut T> {
+    let bucket: &mut Vec<StringMapEntry<T>> = stringMap_bucket_mut::<T>(map, key);
 
     let length: usize = vec_len::<StringMapEntry<T>>(bucket);
     if length == 0 {
@@ -7098,7 +7073,7 @@ fn stringMap_get_mut<T>(map: &mut StringMap<T>, key: String) -> Option<&mut T> {
     while nth > 0 {
         let other_key: &String =
             stringMapEntry_get_key::<T>(vec_at_mut::<StringMapEntry<T>>(bucket, nth - 1));
-        if string_eq(other_key, &key) {
+        if string_eq(other_key, key) {
             return Option::<&mut T>::Some(stringMapEntry_get_value_mut::<T>(
                 vec_at_mut::<StringMapEntry<T>>(bucket, nth - 1),
             ));
@@ -7110,7 +7085,7 @@ fn stringMap_get_mut<T>(map: &mut StringMap<T>, key: String) -> Option<&mut T> {
 
 /// Check whether a key exists.
 fn stringMap_contains<T>(map: &StringMap<T>, key: &String) -> bool {
-    match stringMap_get::<T>(map, string_clone(key)) {
+    match stringMap_get::<T>(map, key) {
         Option::Some(_) => true,
         Option::None => false,
     }
@@ -7118,7 +7093,7 @@ fn stringMap_contains<T>(map: &StringMap<T>, key: &String) -> bool {
 
 /// Remove the first entry with key `key` and return true if it was removed.
 fn stringMap_remove<T>(map: &mut StringMap<T>, key: &String) -> bool {
-    let bucket: &mut Vec<StringMapEntry<T>> = stringMap_bucket_mut::<T>(map, string_clone(key));
+    let bucket: &mut Vec<StringMapEntry<T>> = stringMap_bucket_mut::<T>(map, key);
     let length: usize = vec_len::<StringMapEntry<T>>(bucket);
     if length == 0 {
         return false;
@@ -7144,8 +7119,11 @@ fn stringMap_bucket<T>(StringMap::Map(b): &StringMap<T>, k: String) -> &Vec<Stri
 }
 
 /// Get a mutable reference to the bucket by hashing the given key `k` and indexing into the hashtable `b`.
-fn stringMap_bucket_mut<T>(StringMap::Map(b): &mut StringMap<T>, k: String) -> &mut Vec<StringMapEntry<T>> {
-    let bucket_index: usize = string_hash(&k, vec_len::<Vec<StringMapEntry<T>>>(b));
+fn stringMap_bucket_mut<'a, T>(
+    StringMap::Map(b): &'a mut StringMap<T>,
+    k: &String,
+) -> &'a mut Vec<StringMapEntry<T>> {
+    let bucket_index: usize = string_hash(k, vec_len::<Vec<StringMapEntry<T>>>(b));
     vec_at_mut::<Vec<StringMapEntry<T>>>(b, bucket_index)
 }
 
@@ -7198,14 +7176,14 @@ fn stringMapStack_insert<T>(stack: &mut StringMapStack<T>, name: String, value: 
     already_used
 }
 
-/// Look up a value in any visible scope.
-fn stringMapStack_lookup<T>(stack: &StringMapStack<T>, name: String) -> Option<&T> {
+/// Look up a value in any scope.
+fn stringMapStack_get<'a, T>(stack: &'a StringMapStack<T>, name: &String) -> Option<&'a T> {
     let StringMapStack::Stack(scopes, top): &StringMapStack<T> = stack;
     let mut i: usize = *top;
     while i > 0 {
         i = i - 1;
         let scope: &StringMap<T> = vec_at::<StringMap<T>>(scopes, i);
-        match stringMap_get::<T>(scope, string_clone(&name)) {
+        match stringMap_get::<T>(scope, name) {
             Option::Some(value) => return Option::<&T>::Some(value),
             Option::None => {},
         }
@@ -7412,6 +7390,10 @@ fn rToken_eq(a: &RToken, b: &RToken) -> bool {
         },
         RToken::Arrow => match b {
             RToken::Arrow => true,
+            _ => false,
+        },
+        RToken::Lifetime => match b {
+            RToken::Lifetime => true,
             _ => false,
         },
         RToken::Literal(left_literal) => match b {
@@ -7774,6 +7756,7 @@ fn rToken_clone(token: &RToken) -> RToken {
         RToken::Bool => RToken::Bool,
         RToken::Char => RToken::Char,
         RToken::Arrow => RToken::Arrow,
+        RToken::Lifetime => RToken::Lifetime,
         RToken::Literal(literal) => RToken::Literal(rLiteral_clone(literal)),
         RToken::Identifier(value) => RToken::Identifier(string_clone(value)),
         RToken::Eof => RToken::Eof,
@@ -8193,6 +8176,7 @@ fn rToken_to_string(token: &RToken) -> String {
         RToken::Bool => string("bool"),
         RToken::Char => string("char"),
         RToken::Arrow => string("->"),
+        RToken::Lifetime => string("'.."),
         RToken::Literal(literal) => rLiteral_to_string(literal),
         RToken::Identifier(name) => string_clone(name),
         RToken::Eof => string("<eof>"),
