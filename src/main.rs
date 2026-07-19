@@ -6455,6 +6455,7 @@ fn emu_execute_call(
 
     let mut value: Value = emu_execute_function_named(emulator, ast, callee, &arg_values);
     llvm_overflow_value(&mut value, call_type);
+    drop_vec::<Value>(arg_values);
     value
 }
 
@@ -7946,11 +7947,16 @@ fn string_clone(string: &String) -> String {
 
 // --------------------------------- Drop ---------------------------------
 
-/// Drops a StringMap<Value> map, i.e. it deallocates all associated values.
+/// Drop a Vec, i.e. it deallocate the underlying buffer.
+fn drop_vec<T>(Vec::Vec(ptr, _, _): Vec<T>) {
+    unsafe { free(ptr as *mut u8) }
+}
+
+/// Drop a StringMap<Value> map, i.e. deallocate all associated values.
 fn drop_stringValueMap(StringMap::Map(buckets): StringMap<Value>) {
-    unsafe {
-        let mut i: usize = 0;
-        while i < vec_len::<Vec<StringMapEntry<Value>>>(&buckets) {
+    let mut i: usize = 0;
+    while i < vec_len::<Vec<StringMapEntry<Value>>>(&buckets) {
+        unsafe {
             let bucket: &Vec<StringMapEntry<Value>> = vec_at::<Vec<StringMapEntry<Value>>>(&buckets, i);
             let mut j: usize = 0;
             while j < vec_len::<StringMapEntry<Value>>(bucket) {
@@ -7965,10 +7971,10 @@ fn drop_stringValueMap(StringMap::Map(buckets): StringMap<Value>) {
                 j = j + 1;
             }
             free(vec_ptr::<StringMapEntry<Value>>(bucket) as *mut u8);
-            i = i + 1;
         }
-        free(vec_ptr::<Vec<StringMapEntry<Value>>>(&buckets) as *mut u8);
+        i = i + 1;
     }
+    drop_vec::<Vec<StringMapEntry<Value>>>(buckets);
 }
 
 // ------------------------- String -------------------------------
