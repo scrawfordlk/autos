@@ -5311,13 +5311,16 @@ fn instructionBlock_instructions(
 }
 
 /// Get the instructions of the block labelled by the given label.
-fn instructionBlock_fetch_instructions(blocks: &Vec<InstructionBlock>, label: String) -> &Vec<Instruction> {
+fn instructionBlock_fetch_instructions<'a>(
+    blocks: &'a Vec<InstructionBlock>,
+    label: &String,
+) -> &'a Vec<Instruction> {
     let mut i: usize = 0;
     while i < vec_len::<InstructionBlock>(blocks) {
         let block: &InstructionBlock = vec_at::<InstructionBlock>(blocks, i);
 
         let other_label: &String = instructionBlock_label(block);
-        if string_eq(other_label, &label) {
+        if string_eq(other_label, label) {
             return instructionBlock_instructions(block);
         }
 
@@ -5894,10 +5897,10 @@ fn parser_parse_integer(parser: &mut Parser) -> usize {
 // -------------------------------------------------------------------
 
 /// Execution control flow after one LLVM-IR instruction.
-enum ExecFlow {
+enum ExecFlow<'a> {
     Continue,
     /// label
-    Jump(String),
+    Jump(&'a String),
     /// return value
     Return(Value),
 }
@@ -6226,9 +6229,10 @@ fn emu_execute_function(emulator: &mut Emu, ast: &LAst, function: &LFunction, ar
 
             let mut current_label: String =
                 string_clone(instructionBlock_label(vec_at::<InstructionBlock>(blocks, 0)));
+            let mut current_label: &String = instructionBlock_label(vec_at::<InstructionBlock>(blocks, 0));
             while true {
                 let instructions: &Vec<Instruction> =
-                    instructionBlock_fetch_instructions(blocks, string_clone(&current_label));
+                    instructionBlock_fetch_instructions(blocks, current_label);
 
                 let flow: ExecFlow = emu_execute_instructions(emulator, ast, &mut locals, instructions);
 
@@ -6299,12 +6303,12 @@ fn emu_execute_builtin(emulator: &mut Emu, builtin: &BuiltIn, arguments: &Vec<Va
 }
 
 /// Execute a given list of instructions.
-fn emu_execute_instructions(
+fn emu_execute_instructions<'a>(
     emulator: &mut Emu,
     ast: &LAst,
     locals: &mut StringMap<Value>,
-    instructions: &Vec<Instruction>,
-) -> ExecFlow {
+    instructions: &'a Vec<Instruction>,
+) -> ExecFlow<'a> {
     let mut i: usize = 0;
     while i < vec_len::<Instruction>(instructions) {
         let instruction: &Instruction = vec_at::<Instruction>(instructions, i);
@@ -6332,15 +6336,15 @@ fn emu_execute_instructions(
             },
             Instruction::Br(branch) => {
                 return match branch {
-                    Branch::Unconditional(target_label) => ExecFlow::Jump(string_clone(target_label)),
+                    Branch::Unconditional(target_label) => ExecFlow::Jump(target_label),
                     Branch::Conditional(condition, then_label, else_label) => {
                         let condition_value: usize =
                             value_get_int(&llvm_eval_value(emulator, locals, condition));
 
                         if condition_value == 1 {
-                            ExecFlow::Jump(string_clone(then_label))
+                            ExecFlow::Jump(then_label)
                         } else {
-                            ExecFlow::Jump(string_clone(else_label))
+                            ExecFlow::Jump(else_label)
                         }
                     },
                 };
