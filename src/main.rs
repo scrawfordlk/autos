@@ -352,41 +352,41 @@ fn rLexer_scan_identifier(lexer: &mut RLexer) -> String {
 
 /// Convert an identifier to a keyword token if applicable.
 fn rust_identifier_to_token(ident: String) -> RToken {
-    if string_eq(&ident, &string("fn")) {
+    if str_eq(&ident, "fn") {
         RToken::Fn
-    } else if string_eq(&ident, &string("enum")) {
+    } else if str_eq(&ident, "enum") {
         RToken::Enum
-    } else if string_eq(&ident, &string("extern")) {
+    } else if str_eq(&ident, "extern") {
         RToken::Extern
-    } else if string_eq(&ident, &string("let")) {
+    } else if str_eq(&ident, "let") {
         RToken::Let
-    } else if string_eq(&ident, &string("if")) {
+    } else if str_eq(&ident, "if") {
         RToken::If
-    } else if string_eq(&ident, &string("else")) {
+    } else if str_eq(&ident, "else") {
         RToken::Else
-    } else if string_eq(&ident, &string("while")) {
+    } else if str_eq(&ident, "while") {
         RToken::While
-    } else if string_eq(&ident, &string("return")) {
+    } else if str_eq(&ident, "return") {
         RToken::Return
-    } else if string_eq(&ident, &string("match")) {
+    } else if str_eq(&ident, "match") {
         RToken::Match
-    } else if string_eq(&ident, &string("as")) {
+    } else if str_eq(&ident, "as") {
         RToken::As
-    } else if string_eq(&ident, &string("unsafe")) {
+    } else if str_eq(&ident, "unsafe") {
         RToken::Unsafe
-    } else if string_eq(&ident, &string("mut")) {
+    } else if str_eq(&ident, "mut") {
         RToken::Mut
-    } else if string_eq(&ident, &string("usize")) {
+    } else if str_eq(&ident, "usize") {
         RToken::Usize
-    } else if string_eq(&ident, &string("u8")) {
+    } else if str_eq(&ident, "u8") {
         RToken::U8
-    } else if string_eq(&ident, &string("bool")) {
+    } else if str_eq(&ident, "bool") {
         RToken::Bool
-    } else if string_eq(&ident, &string("char")) {
+    } else if str_eq(&ident, "char") {
         RToken::Char
-    } else if string_eq(&ident, &string("true")) {
+    } else if str_eq(&ident, "true") {
         RToken::Literal(RLiteral::Bool(true))
-    } else if string_eq(&ident, &string("false")) {
+    } else if str_eq(&ident, "false") {
         RToken::Literal(RLiteral::Bool(false))
     } else {
         RToken::Identifier(ident)
@@ -1175,7 +1175,7 @@ fn parse_generic(lexer: &mut RLexer) -> bool {
         expect_token(lexer, &RToken::Comma);
     }
     let type_param: String = expect_identifier(lexer);
-    if not(string_eq(&type_param, &string("T"))) {
+    if not(str_eq(&type_param, "T")) {
         parse_error(lexer, &string("generic type parameter must be \"T\""));
     }
     expect_token(lexer, &RToken::RAngle);
@@ -1211,7 +1211,7 @@ fn parse_language(lexer: &mut RLexer) -> RAst {
                 vec_push::<RAstItem>(&mut items, enumeration);
             },
             RToken::Identifier(name) => {
-                if string_eq(name, &string("include")) {
+                if str_eq(name, "include") {
                     // ignore `include!("...");`
                     rLexer_next_token(lexer);
                     expect_token(lexer, &RToken::Bang);
@@ -1241,7 +1241,7 @@ fn parse_extern_block(lexer: &mut RLexer) -> Vec<RAstExternFn> {
     match rLexer_current_token(lexer) {
         RToken::Literal(literal) => match literal {
             RLiteral::String(value) => {
-                if not(string_eq(value, &string("C"))) {
+                if not(str_eq(value, "C")) {
                     let mut message: String = string("expected \"C\", but got: ");
                     string_push_string(&mut message, &rToken_to_string(rLexer_current_token(lexer)));
                     parse_error(lexer, &message);
@@ -1452,7 +1452,7 @@ fn parse_type(lexer: &mut RLexer) -> RType {
             rLexer_try_consume(lexer, &RToken::Lifetime); // ignore lifetime annotation
             match rLexer_current_token(lexer) {
                 RToken::Identifier(name) => {
-                    if string_eq(name, &string("str")) {
+                    if str_eq(name, "str") {
                         rLexer_next_token(lexer);
                         return RType::Enum(string("&str"), Option::<Box<RType>>::None);
                     }
@@ -1471,7 +1471,7 @@ fn parse_type(lexer: &mut RLexer) -> RType {
         },
         RToken::Identifier(_) => {
             let name: String = expect_identifier(lexer);
-            if string_eq(&name, &string("T")) {
+            if str_eq(&name, "T") {
                 RType::Generic // T is always a generic parameter
             } else if rLexer_try_consume(lexer, &RToken::LAngle) {
                 if rLexer_try_consume(lexer, &RToken::Lifetime) {
@@ -1779,7 +1779,7 @@ fn parse_pattern(lexer: &mut RLexer) -> RAstPattern {
         RToken::Identifier(_) => {
             let identifier: String = expect_identifier(lexer);
 
-            if string_eq(&identifier, &string("_")) {
+            if str_eq(&identifier, "_") {
                 RAstPattern::Wildcard
             } else if rLexer_try_consume(lexer, &RToken::DoubleColon) {
                 let variant_name: String = expect_identifier(lexer);
@@ -2969,7 +2969,7 @@ fn codegen_current_function(Codegen::Gen(_, function, _, _, _): &Codegen) -> &St
 
 /// Return true if the current function is the main function.
 fn codegen_is_main(Codegen::Gen(_, function, _, _, _): &Codegen) -> bool {
-    string_eq(function, &string("main"))
+    str_eq(function, "main")
 }
 
 /// Push a new empty scope onto the stack.
@@ -3529,7 +3529,7 @@ fn codegen_call(
             let do_generate: bool = codegen_instantiate_generic(codegen, name, &instance);
 
             // size_of<T>() is inlined instead of generating a function
-            if string_eq(name, &string("size_of")) {
+            if str_eq(name, "size_of") {
                 let size: usize = rType_size(codegen, icg, &instance);
                 codegen_remove_generic_instance(codegen, name);
                 return STPair::ST(integer_to_string(size), RType::Usize);
@@ -4808,7 +4808,7 @@ fn lLexer_scan_escape(lexer: &mut LLexer) -> char {
     }
 }
 
-fn lLexer_scan_identifier_or_keyword(lexer: &mut LLexer) -> String {
+fn lLexer_scan_identifier(lexer: &mut LLexer) -> String {
     let mut identifier: String = string_new();
     while true {
         match lLexer_peek_char(lexer) {
@@ -4827,73 +4827,73 @@ fn lLexer_scan_identifier_or_keyword(lexer: &mut LLexer) -> String {
 }
 
 fn lLexer_scan_keyword_or_label(lexer: &mut LLexer) -> LToken {
-    let identifier: String = lLexer_scan_identifier_or_keyword(lexer);
+    let identifier: String = lLexer_scan_identifier(lexer);
 
-    if string_eq(&identifier, &string("define")) {
+    if str_eq(&identifier, "define") {
         LToken::Define
-    } else if string_eq(&identifier, &string("declare")) {
+    } else if str_eq(&identifier, "declare") {
         LToken::Declare
-    } else if string_eq(&identifier, &string("ret")) {
+    } else if str_eq(&identifier, "ret") {
         LToken::Ret
-    } else if string_eq(&identifier, &string("inttoptr")) {
+    } else if str_eq(&identifier, "inttoptr") {
         LToken::IntToPtr
-    } else if string_eq(&identifier, &string("ptrtoint")) {
+    } else if str_eq(&identifier, "ptrtoint") {
         LToken::PtrToInt
-    } else if string_eq(&identifier, &string("br")) {
+    } else if str_eq(&identifier, "br") {
         LToken::Br
-    } else if string_eq(&identifier, &string("label")) {
+    } else if str_eq(&identifier, "label") {
         LToken::Label
-    } else if string_eq(&identifier, &string("add")) {
+    } else if str_eq(&identifier, "add") {
         LToken::Add
-    } else if string_eq(&identifier, &string("sub")) {
+    } else if str_eq(&identifier, "sub") {
         LToken::Sub
-    } else if string_eq(&identifier, &string("mul")) {
+    } else if str_eq(&identifier, "mul") {
         LToken::Mul
-    } else if string_eq(&identifier, &string("udiv")) {
+    } else if str_eq(&identifier, "udiv") {
         LToken::Udiv
-    } else if string_eq(&identifier, &string("urem")) {
+    } else if str_eq(&identifier, "urem") {
         LToken::Urem
-    } else if string_eq(&identifier, &string("icmp")) {
+    } else if str_eq(&identifier, "icmp") {
         LToken::Icmp
-    } else if string_eq(&identifier, &string("zext")) {
+    } else if str_eq(&identifier, "zext") {
         LToken::Zext
-    } else if string_eq(&identifier, &string("trunc")) {
+    } else if str_eq(&identifier, "trunc") {
         LToken::Trunc
-    } else if string_eq(&identifier, &string("alloca")) {
+    } else if str_eq(&identifier, "alloca") {
         LToken::Alloca
-    } else if string_eq(&identifier, &string("store")) {
+    } else if str_eq(&identifier, "store") {
         LToken::Store
-    } else if string_eq(&identifier, &string("load")) {
+    } else if str_eq(&identifier, "load") {
         LToken::Load
-    } else if string_eq(&identifier, &string("to")) {
+    } else if str_eq(&identifier, "to") {
         LToken::To
-    } else if string_eq(&identifier, &string("call")) {
+    } else if str_eq(&identifier, "call") {
         LToken::Call
-    } else if string_eq(&identifier, &string("constant")) {
+    } else if str_eq(&identifier, "constant") {
         LToken::Constant
-    } else if string_eq(&identifier, &string("eq")) {
+    } else if str_eq(&identifier, "eq") {
         LToken::Eq
-    } else if string_eq(&identifier, &string("ne")) {
+    } else if str_eq(&identifier, "ne") {
         LToken::Ne
-    } else if string_eq(&identifier, &string("ugt")) {
+    } else if str_eq(&identifier, "ugt") {
         LToken::Ugt
-    } else if string_eq(&identifier, &string("uge")) {
+    } else if str_eq(&identifier, "uge") {
         LToken::Uge
-    } else if string_eq(&identifier, &string("ult")) {
+    } else if str_eq(&identifier, "ult") {
         LToken::Ult
-    } else if string_eq(&identifier, &string("ule")) {
+    } else if str_eq(&identifier, "ule") {
         LToken::Ule
-    } else if string_eq(&identifier, &string("ptr")) {
+    } else if str_eq(&identifier, "ptr") {
         LToken::Ptr
-    } else if string_eq(&identifier, &string("i64")) {
+    } else if str_eq(&identifier, "i64") {
         LToken::I64
-    } else if string_eq(&identifier, &string("i8")) {
+    } else if str_eq(&identifier, "i8") {
         LToken::I8
-    } else if string_eq(&identifier, &string("i1")) {
+    } else if str_eq(&identifier, "i1") {
         LToken::I1
-    } else if string_eq(&identifier, &string("void")) {
+    } else if str_eq(&identifier, "void") {
         LToken::Void
-    } else if string_eq(&identifier, &string("x")) {
+    } else if str_eq(&identifier, "x") {
         LToken::X
     } else {
         match lLexer_peek_char(lexer) {
@@ -4938,11 +4938,11 @@ fn lLexer_scan_integer(lexer: &mut LLexer) -> usize {
 fn lLexer_scan_symbol(lexer: &mut LLexer) -> LToken {
     match unwrap::<char>(lLexer_consume_char(lexer)) {
         '@' => {
-            let ident: String = lLexer_scan_identifier_or_keyword(lexer);
+            let ident: String = lLexer_scan_identifier(lexer);
             LToken::Global(ident)
         },
         '%' => {
-            let ident: String = lLexer_scan_identifier_or_keyword(lexer);
+            let ident: String = lLexer_scan_identifier(lexer);
             LToken::Local(ident)
         },
         '(' => LToken::LParen,
@@ -5477,17 +5477,17 @@ fn parser_parse_declare(parser: &mut Parser) {
     parser_symtable_reset(parser);
     let parameters: Vec<LParameter> = parser_parse_parameters(parser, false);
 
-    let builtin: BuiltIn = if string_eq(&function_name, &string("exit")) {
+    let builtin: BuiltIn = if str_eq(&function_name, "exit") {
         BuiltIn::Exit
-    } else if string_eq(&function_name, &string("malloc")) {
+    } else if str_eq(&function_name, "malloc") {
         BuiltIn::Malloc
-    } else if string_eq(&function_name, &string("free")) {
+    } else if str_eq(&function_name, "free") {
         BuiltIn::Free
-    } else if string_eq(&function_name, &string("open")) {
+    } else if str_eq(&function_name, "open") {
         BuiltIn::Open
-    } else if string_eq(&function_name, &string("read")) {
+    } else if str_eq(&function_name, "read") {
         BuiltIn::Read
-    } else if string_eq(&function_name, &string("write")) {
+    } else if str_eq(&function_name, "write") {
         BuiltIn::Write
     } else {
         parser_error(parser, &string("unknown declared function"));
@@ -6529,7 +6529,7 @@ fn args_at(Args::Args(args): &Args, index: usize) -> &String {
 /// Return true if the argument at index `index` matches `other` with bounds-checking.
 fn arg_eq(args: &Args, index: usize, other: &str) -> bool {
     if index < args_len(args) {
-        string_eq(args_at(args, index), &string(other))
+        str_eq(args_at(args, index), other)
     } else {
         false
     }
@@ -7690,6 +7690,25 @@ fn string_eq(s1: &String, s2: &String) -> bool {
     while i < len {
         let c1: char = string_at(s1, i);
         let c2: char = string_at(s2, i);
+        if c1 != c2 {
+            return false;
+        }
+        i = i + 1;
+    }
+    true
+}
+
+/// Check if a `String` and a `&str` are equal.
+fn str_eq(s1: &String, s2: &str) -> bool {
+    let len: usize = string_len(s1);
+    if len != str::len(s2) {
+        return false;
+    }
+    let str_ptr: *mut u8 = str::as_ptr(s2) as *mut u8;
+    let mut i: usize = 0;
+    while i < len {
+        let c1: char = string_at(s1, i);
+        let c2: char = unsafe { *ptr_add::<u8>(str_ptr, i) as char };
         if c1 != c2 {
             return false;
         }
