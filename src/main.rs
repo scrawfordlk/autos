@@ -6153,21 +6153,15 @@ fn emulate(source: String, memory_size: usize, args: &Args) -> usize {
     vec_push::<Value>(&mut main_args, argc);
     vec_push::<Value>(&mut main_args, argv);
 
-    match emu_execute_function_named(&mut emulator, &ast, &string("main"), &main_args) {
+    match emu_execute_function(&mut emulator, &ast, &string("main"), &main_args) {
         Value::Int(value) => value,
         _ => panic("unexpected return value for main"),
     }
 }
 
-/// Lookup a function by name and execute it.
-fn emu_execute_function_named(emulator: &mut Emu, ast: &LAst, name: &String, args: &Vec<Value>) -> Value {
-    let function: &LFunction = lAst_lookup_function(ast, name);
-    emu_execute_function(emulator, ast, function, args)
-}
-
 /// Execute the given function's body.
-fn emu_execute_function(emulator: &mut Emu, ast: &LAst, function: &LFunction, args: &Vec<Value>) -> Value {
-    match function {
+fn emu_execute_function(emulator: &mut Emu, ast: &LAst, name: &String, args: &Vec<Value>) -> Value {
+    match lAst_lookup_function(ast, name) {
         LFunction::BuiltIn(builtin, _, _) => {
             let value: usize = emu_execute_builtin(emulator, builtin, args);
             Value::Int(value)
@@ -6181,10 +6175,8 @@ fn emu_execute_function(emulator: &mut Emu, ast: &LAst, function: &LFunction, ar
             while i < vec_len::<LParameter>(parameters) {
                 let parameter: &LParameter = vec_at::<LParameter>(parameters, i);
                 let LParameter::Parameter(name, _): &LParameter = parameter;
-
                 let value: &Value = vec_at::<Value>(args, i);
                 stringMap_insert_or_update::<Value>(&mut locals, name, value_clone(value));
-
                 i = i + 1;
             }
 
@@ -6412,7 +6404,7 @@ fn emu_execute_call(
         i = i + 1;
     }
 
-    let mut value: Value = emu_execute_function_named(emulator, ast, callee, &arg_values);
+    let mut value: Value = emu_execute_function(emulator, ast, callee, &arg_values);
     llvm_overflow_value(&mut value, call_type);
     drop_vec::<Value>(arg_values);
     value
