@@ -9,9 +9,13 @@ string   -> global "=" "constant" array "c"" { printable_character } """
 
 function -> "define" type global
             "(" [ type local { "," type local } ] ")"
-            "{" "entry" ":" { instruction } { identifier ":" { instruction } } "}"
+            "{" { block } "}"
 
 global   -> "@" identifier
+
+label    -> identifier ":"
+
+block    -> label { instruction }
 ```
 
 ## Instructions

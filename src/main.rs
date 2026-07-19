@@ -5241,8 +5241,8 @@ fn lAst_lookup_function<'a>(ast: &'a LAst, name: &String) -> &'a LFunction {
 
 /// An executable LLVM-IR function.
 enum LFunction {
-    /// parameters, basic blocks, instruction count
-    Function(Vec<LParameter>, StringMap<Vec<Instruction>>, usize),
+    /// parameters, first label, basic blocks, instruction count
+    Function(Vec<LParameter>, String, StringMap<Vec<Instruction>>, usize),
     /// return type, parameters, builtin
     BuiltIn(BuiltIn, LType, Vec<LParameter>),
 }
@@ -5444,10 +5444,22 @@ fn parser_parse_function(parser: &mut Parser) {
     parser_set_register_count(parser, vec_len::<LParameter>(&parameters));
 
     parser_expect_token(parser, &LToken::LBrace);
-    let blocks: StringMap<Vec<Instruction>> = parser_parse_blocks(parser);
+    let mut blocks: StringMap<Vec<Instruction>> = stringMap_new::<Vec<Instruction>>();
+    let first_label: String = parser_expect_identifier(parser, true);
+    let block: Vec<Instruction> = parser_parse_instructions(parser);
+    stringMap_insert_or_update::<Vec<Instruction>>(&mut blocks, &first_label, block);
+    while not(parser_current_token_eq(parser, &LToken::RBrace)) {
+        let label: String = parser_expect_identifier(parser, true);
+        let block: Vec<Instruction> = parser_parse_instructions(parser);
+        if stringMap_contains::<Vec<Instruction>>(&blocks, &label) {
+            parser_error(parser, &string("Duplicate basic block labels detected"));
+        }
+        stringMap_insert_or_update::<Vec<Instruction>>(&mut blocks, &label, block);
+    }
     parser_expect_token(parser, &LToken::RBrace);
 
-    let function: LFunction = LFunction::Function(parameters, blocks, parser_register_count(parser));
+    let function: LFunction =
+        LFunction::Function(parameters, first_label, blocks, parser_register_count(parser));
     if not(lAst_insert_function(
         parser_ast_mut(parser),
         &function_name,
@@ -5542,25 +5554,6 @@ fn parser_parse_parameter_name(parser: &mut Parser, index: usize) -> String {
             name
         },
     }
-}
-
-fn parser_parse_blocks(parser: &mut Parser) -> StringMap<Vec<Instruction>> {
-    let mut blocks: StringMap<Vec<Instruction>> = stringMap_with_len::<Vec<Instruction>>(10);
-    let label: String = parser_expect_identifier(parser, true);
-    if not(string_eq(&string("entry"), &label)) {
-        parser_error(parser, &string("Label of the first basic block is not \"entry\""));
-    }
-    stringMap_insert_or_update::<Vec<Instruction>>(&mut blocks, &label, parser_parse_instructions(parser));
-
-    while not(parser_current_token_eq(parser, &LToken::RBrace)) {
-        let label: String = parser_expect_identifier(parser, true);
-        let block: Vec<Instruction> = parser_parse_instructions(parser);
-        if stringMap_contains::<Vec<Instruction>>(&blocks, &label) {
-            parser_error(parser, &string("Duplicate basic block labels detected"));
-        }
-        stringMap_insert_or_update::<Vec<Instruction>>(&mut blocks, &label, block);
-    }
-    blocks
 }
 
 fn parser_parse_instructions(parser: &mut Parser) -> Vec<Instruction> {
@@ -6179,7 +6172,7 @@ fn emu_execute_function(emulator: &mut Emu, ast: &LAst, function: &LFunction, ar
             let value: usize = emu_execute_builtin(emulator, builtin, args);
             Value::Int(value)
         },
-        LFunction::Function(parameters, blocks, register_count) => {
+        LFunction::Function(parameters, first_label, blocks, register_count) => {
             let previous_frame_size: usize = emu_get_frame_size(emulator);
             emu_set_frame_size(emulator, 0);
             let mut locals: StringMap<Value> = stringMap_with_len::<Value>(*register_count);
@@ -6195,7 +6188,7 @@ fn emu_execute_function(emulator: &mut Emu, ast: &LAst, function: &LFunction, ar
                 i = i + 1;
             }
 
-            let mut current_label: &String = &string("entry"); // parser ensures this
+            let mut current_label: &String = first_label;
             while true {
                 let instructions: &Vec<Instruction> =
                     match stringMap_get::<Vec<Instruction>>(blocks, current_label) {
