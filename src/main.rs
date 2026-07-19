@@ -5242,8 +5242,7 @@ fn lAst_lookup_function<'a>(ast: &'a LAst, name: &String) -> &'a LFunction {
 /// An executable LLVM-IR function.
 enum LFunction {
     /// parameters, basic blocks, instruction count
-    // TODO: use StringMap for InstructionBlocks
-    Function(Vec<LParameter>, Vec<InstructionBlock>, usize),
+    Function(Vec<LParameter>, StringMap<Vec<Instruction>>, usize),
     /// return type, parameters, builtin
     BuiltIn(BuiltIn, LType, Vec<LParameter>),
 }
@@ -5275,56 +5274,19 @@ enum LType {
     Void,
 }
 
-fn llvmType_bitwidth(ty: &LType) -> usize {
+fn lType_bitwidth(ty: &LType) -> usize {
     match ty {
         LType::I1 => 1,
         LType::I8 => 8,
         LType::I64 | LType::Ptr => 64,
-        LType::Array(len, inner) => *len * llvmType_bitwidth(box_deref::<LType>(inner)),
+        LType::Array(len, inner) => *len * lType_bitwidth(box_deref::<LType>(inner)),
         LType::Void => 0,
     }
 }
 
 /// Return the size of an LLVM type in bytes.
-fn llvmType_size(ty: &LType) -> usize {
-    max(1, llvmType_bitwidth(ty) / 8)
-}
-
-/// Represents an instruction block.
-enum InstructionBlock {
-    /// label, instructions
-    Block(String, Vec<Instruction>),
-}
-
-/// Get a shared reference to the label of an instruction block.
-fn instructionBlock_label(InstructionBlock::Block(label, _): &InstructionBlock) -> &String {
-    label
-}
-
-/// Get a shared reference to the instructions of an instruction block.
-fn instructionBlock_instructions(
-    InstructionBlock::Block(_, instructions): &InstructionBlock,
-) -> &Vec<Instruction> {
-    instructions
-}
-
-/// Get the instructions of the block labelled by the given label.
-fn instructionBlock_fetch_instructions<'a>(
-    blocks: &'a Vec<InstructionBlock>,
-    label: &String,
-) -> &'a Vec<Instruction> {
-    let mut i: usize = 0;
-    while i < vec_len::<InstructionBlock>(blocks) {
-        let block: &InstructionBlock = vec_at::<InstructionBlock>(blocks, i);
-
-        let other_label: &String = instructionBlock_label(block);
-        if string_eq(other_label, label) {
-            return instructionBlock_instructions(block);
-        }
-
-        i = i + 1;
-    }
-    panic("unknown LLVM block label");
+fn lType_size(ty: &LType) -> usize {
+    max(1, lType_bitwidth(ty) / 8)
 }
 
 /// Represents an instruction inside an instruction block.
@@ -5482,7 +5444,7 @@ fn parser_parse_function(parser: &mut Parser) {
     parser_set_register_count(parser, vec_len::<LParameter>(&parameters));
 
     parser_expect_token(parser, &LToken::LBrace);
-    let blocks: Vec<InstructionBlock> = parser_parse_blocks(parser);
+    let blocks: StringMap<Vec<Instruction>> = parser_parse_blocks(parser);
     parser_expect_token(parser, &LToken::RBrace);
 
     let function: LFunction = LFunction::Function(parameters, blocks, parser_register_count(parser));
@@ -5582,24 +5544,32 @@ fn parser_parse_parameter_name(parser: &mut Parser, index: usize) -> String {
     }
 }
 
-fn parser_parse_blocks(parser: &mut Parser) -> Vec<InstructionBlock> {
-    let mut blocks: Vec<InstructionBlock> = vec_new::<InstructionBlock>();
+fn parser_parse_blocks(parser: &mut Parser) -> StringMap<Vec<Instruction>> {
+    let mut blocks: StringMap<Vec<Instruction>> = stringMap_with_len::<Vec<Instruction>>(10);
+    let label: String = parser_expect_identifier(parser, true);
+    if not(string_eq(&string("entry"), &label)) {
+        parser_error(parser, &string("Label of the first basic block is not \"entry\""));
+    }
+    stringMap_insert_or_update::<Vec<Instruction>>(&mut blocks, &label, parser_parse_instructions(parser));
+
     while not(parser_current_token_eq(parser, &LToken::RBrace)) {
-        let block: InstructionBlock = parser_parse_block(parser);
-        vec_push::<InstructionBlock>(&mut blocks, block);
+        let label: String = parser_expect_identifier(parser, true);
+        let block: Vec<Instruction> = parser_parse_instructions(parser);
+        if stringMap_contains::<Vec<Instruction>>(&blocks, &label) {
+            parser_error(parser, &string("Duplicate basic block labels detected"));
+        }
+        stringMap_insert_or_update::<Vec<Instruction>>(&mut blocks, &label, block);
     }
     blocks
 }
 
-fn parser_parse_block(parser: &mut Parser) -> InstructionBlock {
-    let label: String = parser_expect_identifier(parser, true);
-
-    let mut instructions: Vec<Instruction> = vec_new::<Instruction>();
+fn parser_parse_instructions(parser: &mut Parser) -> Vec<Instruction> {
+    let mut block: Vec<Instruction> = vec_new::<Instruction>();
     while parser_is_instruction_start(parser) {
         let instruction: Instruction = parser_parse_instruction(parser);
-        vec_push::<Instruction>(&mut instructions, instruction);
+        vec_push::<Instruction>(&mut block, instruction);
     }
-    InstructionBlock::Block(label, instructions)
+    block
 }
 
 fn parser_parse_instruction(parser: &mut Parser) -> Instruction {
@@ -5747,15 +5717,15 @@ fn parser_parse_cast_assign(parser: &mut Parser, operator: CastOp) -> AssignOp {
 
     match &operator {
         CastOp::Zext => {
-            let from_bits: usize = llvmType_bitwidth(&from_type);
-            let to_bits: usize = llvmType_bitwidth(&to_type);
+            let from_bits: usize = lType_bitwidth(&from_type);
+            let to_bits: usize = lType_bitwidth(&to_type);
             if not(from_bits < to_bits) {
                 parser_warning(parser, &string("zext: source is not smaller than target"));
             }
         },
         CastOp::Trunc => {
-            let from_bits: usize = llvmType_bitwidth(&from_type);
-            let to_bits: usize = llvmType_bitwidth(&to_type);
+            let from_bits: usize = lType_bitwidth(&from_type);
+            let to_bits: usize = lType_bitwidth(&to_type);
             if not(from_bits > to_bits) {
                 parser_warning(parser, &string("zext: source is not larger than target"));
             }
@@ -6225,16 +6195,14 @@ fn emu_execute_function(emulator: &mut Emu, ast: &LAst, function: &LFunction, ar
                 i = i + 1;
             }
 
-            let mut current_label: String =
-                string_clone(instructionBlock_label(vec_at::<InstructionBlock>(blocks, 0)));
-            let mut current_label: &String = instructionBlock_label(vec_at::<InstructionBlock>(blocks, 0));
+            let mut current_label: &String = &string("entry"); // parser ensures this
             while true {
                 let instructions: &Vec<Instruction> =
-                    instructionBlock_fetch_instructions(blocks, current_label);
-
-                let flow: ExecFlow = emu_execute_instructions(emulator, ast, &mut locals, instructions);
-
-                match flow {
+                    match stringMap_get::<Vec<Instruction>>(blocks, current_label) {
+                        Option::Some(block) => block,
+                        Option::None => panic("unknown LLVM block label"),
+                    };
+                match emu_execute_instructions(emulator, ast, &mut locals, instructions) {
                     ExecFlow::Continue => panic("LLVM block did not terminate"),
                     ExecFlow::Jump(next_label) => current_label = next_label,
                     ExecFlow::Return(value) => {
@@ -6414,7 +6382,7 @@ fn emu_evaluate_assign_op(emulator: &mut Emu, ast: &LAst, locals: &StringMap<Val
             evaluated_value
         },
         AssignOp::Alloca(allocated_type) => {
-            let space: usize = llvmType_size(allocated_type);
+            let space: usize = lType_size(allocated_type);
             match emu_allocate_stack(emulator, space) {
                 Option::Some(address) => Value::Int(address),
                 Option::None => panic("Stack overflow encountered during emulation"),
@@ -6422,7 +6390,7 @@ fn emu_evaluate_assign_op(emulator: &mut Emu, ast: &LAst, locals: &StringMap<Val
         },
         AssignOp::Load(loaded_type, address_value) => {
             let address: usize = value_get_int(&llvm_eval_value(emulator, locals, address_value));
-            let mut value: Value = emu_load_bytes(emulator, address, llvmType_size(loaded_type));
+            let mut value: Value = emu_load_bytes(emulator, address, lType_size(loaded_type));
             llvm_overflow_value(&mut value, loaded_type);
             value
         },
@@ -6481,7 +6449,7 @@ fn emu_execute_store(
     let mut value: Value = llvm_eval_value(emulator, locals, value);
     llvm_overflow_value(&mut value, store_type);
     let target_address: usize = value_get_int(&llvm_eval_value(emulator, locals, address));
-    let byte_count: usize = llvmType_size(store_type);
+    let byte_count: usize = lType_size(store_type);
 
     if not(emu_store_bytes(emulator, target_address, &value, byte_count)) {
         panic("invalid LLVM store address");
