@@ -6207,7 +6207,7 @@ fn emu_execute_function(emulator: &mut Emu, ast: &LAst, function: &LFunction, ar
         LFunction::Function(parameters, blocks, register_count) => {
             let previous_frame_size: usize = emu_get_frame_size(emulator);
             emu_set_frame_size(emulator, 0);
-            let mut locals: StringMap<Value> = stringMap_with_len::<Value>(*register_count * 2);
+            let mut locals: StringMap<Value> = stringMap_with_len::<Value>(*register_count);
 
             let mut i: usize = 0;
             while i < vec_len::<LParameter>(parameters) {
