@@ -1474,6 +1474,10 @@ fn parse_type(lexer: &mut RLexer) -> RType {
             if string_eq(&name, &string("T")) {
                 RType::Generic // T is always a generic parameter
             } else if rLexer_try_consume(lexer, &RToken::LAngle) {
+                if rLexer_try_consume(lexer, &RToken::Lifetime) {
+                    expect_token(lexer, &RToken::RAngle);
+                    return RType::Enum(name, Option::<Box<RType>>::None);
+                }
                 let instance: RType = parse_type(lexer);
                 expect_token(lexer, &RToken::RAngle);
                 RType::Enum(name, Option::<Box<RType>>::Some(box_new::<RType>(instance)))

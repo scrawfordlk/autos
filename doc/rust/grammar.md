@@ -14,7 +14,7 @@ generic   -> "<" ( T | "'" identifier [ "," "T" ] ) ">"
 
 extern    -> "unsafe" "extern" ""C"" "{" { signature ";" } "}"
 
-enum      -> "enum" identifier [ "<" "T" ">" ] "{" variant "," { variant "," } "}"
+enum      -> "enum" identifier [ generic ] "{" variant "," { variant "," } "}"
 
 variant   -> identifier [ "(" type { "," type } ")" ]
 
