@@ -4740,7 +4740,7 @@ fn lLexer_consume_char(lexer: &mut LLexer) -> Option<char> {
 }
 
 /// Consume and return the next token.
-fn lLexer_next_token(lexer: &mut LLexer) -> LToken {
+fn lLexer_next_token(lexer: &mut LLexer) {
     lLexer_skip_whitespace_and_comments(lexer);
 
     let token: LToken = match lLexer_peek_char(lexer) {
@@ -4759,9 +4759,7 @@ fn lLexer_next_token(lexer: &mut LLexer) -> LToken {
         },
         Option::None => LToken::Eof,
     };
-
-    lLexer_set_current_token(lexer, lToken_clone(&token));
-    token
+    lLexer_set_current_token(lexer, token);
 }
 
 /// Scan and return a c"..." string literal.
@@ -5078,8 +5076,8 @@ fn parser_consume_current_token(parser: &mut Parser) -> LToken {
 }
 
 /// Advance and return next LLVM parser token.
-fn parser_next_token(parser: &mut Parser) -> LToken {
-    lLexer_next_token(parser_lexer_mut(parser))
+fn parser_next_token(parser: &mut Parser) {
+    lLexer_next_token(parser_lexer_mut(parser));
 }
 
 /// Check whether parser current token equals expected token.
