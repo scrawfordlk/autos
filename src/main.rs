@@ -4997,96 +4997,91 @@ fn lLexer_skip_line(lexer: &mut LLexer) {
 // -----------------------------------------------------------------
 
 /// The parser state for a LLVM-IR module.
-enum Parser {
+enum LParser {
     /// lexer, result AST, symbol table, number of registers
     Parser(LLexer, LAst, StringMap<LType>, usize),
 }
 
 /// Create an LLVM parser and prime the first token.
-fn parser_new(source: String) -> Parser {
-    Parser::Parser(lLexer_new(source), lAst_new(), stringMap_new::<LType>(), 0)
+fn lparser_new(source: String) -> LParser {
+    LParser::Parser(lLexer_new(source), lAst_new(), stringMap_new::<LType>(), 0)
 }
 
 /// Get immutable parser lexer access.
-fn parser_lexer(Parser::Parser(lexer, _, _, _): &Parser) -> &LLexer {
-    lexer
-}
-
-/// Get mutable parser lexer access.
-fn parser_lexer_mut(Parser::Parser(lexer, _, _, _): &mut Parser) -> &mut LLexer {
+fn lparser_lexer(LParser::Parser(lexer, _, _, _): &LParser) -> &LLexer {
     lexer
 }
 
 /// Get mutable parser AST access.
-fn parser_ast_mut(Parser::Parser(_, ast, _, _): &mut Parser) -> &mut LAst {
+fn lparser_ast_mut(LParser::Parser(_, ast, _, _): &mut LParser) -> &mut LAst {
     ast
 }
 
 /// Insert register name. Returns false on duplicate.
-fn parser_symtable_insert(Parser::Parser(_, _, registers, _): &mut Parser, name: &String, ty: LType) -> bool {
-    let is_defined: bool = stringMap_contains::<LType>(registers, name);
-    stringMap_insert_or_update::<LType>(registers, name, ty);
+fn parser_symtable_insert(LParser::Parser(_, _, locals, _): &mut LParser, name: &String, ty: LType) -> bool {
+    let is_defined: bool = stringMap_contains::<LType>(locals, name);
+    stringMap_insert_or_update::<LType>(locals, name, ty);
     not(is_defined)
 }
 
 /// Lookup a register type in the local symbol table.
 fn parser_symtable_get<'a>(
-    Parser::Parser(_, _, registers, _): &'a Parser,
+    LParser::Parser(_, _, registers, _): &'a LParser,
     name: &String,
 ) -> Option<&'a LType> {
     stringMap_get::<LType>(registers, name)
 }
 
 /// Clear local register table buckets.
-fn parser_symtable_reset(Parser::Parser(_, _, registers, _): &mut Parser) {
+fn parser_symtable_reset(LParser::Parser(_, _, registers, _): &mut LParser) {
     *registers = stringMap_new::<LType>();
 }
 
-fn parser_register_count(Parser::Parser(_, _, _, counter): &Parser) -> usize {
+fn parser_register_count(LParser::Parser(_, _, _, counter): &LParser) -> usize {
     *counter
 }
 
-fn parser_increment_register_count(Parser::Parser(_, _, _, counter): &mut Parser) {
+fn parser_increment_register_count(LParser::Parser(_, _, _, counter): &mut LParser) {
     *counter = *counter + 1;
 }
 
-fn parser_set_register_count(Parser::Parser(_, _, _, counter): &mut Parser, value: usize) {
+fn parser_set_register_count(LParser::Parser(_, _, _, counter): &mut LParser, value: usize) {
     *counter = value;
 }
 
 /// Parse LLVM source into LLVM AST.
-fn parser_parse_to_ast(source: String) -> LAst {
-    let mut parser: Parser = parser_new(source);
-    parser_parse_language(&mut parser);
-    let Parser::Parser(_, ast, _, _): Parser = parser;
+fn lparse_to_ast(source: String) -> LAst {
+    let mut parser: LParser = lparser_new(source);
+    lparse_language(&mut parser);
+    let LParser::Parser(_, ast, _, _): LParser = parser;
     ast
 }
 
 /// Get current LLVM parser token.
-fn parser_current_token(parser: &Parser) -> &LToken {
-    lLexer_current_token(parser_lexer(parser))
+fn parser_current_token(parser: &LParser) -> &LToken {
+    lLexer_current_token(lparser_lexer(parser))
 }
 
 /// Consume and return the current LLVM parser token.
-fn parser_consume_current_token(parser: &mut Parser) -> LToken {
-    let lexer: &LLexer = parser_lexer(parser);
+fn parser_consume_current_token(parser: &mut LParser) -> LToken {
+    let lexer: &LLexer = lparser_lexer(parser);
     let token: LToken = lToken_clone(lLexer_current_token(lexer));
     parser_next_token(parser);
     token
 }
 
 /// Advance and return next LLVM parser token.
-fn parser_next_token(parser: &mut Parser) {
-    lLexer_next_token(parser_lexer_mut(parser));
+fn parser_next_token(LParser::Parser(lexer, _, _, _): &mut LParser) {
+    lLexer_next_token(lexer);
 }
 
 /// Check whether parser current token equals expected token.
-fn parser_current_token_eq(parser: &Parser, token: &LToken) -> bool {
+fn parser_current_token_eq(parser: &LParser, token: &LToken) -> bool {
     lToken_eq(parser_current_token(parser), token)
 }
 
 /// Try consuming one token and report success.
-fn parser_try_consume(parser: &mut Parser, token: &LToken) -> bool {
+fn parser_try_consume(parser: &mut LParser, token: &LToken) -> bool {
     if parser_current_token_eq(parser, token) {
         parser_next_token(parser);
         true
@@ -5096,7 +5091,7 @@ fn parser_try_consume(parser: &mut Parser, token: &LToken) -> bool {
 }
 
 /// Require and consume one token.
-fn parser_expect_token(parser: &mut Parser, token: &LToken) {
+fn parser_expect_token(parser: &mut LParser, token: &LToken) {
     if not(parser_try_consume(parser, token)) {
         let message: String = parser_expected_message(parser, &lToken_to_string(token));
         parser_error(parser, &message);
@@ -5104,7 +5099,7 @@ fn parser_expect_token(parser: &mut Parser, token: &LToken) {
 }
 
 /// Read and consume one identifier token.
-fn parser_expect_identifier(parser: &mut Parser, is_local: bool) -> String {
+fn parser_expect_identifier(parser: &mut LParser, is_local: bool) -> String {
     if is_local {
         match parser_current_token(parser) {
             LToken::Local(identifier) => {
@@ -5137,13 +5132,13 @@ fn parser_expect_identifier(parser: &mut Parser, is_local: bool) -> String {
     }
 }
 
-fn parser_expect_value_type(parser: &Parser, value: &LValue, expected: &LType) {
+fn parser_expect_value_type(parser: &LParser, value: &LValue, expected: &LType) {
     if not(parser_value_has_type(parser, value, expected)) {
         parser_warning(parser, &string("LLVM value does not match expected type"));
     }
 }
 
-fn parser_value_has_type(parser: &Parser, value: &LValue, expected: &LType) -> bool {
+fn parser_value_has_type(parser: &LParser, value: &LValue, expected: &LType) -> bool {
     match value {
         LValue::Register(name) => match parser_symtable_get(parser, name) {
             Option::Some(actual) => llvmType_eq(actual, expected),
@@ -5161,7 +5156,7 @@ fn parser_value_has_type(parser: &Parser, value: &LValue, expected: &LType) -> b
 }
 
 /// Return true if the current token indicates the start of a new instruction.
-fn parser_is_instruction_start(parser: &mut Parser) -> bool {
+fn parser_is_instruction_start(parser: &mut LParser) -> bool {
     match parser_current_token(parser) {
         LToken::Ret | LToken::Br | LToken::Local(_) | LToken::Store | LToken::Call => true,
         _ => false,
@@ -5395,12 +5390,12 @@ enum LTypedValue {
     Pair(LType, LValue),
 }
 
-fn parser_parse_language(parser: &mut Parser) {
+fn lparse_language(parser: &mut LParser) {
     while not(parser_current_token_eq(parser, &LToken::Eof)) {
         match parser_current_token(parser) {
-            LToken::Global(_) => parser_parse_string(parser),
-            LToken::Define => parser_parse_function(parser),
-            LToken::Declare => parser_parse_declare(parser),
+            LToken::Global(_) => lparse_string(parser),
+            LToken::Define => lparse_function(parser),
+            LToken::Declare => lparse_declare(parser),
             _ => {
                 let message: String = parser_expected_message(parser, &string("LLVM top-level item"));
                 parser_error(parser, &message)
@@ -5409,18 +5404,18 @@ fn parser_parse_language(parser: &mut Parser) {
     }
 }
 
-fn parser_parse_string(parser: &mut Parser) {
+fn lparse_string(parser: &mut LParser) {
     let name: String = parser_expect_identifier(parser, false);
     parser_expect_token(parser, &LToken::Assign);
     parser_expect_token(parser, &LToken::Constant);
-    parser_parse_type(parser);
+    lparse_type(parser);
 
     match parser_current_token(parser) {
         LToken::CString(value) => {
             let string_value: String = string_clone(value);
             parser_next_token(parser);
             if not(lAst_insert_global(
-                parser_ast_mut(parser),
+                lparser_ast_mut(parser),
                 string_clone(&name),
                 CString::String(name, string_value),
             )) {
@@ -5434,23 +5429,23 @@ fn parser_parse_string(parser: &mut Parser) {
     }
 }
 
-fn parser_parse_function(parser: &mut Parser) {
+fn lparse_function(parser: &mut LParser) {
     parser_expect_token(parser, &LToken::Define);
-    let return_type: LType = parser_parse_type(parser); // TODO: check type of ret using this
+    let return_type: LType = lparse_type(parser); // TODO: check type of ret using this
     let function_name: String = parser_expect_identifier(parser, false);
 
     parser_symtable_reset(parser);
-    let parameters: Vec<LParameter> = parser_parse_parameters(parser, true);
+    let parameters: Vec<LParameter> = lparse_parameters(parser, true);
     parser_set_register_count(parser, vec_len::<LParameter>(&parameters));
 
     parser_expect_token(parser, &LToken::LBrace);
     let mut blocks: StringMap<Vec<Instruction>> = stringMap_new::<Vec<Instruction>>();
     let first_label: String = parser_expect_identifier(parser, true);
-    let block: Vec<Instruction> = parser_parse_instructions(parser);
+    let block: Vec<Instruction> = lparse_instructions(parser);
     stringMap_insert_or_update::<Vec<Instruction>>(&mut blocks, &first_label, block);
     while not(parser_current_token_eq(parser, &LToken::RBrace)) {
         let label: String = parser_expect_identifier(parser, true);
-        let block: Vec<Instruction> = parser_parse_instructions(parser);
+        let block: Vec<Instruction> = lparse_instructions(parser);
         if stringMap_contains::<Vec<Instruction>>(&blocks, &label) {
             parser_error(parser, &string("Duplicate basic block labels detected"));
         }
@@ -5461,7 +5456,7 @@ fn parser_parse_function(parser: &mut Parser) {
     let function: LFunction =
         LFunction::Function(parameters, first_label, blocks, parser_register_count(parser));
     if not(lAst_insert_function(
-        parser_ast_mut(parser),
+        lparser_ast_mut(parser),
         &function_name,
         function,
     )) {
@@ -5469,13 +5464,13 @@ fn parser_parse_function(parser: &mut Parser) {
     }
 }
 
-fn parser_parse_declare(parser: &mut Parser) {
+fn lparse_declare(parser: &mut LParser) {
     parser_expect_token(parser, &LToken::Declare);
-    let return_type: LType = parser_parse_type(parser);
+    let return_type: LType = lparse_type(parser);
     let function_name: String = parser_expect_identifier(parser, false);
 
     parser_symtable_reset(parser);
-    let parameters: Vec<LParameter> = parser_parse_parameters(parser, false);
+    let parameters: Vec<LParameter> = lparse_parameters(parser, false);
 
     let builtin: BuiltIn = if str_eq(&function_name, "exit") {
         BuiltIn::Exit
@@ -5495,7 +5490,7 @@ fn parser_parse_declare(parser: &mut Parser) {
 
     let function: LFunction = LFunction::BuiltIn(builtin, return_type, parameters);
     if not(lAst_insert_function(
-        parser_ast_mut(parser),
+        lparser_ast_mut(parser),
         &function_name,
         function,
     )) {
@@ -5507,14 +5502,14 @@ fn parser_parse_declare(parser: &mut Parser) {
 ///
 /// * `parser`: The parser state
 /// * `require_names`: True, if the parameters are named (function definition). False, if they are not (function declaration).
-fn parser_parse_parameters(parser: &mut Parser, named: bool) -> Vec<LParameter> {
+fn lparse_parameters(parser: &mut LParser, named: bool) -> Vec<LParameter> {
     let mut parameters: Vec<LParameter> = vec_new::<LParameter>();
 
     parser_expect_token(parser, &LToken::LParen);
 
     if not(parser_current_token_eq(parser, &LToken::RParen)) {
-        let parameter_type: LType = parser_parse_type(parser);
-        let param_name: String = parser_parse_parameter_name(parser, 0);
+        let parameter_type: LType = lparse_type(parser);
+        let param_name: String = lparse_parameter_name(parser, 0);
         parser_symtable_insert(parser, &param_name, llvmType_clone(&parameter_type));
 
         let parameter: LParameter = LParameter::Parameter(param_name, parameter_type);
@@ -5523,8 +5518,8 @@ fn parser_parse_parameters(parser: &mut Parser, named: bool) -> Vec<LParameter> 
         while parser_current_token_eq(parser, &LToken::Comma) {
             parser_next_token(parser);
 
-            let parameter_type: LType = parser_parse_type(parser);
-            let param_name: String = parser_parse_parameter_name(parser, vec_len::<LParameter>(&parameters));
+            let parameter_type: LType = lparse_type(parser);
+            let param_name: String = lparse_parameter_name(parser, vec_len::<LParameter>(&parameters));
 
             if and(
                 named,
@@ -5545,7 +5540,7 @@ fn parser_parse_parameters(parser: &mut Parser, named: bool) -> Vec<LParameter> 
     parameters
 }
 
-fn parser_parse_parameter_name(parser: &mut Parser, index: usize) -> String {
+fn lparse_parameter_name(parser: &mut LParser, index: usize) -> String {
     match parser_current_token(parser) {
         LToken::Local(_) => parser_expect_identifier(parser, true),
         _ => {
@@ -5556,24 +5551,24 @@ fn parser_parse_parameter_name(parser: &mut Parser, index: usize) -> String {
     }
 }
 
-fn parser_parse_instructions(parser: &mut Parser) -> Vec<Instruction> {
+fn lparse_instructions(parser: &mut LParser) -> Vec<Instruction> {
     let mut block: Vec<Instruction> = vec_new::<Instruction>();
     while parser_is_instruction_start(parser) {
-        let instruction: Instruction = parser_parse_instruction(parser);
+        let instruction: Instruction = lparse_instruction(parser);
         vec_push::<Instruction>(&mut block, instruction);
     }
     block
 }
 
-fn parser_parse_instruction(parser: &mut Parser) -> Instruction {
+fn lparse_instruction(parser: &mut LParser) -> Instruction {
     match parser_current_token(parser) {
-        LToken::Ret => parser_parse_return(parser),
-        LToken::Br => parser_parse_branch(parser),
-        LToken::Local(_) => Instruction::Assignment(parser_parse_assignment(parser)),
-        LToken::Store => parser_parse_store(parser),
+        LToken::Ret => lparse_return(parser),
+        LToken::Br => lparse_branch(parser),
+        LToken::Local(_) => Instruction::Assignment(lparse_assignment(parser)),
+        LToken::Store => lparse_store(parser),
         LToken::Call => {
             parser_next_token(parser);
-            Instruction::Call(parser_parse_call(parser))
+            Instruction::Call(lparse_call(parser))
         },
         _ => {
             let message: String = parser_expected_message(parser, &string("LLVM instruction"));
@@ -5582,25 +5577,25 @@ fn parser_parse_instruction(parser: &mut Parser) -> Instruction {
     }
 }
 
-fn parser_parse_return(parser: &mut Parser) -> Instruction {
+fn lparse_return(parser: &mut LParser) -> Instruction {
     parser_expect_token(parser, &LToken::Ret);
-    let returned_type: LType = parser_parse_type(parser);
+    let returned_type: LType = lparse_type(parser);
     let return_value: Option<LValue> = if llvmType_eq(&returned_type, &LType::Void) {
         Option::<LValue>::None
     } else {
-        Option::<LValue>::Some(parser_parse_value(parser))
+        Option::<LValue>::Some(lparse_value(parser))
     };
     Instruction::Ret(returned_type, return_value)
 }
 
-fn parser_parse_branch(parser: &mut Parser) -> Instruction {
+fn lparse_branch(parser: &mut LParser) -> Instruction {
     parser_expect_token(parser, &LToken::Br);
     let branch: Branch = if parser_try_consume(parser, &LToken::Label) {
         let target_label: String = parser_expect_identifier(parser, true);
         Branch::Unconditional(target_label)
     } else {
         parser_expect_token(parser, &LToken::I1);
-        let condition: LValue = parser_parse_value(parser);
+        let condition: LValue = lparse_value(parser);
         parser_expect_token(parser, &LToken::Comma);
 
         parser_expect_token(parser, &LToken::Label);
@@ -5615,24 +5610,24 @@ fn parser_parse_branch(parser: &mut Parser) -> Instruction {
     Instruction::Br(branch)
 }
 
-fn parser_parse_assignment(parser: &mut Parser) -> AssignInstruction {
+fn lparse_assignment(parser: &mut LParser) -> AssignInstruction {
     let target_register: String = parser_expect_identifier(parser, true);
 
     parser_expect_token(parser, &LToken::Assign);
     let operation: AssignOp = match parser_consume_current_token(parser) {
-        LToken::Add => parser_parse_binary_assign(parser, BinaryOp::Add),
-        LToken::Sub => parser_parse_binary_assign(parser, BinaryOp::Sub),
-        LToken::Mul => parser_parse_binary_assign(parser, BinaryOp::Mul),
-        LToken::Udiv => parser_parse_binary_assign(parser, BinaryOp::Udiv),
-        LToken::Urem => parser_parse_binary_assign(parser, BinaryOp::Urem),
-        LToken::Icmp => parser_parse_icmp_assign(parser),
-        LToken::Zext => parser_parse_cast_assign(parser, CastOp::Zext),
-        LToken::Trunc => parser_parse_cast_assign(parser, CastOp::Trunc),
-        LToken::IntToPtr => parser_parse_cast_assign(parser, CastOp::IntToPtr),
-        LToken::PtrToInt => parser_parse_cast_assign(parser, CastOp::PtrToInt),
-        LToken::Alloca => parser_parse_alloca_assign(parser),
-        LToken::Load => parser_parse_load_assign(parser),
-        LToken::Call => parser_parse_call_assign(parser),
+        LToken::Add => lparse_binary_assign(parser, BinaryOp::Add),
+        LToken::Sub => lparse_binary_assign(parser, BinaryOp::Sub),
+        LToken::Mul => lparse_binary_assign(parser, BinaryOp::Mul),
+        LToken::Udiv => lparse_binary_assign(parser, BinaryOp::Udiv),
+        LToken::Urem => lparse_binary_assign(parser, BinaryOp::Urem),
+        LToken::Icmp => lparse_icmp_assign(parser),
+        LToken::Zext => lparse_cast_assign(parser, CastOp::Zext),
+        LToken::Trunc => lparse_cast_assign(parser, CastOp::Trunc),
+        LToken::IntToPtr => lparse_cast_assign(parser, CastOp::IntToPtr),
+        LToken::PtrToInt => lparse_cast_assign(parser, CastOp::PtrToInt),
+        LToken::Alloca => lparse_alloca_assign(parser),
+        LToken::Load => lparse_load_assign(parser),
+        LToken::Call => lparse_call_assign(parser),
         _ => {
             let message: String = parser_expected_message(parser, &string("LLVM assignment operation"));
             parser_error(parser, &message)
@@ -5651,19 +5646,19 @@ fn parser_parse_assignment(parser: &mut Parser) -> AssignInstruction {
     AssignInstruction::Assign(target_register, operation)
 }
 
-fn parser_parse_binary_assign(parser: &mut Parser, operator: BinaryOp) -> AssignOp {
-    let ty: LType = parser_parse_type(parser);
-    let left: LValue = parser_parse_value(parser);
+fn lparse_binary_assign(parser: &mut LParser, operator: BinaryOp) -> AssignOp {
+    let ty: LType = lparse_type(parser);
+    let left: LValue = lparse_value(parser);
     parser_expect_value_type(parser, &left, &ty);
 
     parser_expect_token(parser, &LToken::Comma);
-    let right: LValue = parser_parse_value(parser);
+    let right: LValue = lparse_value(parser);
     parser_expect_value_type(parser, &right, &ty);
 
     AssignOp::Binary(operator, ty, left, right)
 }
 
-fn parser_parse_icmp_assign(parser: &mut Parser) -> AssignOp {
+fn lparse_icmp_assign(parser: &mut LParser) -> AssignOp {
     let predicate: IcmpOp = match parser_consume_current_token(parser) {
         LToken::Eq => IcmpOp::Eq,
         LToken::Ne => IcmpOp::Ne,
@@ -5677,19 +5672,19 @@ fn parser_parse_icmp_assign(parser: &mut Parser) -> AssignOp {
         },
     };
 
-    let ty: LType = parser_parse_type(parser);
-    let left: LValue = parser_parse_value(parser);
+    let ty: LType = lparse_type(parser);
+    let left: LValue = lparse_value(parser);
     parser_expect_value_type(parser, &left, &ty);
 
     parser_expect_token(parser, &LToken::Comma);
-    let right: LValue = parser_parse_value(parser);
+    let right: LValue = lparse_value(parser);
     parser_expect_value_type(parser, &right, &ty);
 
     AssignOp::Icmp(predicate, ty, left, right)
 }
 
-fn parser_parse_call_assign(parser: &mut Parser) -> AssignOp {
-    let call: Call = parser_parse_call(parser);
+fn lparse_call_assign(parser: &mut LParser) -> AssignOp {
+    let call: Call = lparse_call(parser);
 
     let Call::Call(return_type, _, _): &Call = &call;
     if llvmType_eq(return_type, &LType::Void) {
@@ -5699,14 +5694,14 @@ fn parser_parse_call_assign(parser: &mut Parser) -> AssignOp {
     AssignOp::Call(call)
 }
 
-fn parser_parse_cast_assign(parser: &mut Parser, operator: CastOp) -> AssignOp {
-    let from_type: LType = parser_parse_type(parser);
+fn lparse_cast_assign(parser: &mut LParser, operator: CastOp) -> AssignOp {
+    let from_type: LType = lparse_type(parser);
 
-    let value: LValue = parser_parse_value(parser);
+    let value: LValue = lparse_value(parser);
     parser_expect_value_type(parser, &value, &from_type);
 
     parser_expect_token(parser, &LToken::To);
-    let to_type: LType = parser_parse_type(parser);
+    let to_type: LType = lparse_type(parser);
 
     match &operator {
         CastOp::Zext => {
@@ -5744,55 +5739,55 @@ fn parser_parse_cast_assign(parser: &mut Parser, operator: CastOp) -> AssignOp {
     AssignOp::Cast(operator, to_type, value)
 }
 
-fn parser_parse_alloca_assign(parser: &mut Parser) -> AssignOp {
-    let allocated_type: LType = parser_parse_type(parser);
+fn lparse_alloca_assign(parser: &mut LParser) -> AssignOp {
+    let allocated_type: LType = lparse_type(parser);
     AssignOp::Alloca(allocated_type)
 }
 
-fn parser_parse_load_assign(parser: &mut Parser) -> AssignOp {
-    let loaded_type: LType = parser_parse_type(parser);
+fn lparse_load_assign(parser: &mut LParser) -> AssignOp {
+    let loaded_type: LType = lparse_type(parser);
     parser_expect_token(parser, &LToken::Comma);
 
     parser_expect_token(parser, &LToken::Ptr);
-    let address: LValue = parser_parse_value(parser);
+    let address: LValue = lparse_value(parser);
     parser_expect_value_type(parser, &address, &LType::Ptr);
 
     AssignOp::Load(loaded_type, address)
 }
 
-fn parser_parse_store(parser: &mut Parser) -> Instruction {
+fn lparse_store(parser: &mut LParser) -> Instruction {
     parser_expect_token(parser, &LToken::Store);
 
-    let store_type: LType = parser_parse_type(parser);
-    let value: LValue = parser_parse_value(parser);
+    let store_type: LType = lparse_type(parser);
+    let value: LValue = lparse_value(parser);
     parser_expect_value_type(parser, &value, &store_type);
 
     parser_expect_token(parser, &LToken::Comma);
     parser_expect_token(parser, &LToken::Ptr);
 
-    let address: LValue = parser_parse_value(parser);
+    let address: LValue = lparse_value(parser);
     parser_expect_value_type(parser, &address, &LType::Ptr);
 
     Instruction::Store(store_type, value, address)
 }
 
-fn parser_parse_call(parser: &mut Parser) -> Call {
-    let return_type: LType = parser_parse_type(parser);
+fn lparse_call(parser: &mut LParser) -> Call {
+    let return_type: LType = lparse_type(parser);
     let callee: String = parser_expect_identifier(parser, false);
 
     parser_expect_token(parser, &LToken::LParen);
     let mut arguments: Vec<LTypedValue> = vec_new::<LTypedValue>();
     if not(parser_current_token_eq(parser, &LToken::RParen)) {
-        let arg_type: LType = parser_parse_type(parser);
-        let arg_value: LValue = parser_parse_value(parser);
+        let arg_type: LType = lparse_type(parser);
+        let arg_value: LValue = lparse_value(parser);
         parser_expect_value_type(parser, &arg_value, &arg_type);
         vec_push::<LTypedValue>(&mut arguments, LTypedValue::Pair(arg_type, arg_value));
 
         while parser_current_token_eq(parser, &LToken::Comma) {
             parser_next_token(parser);
 
-            let arg_type: LType = parser_parse_type(parser);
-            let arg_value: LValue = parser_parse_value(parser);
+            let arg_type: LType = lparse_type(parser);
+            let arg_value: LValue = lparse_value(parser);
             parser_expect_value_type(parser, &arg_value, &arg_type);
             vec_push::<LTypedValue>(&mut arguments, LTypedValue::Pair(arg_type, arg_value));
         }
@@ -5802,7 +5797,7 @@ fn parser_parse_call(parser: &mut Parser) -> Call {
     Call::Call(return_type, callee, arguments)
 }
 
-fn parser_parse_type(parser: &mut Parser) -> LType {
+fn lparse_type(parser: &mut LParser) -> LType {
     match parser_consume_current_token(parser) {
         LToken::I1 => LType::I1,
         LToken::I8 => LType::I8,
@@ -5810,7 +5805,7 @@ fn parser_parse_type(parser: &mut Parser) -> LType {
         LToken::Void => LType::Void,
         LToken::Ptr => LType::Ptr,
         LToken::LBracket => {
-            let len: usize = parser_parse_integer(parser);
+            let len: usize = lparse_integer(parser);
             match parser_current_token(parser) {
                 LToken::X => {
                     parser_next_token(parser);
@@ -5820,7 +5815,7 @@ fn parser_parse_type(parser: &mut Parser) -> LType {
                     parser_error(parser, &message)
                 },
             }
-            let inner: LType = parser_parse_type(parser);
+            let inner: LType = lparse_type(parser);
             parser_expect_token(parser, &LToken::RBracket);
             LType::Array(len, box_new::<LType>(inner))
         },
@@ -5831,11 +5826,11 @@ fn parser_parse_type(parser: &mut Parser) -> LType {
     }
 }
 
-fn parser_parse_value(parser: &mut Parser) -> LValue {
+fn lparse_value(parser: &mut LParser) -> LValue {
     match parser_current_token(parser) {
         LToken::Global(_) => LValue::Global(parser_expect_identifier(parser, false)),
         LToken::Local(_) => LValue::Register(parser_expect_identifier(parser, true)),
-        LToken::Integer(_) => LValue::Literal(parser_parse_integer(parser)),
+        LToken::Integer(value) => LValue::Literal(lparse_integer(parser)),
         _ => {
             let message: String = parser_expected_message(parser, &string("LLVM value"));
             parser_error(parser, &message)
@@ -5843,7 +5838,7 @@ fn parser_parse_value(parser: &mut Parser) -> LValue {
     }
 }
 
-fn parser_parse_integer(parser: &mut Parser) -> usize {
+fn lparse_integer(parser: &mut LParser) -> usize {
     match parser_consume_current_token(parser) {
         LToken::Integer(value) => value,
         _ => {
@@ -6144,7 +6139,7 @@ fn emu_load_bytes(emulator: &Emu, address: usize, byte_count: usize) -> Value {
 
 /// Parse and emulate LLVM source and return the return value of `@main`.
 fn emulate(source: String, memory_size: usize, args: &Args) -> usize {
-    let ast: LAst = parser_parse_to_ast(source);
+    let ast: LAst = lparse_to_ast(source);
     let mut emulator: Emu = emu_new(memory_size, &ast);
 
     let argc: Value = Value::Int(args_len(args));
@@ -6173,8 +6168,7 @@ fn emu_execute_function(emulator: &mut Emu, ast: &LAst, name: &String, args: &Ve
 
             let mut i: usize = 0;
             while i < vec_len::<LParameter>(parameters) {
-                let parameter: &LParameter = vec_at::<LParameter>(parameters, i);
-                let LParameter::Parameter(name, _): &LParameter = parameter;
+                let LParameter::Parameter(name, _): &LParameter = vec_at::<LParameter>(parameters, i);
                 let value: &Value = vec_at::<Value>(args, i);
                 stringMap_insert_or_update::<Value>(&mut locals, name, value_clone(value));
                 i = i + 1;
@@ -6669,18 +6663,18 @@ fn lLexer_error(lexer: &LLexer, message: &String) -> ! {
 }
 
 /// Emit an LLVM parser error and panic.
-fn parser_error(parser: &Parser, message: &String) -> ! {
-    let file: &SourceFile = lLexer_sourcefile(parser_lexer(parser));
+fn parser_error(parser: &LParser, message: &String) -> ! {
+    let file: &SourceFile = lLexer_sourcefile(lparser_lexer(parser));
     report_error(file, message)
 }
 
 /// Emit an LLVM parser warning and continue.
-fn parser_warning(parser: &Parser, message: &String) {
-    let file: &SourceFile = lLexer_sourcefile(parser_lexer(parser));
+fn parser_warning(parser: &LParser, message: &String) {
+    let file: &SourceFile = lLexer_sourcefile(lparser_lexer(parser));
     report_warning(file, message)
 }
 
-fn parser_expected_message(parser: &Parser, expected: &String) -> String {
+fn parser_expected_message(parser: &LParser, expected: &String) -> String {
     let mut message: String = string("expected ");
     string_push_string(&mut message, expected);
     let token: &LToken = parser_current_token(parser);
