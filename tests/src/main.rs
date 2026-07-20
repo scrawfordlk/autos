@@ -1,32 +1,33 @@
+fn main() {}
+
 #[cfg(test)]
 mod tests {
-    #[allow(unused_imports)]
-    use super::*;
-
     use std::{
-        fs::{remove_file, write},
+        fs::{read_to_string, remove_file, write},
         path::{Path, PathBuf},
         process::{Command, Stdio, id},
+        sync::OnceLock,
         time::{SystemTime, UNIX_EPOCH},
-        vec::Vec,
     };
     use walkdir::WalkDir;
 
     #[test]
-    fn test_system() {
+    fn test_rust() {
         assert!(tool_available("rustc"), "rustc is required");
         assert!(tool_available("clang"), "clang is required");
         assert!(tool_available("lli"), "lli is required");
-        assert!(tool_available("diff"), "lli is required"); // used to check fixpoint
+        assert!(tool_available("diff"), "lli is required");
 
         for source_path in rust_sources() {
             let label = source_label(&source_path);
 
             let (emu_exit, llvm_path) = compile_emulate(&source_path);
 
-            let source = std::fs::read_to_string(&source_path).expect("can read rust test source");
+            // prepend Rust files with special headers to avoid warnings
+            let source = read_to_string(&source_path).expect("can read rust test source");
             let rust_source = rustc_source(&source);
             let rust_source_path = write_file(&format!("{}-source", label), "rs", rust_source.as_str());
+
             let rustc_exe_path = unique_path(&format!("{}-rustc", label), "bin");
             run_rustc(&rust_source_path, &rustc_exe_path);
             let rustc_exit = run_binary(&rustc_exe_path);
@@ -94,19 +95,15 @@ mod tests {
 
     #[test]
     fn test_self_compilation() {
-        let source = "src/main.rs";
-        let l1 = "level1";
-        let l2 = "level2";
-        let level1 = unique_path(&format!("{}-autos", l1), "ll");
-        let level2 = unique_path(&format!("{}-autos", l2), "ll");
+        let source = autos_root().join("src/main.rs");
+        let l1 = unique_path("level1-autos-bin", "bin");
+        let level1 = unique_path("level1-autos", "ll");
+        let level2 = unique_path("level2-autos", "ll");
 
         // boostrapping & self-compiling autos
-        let status = Command::new("cargo")
-            .env("RUSTFLAGS", "-Awarnings") // hide warnings
-            .arg("run")
-            .arg("--")
+        let status = Command::new(autos_binary())
             .arg("-c")
-            .arg(source)
+            .arg(&source)
             .arg("-o")
             .arg(&level1)
             .stdout(Stdio::null())
@@ -119,6 +116,7 @@ mod tests {
 
         // lower LLVM-IR into machine code using clang
         let status = Command::new("clang")
+            .current_dir("..")
             .arg(&level1)
             .arg("-o")
             .arg(&l1)
@@ -131,11 +129,9 @@ mod tests {
         );
 
         // self-compile using the self-compiled binary
-        let mut compiler = PathBuf::from(".");
-        compiler.push(&l1);
-        let status = Command::new(&compiler)
+        let status = Command::new(&l1)
             .arg("-c")
-            .arg(source)
+            .arg(&source)
             .arg("-o")
             .arg(&level2)
             .stdout(Stdio::null())
@@ -148,6 +144,7 @@ mod tests {
 
         // Check if the fixpoint was reached
         let status = Command::new("diff")
+            .current_dir("..")
             .arg(&level1)
             .arg(&level2)
             .status()
@@ -159,6 +156,45 @@ mod tests {
 
         remove_file(&level1).expect("can remove level 1 generated LLVM-IR code");
         remove_file(&l1).expect("can remove clang-compiled level 1 self-compiled autos binary");
+        remove_file(&level2).expect("can remove level 2 generated LLVM-IR code");
+    }
+
+    #[test]
+    fn test_emulator_self_compilation() {
+        let source = autos_root().join("src/main.rs");
+        let level1 = unique_path("fixpoint-emu-level1", "ll");
+        let level2 = unique_path("fixpoint-emu-level2", "ll");
+
+        // bootstrap and self-compile via emulation
+        let status = Command::new(autos_binary())
+            .arg("-c")
+            .arg(&source)
+            .arg("-o")
+            .arg(&level1)
+            .arg("-e")
+            .arg("-c")
+            .arg(&source)
+            .arg("-o")
+            .arg(&level2)
+            .stdout(Stdio::null())
+            .status()
+            .expect("able to self-compile via emulation");
+        assert!(
+            status.success(),
+            "autos can self-compile through the -e emulation path"
+        );
+
+        let status = Command::new("diff")
+            .arg(&level1)
+            .arg(&level2)
+            .status()
+            .expect("able to diff LLVM-IR outputs from emulated self-compilation");
+        assert!(
+            status.code().expect("diff exits with an exit code") == 0,
+            "self-compilation through emulation reaches a fixpoint"
+        );
+
+        remove_file(&level1).expect("can remove level 1 generated LLVM-IR code");
         remove_file(&level2).expect("can remove level 2 generated LLVM-IR code");
     }
 
@@ -178,30 +214,37 @@ mod tests {
         path
     }
 
-    fn rustc_source(source: &str) -> std::string::String {
+    fn rustc_source(source: &str) -> String {
         format!(
-            "#![allow(overflowing_literals, unused_parens, unused_assignments, unreachable_code, unused_variables, dead_code, unused_must_use, non_snake_case)]\n{}",
+            "#![allow(
+                overflowing_literals,
+                unused_parens,
+                unused_assignments,
+                unreachable_code,
+                unused_variables,
+                dead_code,
+                unused_must_use,
+                non_snake_case
+            )]{}",
             source
         )
     }
 
     fn tool_available(tool: &str) -> bool {
-        match Command::new(tool)
+        Command::new(tool)
             .arg("--version")
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status()
-        {
-            Ok(status) => status.success(),
-            Err(_) => false,
-        }
+            .map(|s| s.success())
+            .unwrap_or(false)
     }
 
     fn run_binary(path: &Path) -> i32 {
         let status = Command::new(path).status().expect("able to execute binary");
         status
             .code()
-            .expect(&format!("binary {} terminates with exit code", path.display()))
+            .unwrap_or_else(|| panic!("binary {} terminates with exit code", path.display()))
     }
 
     fn run_lli(path: &Path) -> i32 {
@@ -214,6 +257,7 @@ mod tests {
 
     fn run_clang(path: &Path, output_path: &Path) {
         let status = Command::new("clang")
+            .current_dir("..")
             .arg(path)
             .arg("-o")
             .arg(output_path)
@@ -225,6 +269,7 @@ mod tests {
 
     fn run_rustc(path: &Path, output_path: &Path) {
         let status = Command::new("rustc")
+            .current_dir("..")
             .arg("--edition")
             .arg("2024")
             .arg(path)
@@ -236,43 +281,52 @@ mod tests {
     }
 
     fn rust_sources() -> Vec<PathBuf> {
-        let mut sources: Vec<_> = WalkDir::new("tests/rust")
+        let mut sources: Vec<_> = WalkDir::new("rust")
             .into_iter()
             .filter_map(Result::ok)
             .filter(|e| e.file_type().is_file())
-            .map(|e| e.path().to_str().expect("is string").to_string())
-            .map(PathBuf::from)
+            .map(|e| e.path().to_path_buf())
+            .filter(|e| {
+                !e.file_name()
+                    .and_then(|file_name| file_name.to_str())
+                    .is_some_and(|file_name| file_name.starts_with('_'))
+            }) // ignore _*
+            .map(|e| tests_root().join(e))
             .collect();
         sources.sort_unstable();
         sources
     }
 
     fn llvm_sources() -> Vec<PathBuf> {
-        let mut sources: Vec<_> = WalkDir::new("tests/llvm")
+        let mut sources: Vec<_> = WalkDir::new("llvm")
             .into_iter()
             .filter_map(Result::ok)
             .filter(|e| e.file_type().is_file())
-            .map(|e| e.path().to_str().expect("is string").to_string())
-            .map(PathBuf::from)
+            .map(|e| e.path().to_path_buf())
+            .filter(|e| {
+                !e.file_name()
+                    .and_then(|file_name| file_name.to_str())
+                    .is_some_and(|file_name| file_name.starts_with('_'))
+            }) // ignore _*
+            .map(|e| tests_root().join(e))
             .collect();
         sources.sort_unstable();
         sources
     }
 
     fn compile_emulate(source: &Path) -> (i32, PathBuf) {
-        let status = Command::new("cargo")
-            .env("RUSTFLAGS", "-Awarnings") // hide warnings
-            .arg("run")
-            .arg("--")
+        let stem = source.file_stem().and_then(|s| s.to_str()).unwrap_or("code");
+        let output = unique_path(stem, "ll");
+        let status = Command::new(autos_binary())
             .arg("-c")
             .arg(source)
+            .arg("-o")
+            .arg(&output)
             .arg("-e")
             .stdout(Stdio::null())
             .status()
             .expect("able to run bootstrapped autos");
 
-        let stem = source.file_stem().and_then(|s| s.to_str()).unwrap_or("code");
-        let output = PathBuf::from(format!("{}.ll", stem));
         let error_msg = format!(
             "returns an exit code for source {}",
             source.as_os_str().to_string_lossy()
@@ -281,10 +335,7 @@ mod tests {
     }
 
     fn emulate_llvm(path: &Path) -> i32 {
-        let status = Command::new("cargo")
-            .env("RUSTFLAGS", "-Awarnings") // hide warnings
-            .arg("run")
-            .arg("--")
+        let status = Command::new(autos_binary())
             .arg("-e")
             .arg(path)
             .status()
@@ -292,9 +343,46 @@ mod tests {
         status.code().expect("returns an exit code")
     }
 
-    fn source_label(path: &Path) -> std::string::String {
+    fn source_label(path: &Path) -> String {
         path.file_stem()
             .and_then(|stem| stem.to_str())
             .map_or_else(|| "source".to_owned(), ToOwned::to_owned)
+    }
+
+    fn tests_root() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    }
+
+    fn autos_root() -> PathBuf {
+        tests_root()
+            .parent()
+            .expect("tests crate has parent directory")
+            .to_path_buf()
+    }
+
+    fn autos_binary() -> &'static Path {
+        static AUTOS_BINARY: OnceLock<PathBuf> = OnceLock::new();
+        AUTOS_BINARY
+            .get_or_init(|| {
+                let root = autos_root();
+                let binary = root.join("target/release/autos");
+
+                if !binary.is_file() {
+                    let status = Command::new("cargo")
+                        .current_dir(&root)
+                        .arg("build")
+                        .arg("--release")
+                        .status()
+                        .expect("able to compile autos in release mode");
+                    assert!(
+                        status.success(),
+                        "autos crate compiles in release mode for test execution"
+                    );
+                }
+
+                assert!(binary.is_file(), "autos release binary exists after compilation");
+                binary
+            })
+            .as_path()
     }
 }

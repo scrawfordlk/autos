@@ -32,8 +32,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y llvm clang
-          cargo build --verbose
-          cargo test --verbose
+          make test
 
       - name: Build and test (ARM64/RISC-V via QEMU)
         if: matrix.arch != 'amd64'

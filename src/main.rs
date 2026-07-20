@@ -12,8 +12,7 @@
     while_true,
     non_snake_case
 )] // attributes such as these are ignored by autos
-#![cfg_attr(not(test), no_main)]
-#[cfg(not(test))]
+#![no_main]
 #[unsafe(no_mangle)]
 fn main(argc: usize, argv: *mut *mut u8) {
     let args: Args = args_new(argc, argv);
@@ -1209,20 +1208,6 @@ fn parse_language(lexer: &mut RLexer) -> RAst {
             RToken::Enum => {
                 let enumeration: RAstItem = RAstItem::Enum(parse_enum(lexer));
                 vec_push::<RAstItem>(&mut items, enumeration);
-            },
-            RToken::Identifier(name) => {
-                if str_eq(name, "include") {
-                    // ignore `include!("...");`
-                    rLexer_next_token(lexer);
-                    expect_token(lexer, &RToken::Bang);
-                    expect_token(lexer, &RToken::LParen);
-                    rLexer_next_token(lexer); // skip string literal
-                    expect_token(lexer, &RToken::RParen);
-                    expect_token(lexer, &RToken::SemiColon);
-                } else {
-                    let message: String = string("expected function, enum, or extern block, but got a name");
-                    parse_error(lexer, &message);
-                }
             },
             token => {
                 let mut message: String = string("expected function, enum, or extern block, but got: ");
@@ -8509,9 +8494,3 @@ unsafe extern "C" {
     fn write(fd: usize, buf: *mut u8, count: usize) -> usize;
     fn read(fd: usize, buf: *mut u8, count: usize) -> usize;
 }
-
-// -----------------------------------------------------------------
-// -------------------------- Tests --------------------------------
-// -----------------------------------------------------------------
-
-include!("test_system.rs"); // ignored by autos

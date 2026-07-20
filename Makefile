@@ -4,6 +4,9 @@ autos: src/main.rs
 self: clean autos
 	./autos -c src/main.rs -o autos.ll
 
+test: clean autos
+	cd tests && cargo test --verbose
+
 clean:
 	cargo clean
 	rm -f autos autos.ll
