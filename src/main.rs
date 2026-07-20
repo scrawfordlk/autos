@@ -4391,7 +4391,8 @@ fn codegen_mangle_name(codegen: &Codegen, callee: &String) -> String {
         },
         _ => {},
     }
-    string_replace_all(&mut name, &string(":<>& *"), &string("...$_."))
+    string_replace_all(&mut name, ":<>& *", "...$_.");
+    name
 }
 
 /// Construct a call instruction and return it.
@@ -7743,11 +7744,10 @@ fn str_eq(s1: &String, s2: &str) -> bool {
     if len != str::len(s2) {
         return false;
     }
-    let str_ptr: *mut u8 = str::as_ptr(s2) as *mut u8;
     let mut i: usize = 0;
     while i < len {
         let c1: char = string_at(s1, i);
-        let c2: char = unsafe { *ptr_add::<u8>(str_ptr, i) as char };
+        let c2: char = str_at(s2, i);
         if c1 != c2 {
             return false;
         }
@@ -8037,6 +8037,14 @@ fn string_at(String::Inner(bytes): &String, index: usize) -> char {
     *vec_at::<u8>(bytes, index) as char
 }
 
+/// Get the character at the given index and panic if the index is out of bounds.
+fn str_at(str: &str, index: usize) -> char {
+    if index >= str::len(str) {
+        panic("out-of-bounds &str index");
+    }
+    unsafe { *ptr_add::<u8>(str::as_ptr(str) as *mut u8, index) as char }
+}
+
 /// Set a character in a string. Return false if the index is out of bounds.
 fn string_set(String::Inner(vec): &mut String, index: usize, character: char) -> bool {
     vec_set::<u8>(vec, index, character as u8)
@@ -8067,25 +8075,22 @@ fn string_push_string(String::Inner(bytes): &mut String, String::Inner(other_byt
 
 /// Replace all characters in `string` that are contained in `old_chars` and replace them with their
 /// counterpart in `new_chars` based on the corresponding index.
-fn string_replace_all(string: &mut String, old_chars: &String, new_chars: &String) -> String {
-    if string_len(old_chars) != string_len(new_chars) {
-        return string_clone(string);
+fn string_replace_all(string: &mut String, old_chars: &str, new_chars: &str) {
+    if str::len(old_chars) != str::len(new_chars) {
+        return;
     }
-    let mut replaced: String = string_with_capacity(string_len(string));
     let mut i: usize = 0;
     while i < string_len(string) {
-        let mut c: char = string_at(string, i);
+        let c: char = string_at(string, i);
         let mut j: usize = 0;
-        while j < string_len(old_chars) {
-            if c == string_at(old_chars, j) {
-                c = string_at(new_chars, j);
+        while j < str::len(old_chars) {
+            if c == str_at(old_chars, j) {
+                string_set(string, i, str_at(new_chars, j));
             }
             j = j + 1;
         }
-        string_push(&mut replaced, c);
         i = i + 1;
     }
-    replaced
 }
 
 /// Converts a string into an integer given the base.
