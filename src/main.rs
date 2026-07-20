@@ -6848,7 +6848,7 @@ fn to_uppercase(c: char) -> char {
 }
 
 /// Convert a digit into an ascii digit.
-fn to_ascii_digit(digit: u8) -> char {
+fn digit_to_ascii(digit: u8) -> char {
     if digit < 10 as u8 {
         ('0' as u8 + digit) as char
     } else {
@@ -8211,26 +8211,24 @@ fn integer_to_string(integer: usize) -> String {
 }
 
 /// Convert an integer into a string.
-fn integer_to_string_base(mut integer: usize, base: usize) -> String {
+fn integer_to_string_base(integer: usize, base: usize) -> String {
     if integer == 0 {
-        return string("0");
+        string("0")
+    } else {
+        let mut number: String = string_new();
+        int2string(&mut number, integer, base);
+        number
     }
-    let mut digits: Vec<u8> = vec_new::<u8>();
-    while integer > 0 {
-        let digit: u8 = (integer % base) as u8;
-        vec_push::<u8>(&mut digits, digit);
-        integer = integer / base;
+}
+
+// Converts integer > 0 to strings by appending it to `number`.
+fn int2string(number: &mut String, integer: usize, base: usize) {
+    if integer == 0 {
+        return;
     }
-    let mut number: String = string_with_capacity(vec_len::<u8>(&digits));
-    let mut i: usize = vec_len::<u8>(&digits) - 1;
-    while i > 0 {
-        let digit: u8 = *vec_at::<u8>(&digits, i);
-        let character: char = to_ascii_digit(digit);
-        string_push(&mut number, character);
-        i = i - 1;
-    }
-    string_push(&mut number, to_ascii_digit(*vec_at::<u8>(&digits, 0)));
-    number
+    int2string(number, integer / base, base);
+    let digit: u8 = (integer % base) as u8;
+    string_push(number, digit_to_ascii(digit));
 }
 
 /// Convert a token into a string.
