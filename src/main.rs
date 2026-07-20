@@ -5516,7 +5516,7 @@ fn lparse_declare(parser: &mut LParser) {
             ));
         }
         BuiltIn::Open
-    } else if or(str_eq(&name, "read"), str_eq(&name, "read")) {
+    } else if or(str_eq(&name, "read"), str_eq(&name, "write")) {
         is_incorrect = not(vec_len::<LParameter>(&parameters) == 3);
         if not(is_incorrect) {
             let LParameter::Parameter(_, ty1): &LParameter = vec_at::<LParameter>(&parameters, 0);
