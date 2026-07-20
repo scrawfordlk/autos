@@ -8054,7 +8054,7 @@ enum String {
 
 /// Create a new empty string.
 fn string_new() -> String {
-    string_with_capacity(10)
+    String::Inner(vec_new::<u8>())
 }
 
 /// Create a new string with the specified capacity
