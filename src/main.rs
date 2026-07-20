@@ -5040,9 +5040,7 @@ fn lparser_ast_mut(LParser::Parser(_, ast, _, _): &mut LParser) -> &mut LAst {
 
 /// Insert register name. Returns false on duplicate.
 fn parser_symtable_insert(LParser::Parser(_, _, locals, _): &mut LParser, name: &String, ty: LType) -> bool {
-    let is_defined: bool = stringMap_contains::<LType>(locals, name);
-    stringMap_insert_or_update::<LType>(locals, name, ty);
-    not(is_defined)
+    stringMap_insert_or_update::<LType>(locals, name, ty)
 }
 
 /// Lookup a register type in the local symbol table.
@@ -5238,12 +5236,11 @@ fn lAst_functions_mut(LAst::AST(_, functions): &mut LAst) -> &mut StringMap<LFun
 }
 
 /// Insert a function entry into the AST. Returns false on duplicate name.
-fn lAst_insert_function(ast: &mut LAst, name: &String, function: LFunction) -> bool {
-    if stringMap_contains::<LFunction>(lAst_functions(ast), name) {
-        false
-    } else {
-        stringMap_insert_or_update::<LFunction>(lAst_functions_mut(ast), name, function);
-        true
+fn parser_lAst_insert_function(parser: &mut LParser, name: &String, function: LFunction) {
+    let LParser::Parser(_, ast, _, _): &mut LParser = parser;
+    let functions: &mut StringMap<LFunction> = lAst_functions_mut(ast);
+    if not(stringMap_insert_or_update::<LFunction>(functions, name, function)) {
+        parser_error(parser, &string("duplicate LLVM function definition"));
     }
 }
 
@@ -5477,8 +5474,8 @@ fn lparse_function(parser: &mut LParser) {
     let function_name: String = parser_expect_identifier(parser, false);
 
     parser_symtable_reset(parser);
-    let parameters: Vec<LParameter> = lparse_parameters(parser, true);
-    parser_set_register_count(parser, vec_len::<LParameter>(&parameters));
+    let params: Vec<LParameter> = lparse_parameters(parser, true);
+    parser_set_register_count(parser, vec_len::<LParameter>(&params));
 
     parser_expect_token(parser, &LToken::LBrace);
     let mut blocks: StringMap<Vec<Instruction>> = stringMap_new::<Vec<Instruction>>();
@@ -5488,22 +5485,18 @@ fn lparse_function(parser: &mut LParser) {
     while not(parser_current_token_eq(parser, &LToken::RBrace)) {
         let label: String = parser_expect_identifier(parser, true);
         let block: Vec<Instruction> = lparse_instructions(parser);
-        if stringMap_contains::<Vec<Instruction>>(&blocks, &label) {
+        if not(stringMap_insert_or_update::<Vec<Instruction>>(
+            &mut blocks,
+            &label,
+            block,
+        )) {
             parser_error(parser, &string("Duplicate basic block labels detected"));
         }
-        stringMap_insert_or_update::<Vec<Instruction>>(&mut blocks, &label, block);
     }
     parser_expect_token(parser, &LToken::RBrace);
 
-    let function: LFunction =
-        LFunction::Function(parameters, first_label, blocks, parser_register_count(parser));
-    if not(lAst_insert_function(
-        lparser_ast_mut(parser),
-        &function_name,
-        function,
-    )) {
-        parser_error(parser, &string("duplicate LLVM function definition"));
-    }
+    let function: LFunction = LFunction::Function(params, first_label, blocks, parser_register_count(parser));
+    parser_lAst_insert_function(parser, &function_name, function);
 }
 
 fn lparse_declare(parser: &mut LParser) {
@@ -5581,9 +5574,7 @@ fn lparse_declare(parser: &mut LParser) {
     }
 
     let function: LFunction = LFunction::BuiltIn(builtin);
-    if not(lAst_insert_function(lparser_ast_mut(parser), &name, function)) {
-        parser_error(parser, &string("duplicate LLVM function declaration"));
-    }
+    parser_lAst_insert_function(parser, &name, function);
 }
 
 /// Parse parameters of a function.
@@ -7102,7 +7093,8 @@ fn stringMap_insert<T>(map: &mut StringMap<T>, key: String, value: T) {
 }
 
 /// Insert a key/value pair into the map or update the value if the key is already present.
-fn stringMap_insert_or_update<T>(map: &mut StringMap<T>, key: &String, value: T) {
+/// Returns true if the key was not yet present and hence newly inserted.
+fn stringMap_insert_or_update<T>(map: &mut StringMap<T>, key: &String, value: T) -> bool {
     let bucket: &mut Vec<StringMapEntry<T>> = stringMap_bucket_mut::<T>(map, key);
     let mut nth: usize = vec_len::<StringMapEntry<T>>(bucket);
     while nth > 0 {
@@ -7110,11 +7102,12 @@ fn stringMap_insert_or_update<T>(map: &mut StringMap<T>, key: &String, value: T)
             vec_at_mut::<StringMapEntry<T>>(bucket, nth - 1);
         if string_eq(key, other_key) {
             *entry_value = value;
-            return;
+            return false;
         }
         nth = nth - 1;
     }
     vec_push::<StringMapEntry<T>>(bucket, StringMapEntry::<T>::Entry(string_clone(key), value));
+    true
 }
 
 /// Get a shared reference to the value for a key.
@@ -7159,14 +7152,6 @@ fn stringMap_get_mut<'a, T>(map: &'a mut StringMap<T>, key: &String) -> Option<&
         nth = nth - 1;
     }
     Option::<&mut T>::None
-}
-
-/// Check whether a key exists.
-fn stringMap_contains<T>(map: &StringMap<T>, key: &String) -> bool {
-    match stringMap_get::<T>(map, key) {
-        Option::Some(_) => true,
-        Option::None => false,
-    }
 }
 
 /// Remove the first entry with key `key` and return true if it was removed.
@@ -7249,9 +7234,7 @@ fn stringMapStack_insert<T>(stack: &mut StringMapStack<T>, name: &String, value:
 
     let idx: usize = *top - 1;
     let scope: &mut StringMap<T> = vec_at_mut::<StringMap<T>>(scopes, idx);
-    let already_used: bool = stringMap_contains::<T>(scope, name);
-    stringMap_insert_or_update::<T>(scope, name, value);
-    already_used
+    not(stringMap_insert_or_update::<T>(scope, name, value))
 }
 
 /// Look up a value in any scope.
