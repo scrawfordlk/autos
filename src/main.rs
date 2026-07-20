@@ -8064,7 +8064,7 @@ fn string_with_capacity(initial_capacity: usize) -> String {
 
 /// Create an owned string from a string slice.
 fn string(str: &str) -> String {
-    let mut s: String = string_new();
+    let mut s: String = string_with_capacity(str::len(str));
     string_push_str(&mut s, str);
     s
 }
