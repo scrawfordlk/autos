@@ -846,7 +846,7 @@ fn rAstPatternLiteral_value(literal: &RAstPatternLiteral) -> usize {
 }
 
 /// Return the size of the given type in bytes.
-fn rType_size(codegen: &Codegen, icg: &ICodegen, ty: &RType) -> usize {
+fn rType_size(codegen: &mut Codegen, icg: &ICodegen, ty: &RType) -> usize {
     match ty {
         RType::U8 | RType::Char | RType::Bool => 1,
         RType::Usize | RType::Reference(_, _) | RType::RawPointerMut(_) => size_of::<usize>(),
@@ -858,7 +858,22 @@ fn rType_size(codegen: &Codegen, icg: &ICodegen, ty: &RType) -> usize {
             };
             match iCodegen_search_global(icg, name) {
                 Option::Some(item) => match item {
-                    Item::Enum(rast_enum) => rAstEnum_size(codegen, icg, rast_enum, &generic),
+                    Item::Enum(rast_enum) => {
+                        match codegen_check_enum_size(codegen, rast_enum) {
+                            Option::Some(size) => size, // return memoised size
+                            Option::None => {
+                                let size: usize = rAstEnum_size(codegen, icg, rast_enum, &generic);
+                                let mut mangled_name: String = string_clone(name);
+                                if is_some::<RType>(&generic) {
+                                    string_push(&mut mangled_name, '.');
+                                    let type_name: String = rType_to_string(&unwrap::<RType>(generic));
+                                    string_push_string(&mut mangled_name, &type_name)
+                                }
+                                codegen_cache_enum_size(codegen, mangled_name, size);
+                                size
+                            },
+                        }
+                    },
                     _ => 16, // assume that it is the built-in &str (8 bytes for pointer, 8 bytes for length)
                 },
                 _ => 16, // assume that it is the built-in &str (8 bytes for pointer, 8 bytes for length)
@@ -872,7 +887,7 @@ fn rType_size(codegen: &Codegen, icg: &ICodegen, ty: &RType) -> usize {
 }
 
 /// Return the size of an enum in bytes.
-fn rAstEnum_size(codegen: &Codegen, icg: &ICodegen, e: &RAstEnum, generic: &Option<RType>) -> usize {
+fn rAstEnum_size(codegen: &mut Codegen, icg: &ICodegen, e: &RAstEnum, generic: &Option<RType>) -> usize {
     let RAstEnum::Enum(_, variants, _): &RAstEnum = e;
     let mut max_size: usize = 0;
     let mut i: usize = 0;
@@ -925,7 +940,7 @@ fn variants_get_discriminator(variants: &Vec<RAstVariant>, variant: &String) -> 
 }
 
 /// Convert a Rust type into a LLVM-IR type name.
-fn rType_to_llvm_name(codegen: &Codegen, icg: &ICodegen, ty: &RType) -> String {
+fn rType_to_llvm_name(codegen: &mut Codegen, icg: &ICodegen, ty: &RType) -> String {
     match ty {
         RType::U8 | RType::Char => string("i8"),
         RType::Usize => string("i64"), // assume 64-bit for now
@@ -1900,18 +1915,18 @@ fn insert_builtin_functions(table: &mut StringMap<Item>) {
     vec_push::<RType>(&mut parameters, str_type);
     let return_type: RType = RType::RawPointerMut(box_new::<RType>(RType::U8));
     let item: Item = Item::Function(return_type, parameters, false, false);
-    stringMap_insert_or_update::<Item>(table, &as_ptr, item);
+    stringMap_insert::<Item>(table, as_ptr, item);
 
     let len: String = string("str::len");
     let mut parameters: Vec<RType> = vec_new::<RType>();
     let str_type: RType = RType::Enum(string("&str"), Option::<Box<RType>>::None);
     vec_push::<RType>(&mut parameters, str_type);
     let item: Item = Item::Function(RType::Usize, parameters, false, false);
-    stringMap_insert_or_update::<Item>(table, &len, item);
+    stringMap_insert::<Item>(table, len, item);
 
     let sizeof: String = string("size_of");
     let item: Item = Item::Function(RType::Usize, vec_new::<RType>(), false, true);
-    stringMap_insert_or_update::<Item>(table, &sizeof, item);
+    stringMap_insert::<Item>(table, sizeof, item);
 }
 
 /// Semantic analysis state.
@@ -2895,8 +2910,15 @@ fn semantic_check_pattern(
 
 /// Type that encapsulates the mutable state during LLVM-IR code generation from an AST.
 enum Codegen {
-    /// llvm code, current function, SSA counter, local symbol table
-    Gen(Code, String, Counter, StringMapStack<STPair>, Generic),
+    /// llvm code, current function, SSA counter, local symbol tables, generic, cached enum sizes
+    Gen(
+        Code,
+        String,
+        Counter,
+        StringMapStack<STPair>,
+        Generic,
+        StringMap<usize>,
+    ),
 }
 
 /// Type that encapsulates the immutable information needed by the code generator.
@@ -2929,53 +2951,54 @@ fn iCodegen_search_global<'a>(codegen: &'a ICodegen, name: &String) -> Option<&'
 }
 
 fn codegen_new() -> Codegen {
-    let local_variables: StringMapStack<STPair> = stringMapStack_new::<STPair>();
+    let locals: StringMapStack<STPair> = stringMapStack_new::<STPair>();
     let counter: Counter = Counter::Counter(0, 0);
-    Codegen::Gen(code_new(), string_new(), counter, local_variables, generic_new())
+    let sizes: StringMap<usize> = stringMap_new::<usize>();
+    Codegen::Gen(code_new(), string_new(), counter, locals, generic_new(), sizes)
 }
 
 /// Get a shared reference to the code.
-fn codegen_code(Codegen::Gen(code, _, _, _, _): &Codegen) -> &Code {
+fn codegen_code(Codegen::Gen(code, _, _, _, _, _): &Codegen) -> &Code {
     code
 }
 
 /// Get a mutable reference to the code.
-fn codegen_code_mut(Codegen::Gen(code, _, _, _, _): &mut Codegen) -> &mut Code {
+fn codegen_code_mut(Codegen::Gen(code, _, _, _, _, _): &mut Codegen) -> &mut Code {
     code
 }
 
 /// Sets the current function's name to the given name.
-fn codegen_set_current_function(Codegen::Gen(_, current_function, _, _, _): &mut Codegen, function: String) {
-    *current_function = function;
+fn codegen_set_current_function(Codegen::Gen(_, current_function, _, _, _, _): &mut Codegen, func: String) {
+    *current_function = func;
 }
 
-fn codegen_current_function(Codegen::Gen(_, function, _, _, _): &Codegen) -> &String {
-    function
+fn codegen_current_function(Codegen::Gen(_, func, _, _, _, _): &Codegen) -> &String {
+    func
 }
 
 /// Return true if the current function is the main function.
-fn codegen_is_main(Codegen::Gen(_, function, _, _, _): &Codegen) -> bool {
+fn codegen_is_main(Codegen::Gen(_, function, _, _, _, _): &Codegen) -> bool {
     str_eq(function, "main")
 }
 
 /// Push a new empty scope onto the stack.
-fn codegen_push_scope(Codegen::Gen(_, _, _, stack, _): &mut Codegen) {
+fn codegen_push_scope(Codegen::Gen(_, _, _, stack, _, _): &mut Codegen) {
     stringMapStack_push_empty::<STPair>(stack);
 }
 
 /// Pop the last pushed scope.
-fn codegen_pop_scope(Codegen::Gen(_, _, _, stack, _): &mut Codegen) -> bool {
+fn codegen_pop_scope(Codegen::Gen(_, _, _, stack, _, _): &mut Codegen) -> bool {
     stringMapStack_pop::<STPair>(stack)
 }
 
 /// Insert one variable slot into the current scope.
 fn codegen_scope_insert(codegen: &mut Codegen, name: &String, ty: RType, pointer_name: String) {
-    let Codegen::Gen(_, _, _, stack, _): &mut Codegen = codegen;
+    let Codegen::Gen(_, _, _, stack, _, _): &mut Codegen = codegen;
     stringMapStack_insert::<STPair>(stack, name, STPair::ST(pointer_name, ty));
 }
 
 /// Lookup variable slot information.
-fn codegen_scope_lookup(Codegen::Gen(_, _, _, stack, _): &Codegen, name: &String) -> STPair {
+fn codegen_scope_lookup(Codegen::Gen(_, _, _, stack, _, _): &Codegen, name: &String) -> STPair {
     match stringMapStack_get::<STPair>(stack, name) {
         Option::Some(variable) => stPair_clone(variable),
         Option::None => STPair::ST(string_new(), RType::Unit), // semantic analysis makes this impossible
@@ -2983,21 +3006,32 @@ fn codegen_scope_lookup(Codegen::Gen(_, _, _, stack, _): &Codegen, name: &String
 }
 
 /// Get the current value of the SSA numbering scheme.
-fn codegen_ssa_counter(Codegen::Gen(_, _, Counter::Counter(locals, _), _, _): &Codegen) -> usize {
+fn codegen_ssa_counter(Codegen::Gen(_, _, Counter::Counter(locals, _), _, _, _): &Codegen) -> usize {
     *locals
 }
 
 /// Increment the SSA numbering value by one.
-fn codegen_increment_ssa_counter(Codegen::Gen(_, _, Counter::Counter(locals, _), _, _): &mut Codegen) {
+fn codegen_increment_ssa_counter(Codegen::Gen(_, _, Counter::Counter(locals, _), _, _, _): &mut Codegen) {
     *locals = *locals + 1;
 }
 
 /// Reset the SSA numbering value to 0.
-fn codegen_set_ssa_counter(
-    Codegen::Gen(_, _, Counter::Counter(counter, _), _, _): &mut Codegen,
-    value: usize,
-) {
+fn codegen_set_ssa_counter(codegen: &mut Codegen, value: usize) {
+    let Codegen::Gen(_, _, Counter::Counter(counter, _), _, _, _): &mut Codegen = codegen;
     *counter = value;
+}
+
+fn codegen_check_enum_size(codegen: &mut Codegen, RAstEnum::Enum(name, _, _): &RAstEnum) -> Option<usize> {
+    let Codegen::Gen(_, _, _, _, _, cached_sizes): &mut Codegen = codegen;
+    match stringMap_get::<usize>(cached_sizes, name) {
+        Option::Some(size) => Option::<usize>::Some(*size),
+        Option::None => Option::<usize>::None,
+    }
+}
+
+fn codegen_cache_enum_size(codegen: &mut Codegen, name: String, size: usize) {
+    let Codegen::Gen(_, _, _, _, _, cached_sizes): &mut Codegen = codegen;
+    stringMap_insert::<usize>(cached_sizes, name, size);
 }
 
 /// Instantiate the generic type parameter with the given type.
@@ -3010,23 +3044,23 @@ fn codegen_instantiate_generic(codegen: &mut Codegen, name: &String, ty: &RType)
         },
         _ => rType_clone(ty),
     };
-    let Codegen::Gen(_, _, _, _, generic): &mut Codegen = codegen;
+    let Codegen::Gen(_, _, _, _, generic, _): &mut Codegen = codegen;
     generic_instantiate(generic, name, &instance)
 }
 
 /// Get the type the generic type parameter is mapped to.
 /// Returns None if there is no mapping for the generic type parameter.
-fn codegen_generic_instance(Codegen::Gen(_, _, _, _, generic): &Codegen, name: &String) -> Option<RType> {
+fn codegen_generic_instance(Codegen::Gen(_, _, _, _, generic, _): &Codegen, name: &String) -> Option<RType> {
     generic_get_type(generic, name)
 }
 
 /// Undo the instantiation of the generic type parameter.
-fn codegen_remove_generic_instance(Codegen::Gen(_, _, _, _, generic): &mut Codegen, name: &String) {
+fn codegen_remove_generic_instance(Codegen::Gen(_, _, _, _, generic, _): &mut Codegen, name: &String) {
     generic_uninstantiate(generic, name);
 }
 
 /// Return true if the given item's generic parameter is instantiated.
-fn codegen_is_instantiated(Codegen::Gen(_, _, _, _, generic): &Codegen, name: &String) -> bool {
+fn codegen_is_instantiated(Codegen::Gen(_, _, _, _, generic, _): &Codegen, name: &String) -> bool {
     match generic_get_type(generic, name) {
         Option::Some(_) => true,
         _ => false,
@@ -4045,7 +4079,7 @@ fn codegen_fixup(codegen: &mut Codegen, i: usize, line: String) {
 }
 
 /// Get the emitted LLVM-IR from Codegen.
-fn codegen_into_llvm(Codegen::Gen(Code::Code(functions, strings, _), _, _, _, _): Codegen) -> String {
+fn codegen_into_llvm(Codegen::Gen(Code::Code(functions, strings, _), _, _, _, _, _): Codegen) -> String {
     let mut code: String = string_new();
 
     let mut i: usize = 0;
@@ -4528,7 +4562,7 @@ fn codegen_emit_declare(
 /// ```
 /// Returns `%<name>`.
 fn codegen_emit_string(
-    Codegen::Gen(Code::Code(_, strings, _), _, Counter::Counter(_, counter), _, _): &mut Codegen,
+    Codegen::Gen(Code::Code(_, strings, _), _, Counter::Counter(_, counter), _, _, _): &mut Codegen,
     value: &String,
 ) -> String {
     let mut name: String = string("@str");
@@ -6831,6 +6865,14 @@ enum Option<T> {
     None,
 }
 
+/// Return true if the Option is of variant Some
+fn is_some<T>(opt: &Option<T>) -> bool {
+    match opt {
+        Option::Some(_) => true,
+        _ => false,
+    }
+}
+
 /// Returns the value wrapped in Some.
 /// If the Option is None, end the program.
 fn unwrap<T>(opt: Option<T>) -> T {
@@ -7051,18 +7093,26 @@ fn stringMap_with_len<T>(len: usize) -> StringMap<T> {
     StringMap::<T>::Map(buckets)
 }
 
+/// Insert a key/value pair into the map by prepending it. This will ignore prexisting entries,
+/// making it less efficient if there are duplicate keys, but more efficient if it is guaranteed
+/// to be unique (since the collision list does not have to be traversed).
+fn stringMap_insert<T>(map: &mut StringMap<T>, key: String, value: T) {
+    let bucket: &mut Vec<StringMapEntry<T>> = stringMap_bucket_mut::<T>(map, &key);
+    vec_push::<StringMapEntry<T>>(bucket, StringMapEntry::<T>::Entry(key, value));
+}
+
 /// Insert a key/value pair into the map or update the value if the key is already present.
 fn stringMap_insert_or_update<T>(map: &mut StringMap<T>, key: &String, value: T) {
     let bucket: &mut Vec<StringMapEntry<T>> = stringMap_bucket_mut::<T>(map, key);
-    let mut i: usize = 0;
-    while i < vec_len::<StringMapEntry<T>>(bucket) {
+    let mut nth: usize = vec_len::<StringMapEntry<T>>(bucket);
+    while nth > 0 {
         let StringMapEntry::Entry(other_key, entry_value): &mut StringMapEntry<T> =
-            vec_at_mut::<StringMapEntry<T>>(bucket, i);
+            vec_at_mut::<StringMapEntry<T>>(bucket, nth - 1);
         if string_eq(key, other_key) {
             *entry_value = value;
             return;
         }
-        i = i + 1;
+        nth = nth - 1;
     }
     vec_push::<StringMapEntry<T>>(bucket, StringMapEntry::<T>::Entry(string_clone(key), value));
 }
