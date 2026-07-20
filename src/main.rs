@@ -10,7 +10,8 @@
     clippy::manual_is_multiple_of,
     clippy::char_lit_as_u8,
     while_true,
-    non_snake_case
+    non_snake_case,
+    unused_assignments
 )] // attributes such as these are ignored by autos
 #![no_main]
 #[unsafe(no_mangle)]
@@ -5223,8 +5224,8 @@ fn lAst_lookup_function<'a>(ast: &'a LAst, name: &String) -> &'a LFunction {
 enum LFunction {
     /// parameters, first label, basic blocks, instruction count
     Function(Vec<LParameter>, String, StringMap<Vec<Instruction>>, usize),
-    /// return type, parameters, builtin
-    BuiltIn(BuiltIn, LType, Vec<LParameter>),
+    /// return type
+    BuiltIn(BuiltIn),
 }
 
 /// Supported LLVM-IR declared functions.
@@ -5267,6 +5268,27 @@ fn lType_bitwidth(ty: &LType) -> usize {
 /// Return the size of an LLVM type in bytes.
 fn lType_size(ty: &LType) -> usize {
     max(1, lType_bitwidth(ty) / 8)
+}
+
+fn lType_is_integer(ty: &LType) -> bool {
+    match ty {
+        LType::I1 | LType::I8 | LType::I64 => true,
+        _ => false,
+    }
+}
+
+fn lType_is_pointer(ty: &LType) -> bool {
+    match ty {
+        LType::Ptr => true,
+        _ => false,
+    }
+}
+
+fn lType_is_void(ty: &LType) -> bool {
+    match ty {
+        LType::Void => true,
+        _ => false,
+    }
 }
 
 /// Represents an instruction inside an instruction block.
@@ -5452,33 +5474,79 @@ fn lparse_function(parser: &mut LParser) {
 fn lparse_declare(parser: &mut LParser) {
     parser_expect_token(parser, &LToken::Declare);
     let return_type: LType = lparse_type(parser);
-    let function_name: String = parser_expect_identifier(parser, false);
+    let name: String = parser_expect_identifier(parser, false);
 
     parser_symtable_reset(parser);
     let parameters: Vec<LParameter> = lparse_parameters(parser, false);
 
-    let builtin: BuiltIn = if str_eq(&function_name, "exit") {
+    let mut is_incorrect: bool = false;
+    let builtin: BuiltIn = if str_eq(&name, "exit") {
+        is_incorrect = not(vec_len::<LParameter>(&parameters) == 1);
+        if not(is_incorrect) {
+            let LParameter::Parameter(_, ty): &LParameter = vec_at::<LParameter>(&parameters, 0);
+            is_incorrect = not(and(lType_is_integer(ty), lType_is_void(&return_type)));
+        }
         BuiltIn::Exit
-    } else if str_eq(&function_name, "malloc") {
+    } else if str_eq(&name, "malloc") {
+        is_incorrect = not(vec_len::<LParameter>(&parameters) == 1);
+        if not(is_incorrect) {
+            let LParameter::Parameter(_, ty): &LParameter = vec_at::<LParameter>(&parameters, 0);
+            is_incorrect = not(and(lType_is_integer(ty), lType_is_pointer(&return_type)));
+        }
         BuiltIn::Malloc
-    } else if str_eq(&function_name, "free") {
+    } else if str_eq(&name, "free") {
+        is_incorrect = not(vec_len::<LParameter>(&parameters) == 1);
+        if not(is_incorrect) {
+            let LParameter::Parameter(_, ty): &LParameter = vec_at::<LParameter>(&parameters, 0);
+            is_incorrect = not(and(lType_is_pointer(ty), lType_is_void(&return_type)));
+        }
         BuiltIn::Free
-    } else if str_eq(&function_name, "open") {
+    } else if str_eq(&name, "open") {
+        is_incorrect = not(vec_len::<LParameter>(&parameters) == 3);
+        if not(is_incorrect) {
+            let LParameter::Parameter(_, ty1): &LParameter = vec_at::<LParameter>(&parameters, 0);
+            let LParameter::Parameter(_, ty2): &LParameter = vec_at::<LParameter>(&parameters, 1);
+            let LParameter::Parameter(_, ty3): &LParameter = vec_at::<LParameter>(&parameters, 2);
+            is_incorrect = not(and(
+                lType_is_pointer(ty1),
+                and(
+                    lType_is_integer(ty2),
+                    and(lType_is_integer(ty3), lType_is_integer(&return_type)),
+                ),
+            ));
+        }
         BuiltIn::Open
-    } else if str_eq(&function_name, "read") {
-        BuiltIn::Read
-    } else if str_eq(&function_name, "write") {
-        BuiltIn::Write
+    } else if or(str_eq(&name, "read"), str_eq(&name, "read")) {
+        is_incorrect = not(vec_len::<LParameter>(&parameters) == 3);
+        if not(is_incorrect) {
+            let LParameter::Parameter(_, ty1): &LParameter = vec_at::<LParameter>(&parameters, 0);
+            let LParameter::Parameter(_, ty2): &LParameter = vec_at::<LParameter>(&parameters, 1);
+            let LParameter::Parameter(_, ty3): &LParameter = vec_at::<LParameter>(&parameters, 2);
+            is_incorrect = not(and(
+                lType_is_integer(ty1),
+                and(
+                    lType_is_pointer(ty2),
+                    and(lType_is_integer(ty3), lType_is_integer(&return_type)),
+                ),
+            ));
+        }
+        if str_eq(&name, "read") {
+            BuiltIn::Read
+        } else {
+            BuiltIn::Write
+        }
     } else {
         parser_error(parser, &string("unknown declared function"));
     };
+    if is_incorrect {
+        let mut msg: String = string("signature of ");
+        string_push_string(&mut msg, &name);
+        string_push_str(&mut msg, " is incorrect");
+        parser_error(parser, &msg);
+    }
 
-    let function: LFunction = LFunction::BuiltIn(builtin, return_type, parameters);
-    if not(lAst_insert_function(
-        lparser_ast_mut(parser),
-        &function_name,
-        function,
-    )) {
+    let function: LFunction = LFunction::BuiltIn(builtin);
+    if not(lAst_insert_function(lparser_ast_mut(parser), &name, function)) {
         parser_error(parser, &string("duplicate LLVM function declaration"));
     }
 }
@@ -6142,7 +6210,7 @@ fn emulate(source: String, memory_size: usize, args: &Args) -> usize {
 /// Execute the given function's body.
 fn emu_execute_function(emulator: &mut Emu, ast: &LAst, name: &String, args: &Vec<Value>) -> Value {
     match lAst_lookup_function(ast, name) {
-        LFunction::BuiltIn(builtin, _, _) => {
+        LFunction::BuiltIn(builtin) => {
             let value: usize = emu_execute_builtin(emulator, builtin, args);
             Value::Int(value)
         },
