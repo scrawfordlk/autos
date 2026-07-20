@@ -53,6 +53,5 @@ jobs:
               apt-get install -y curl build-essential llvm clang &&
               curl https://sh.rustup.rs -sSf | sh -s -- -y &&
               source \$HOME/.cargo/env &&
-              make self &&
               make test
             "
