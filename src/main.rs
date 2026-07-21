@@ -1859,7 +1859,7 @@ fn collect_items(ast: &RAst) -> StringMap<Item> {
 fn insert_item_into_global_table(table: &mut StringMap<Item>, item: &RAstItem) {
     match item {
         RAstItem::Function(RAstFunction::Fn(is_generic, is_unsafe, name, params, return_type, _)) => {
-            let mut param_types: Vec<RType> = vec_new::<RType>();
+            let mut param_types: Vec<RType> = vec_with_capacity::<RType>(vec_len::<RAstVariable>(params));
             let mut i: usize = 0;
             while i < vec_len::<RAstVariable>(params) {
                 let RAstVariable::Variable(_, t): &RAstVariable = vec_at::<RAstVariable>(params, i);
@@ -1871,7 +1871,8 @@ fn insert_item_into_global_table(table: &mut StringMap<Item>, item: &RAstItem) {
             stringMap_insert_or_update::<Item>(table, name, item);
         },
         RAstItem::Enum(RAstEnum::Enum(name, variants, is_generic)) => {
-            let mut cloned_variants: Vec<RAstVariant> = vec_new::<RAstVariant>();
+            let mut cloned_variants: Vec<RAstVariant> =
+                vec_with_capacity::<RAstVariant>(vec_len::<RAstVariant>(variants));
             let mut i: usize = 0;
             while i < vec_len::<RAstVariant>(variants) {
                 let RAstVariant::Variant(name, field_types): &RAstVariant =
@@ -1891,7 +1892,7 @@ fn insert_item_into_global_table(table: &mut StringMap<Item>, item: &RAstItem) {
                 let RAstExternFn::Fn(name, params, return_type): &RAstExternFn =
                     vec_at::<RAstExternFn>(functions, i);
 
-                let mut types: Vec<RType> = vec_new::<RType>();
+                let mut types: Vec<RType> = vec_with_capacity::<RType>(vec_len::<RAstVariable>(params));
                 let mut j: usize = 0;
                 while j < vec_len::<RAstVariable>(params) {
                     let RAstVariable::Variable(_, param_type): &RAstVariable =
@@ -3504,8 +3505,8 @@ fn codegen_call(
     values: &Vec<RAstExpr>,
     generic: &Option<RType>,
 ) -> STPair {
-    let mut value_types: Vec<RType> = vec_new::<RType>();
-    let mut value_names: Vec<String> = vec_new::<String>();
+    let mut value_types: Vec<RType> = vec_with_capacity::<RType>(vec_len::<RAstExpr>(values));
+    let mut value_names: Vec<String> = vec_with_capacity::<String>(vec_len::<RAstExpr>(values));
     let mut i: usize = 0;
     while i < vec_len::<RAstExpr>(values) {
         let value: &RAstExpr = vec_at::<RAstExpr>(values, i);
@@ -6191,12 +6192,12 @@ fn emu_load_bytes(emulator: &Emu, address: usize, byte_count: usize) -> Value {
         }
         Value::Int(value as usize)
     } else {
-        let mut array: Vec<usize> = vec_new::<usize>();
+        let mut array: Vec<usize> = vec_with_capacity::<usize>(byte_count / size_of::<usize>() + 1);
         let mut offset: usize = 0;
         while offset < byte_count {
             let value: usize = match emu_load_bytes(emulator, address + offset, size_of::<usize>()) {
                 Value::Int(value) => value,
-                _ => unreachable(),
+                _ => panic("invalid address for load when loading array"),
             };
             vec_push::<usize>(&mut array, value);
             offset = offset + size_of::<usize>();
@@ -6212,7 +6213,7 @@ fn emulate(source: String, memory_size: usize, args: &Args) -> usize {
 
     let argc: Value = Value::Int(args_len(args));
     let argv: Value = emu_push_argv(&mut emulator, args);
-    let mut main_args: Vec<Value> = vec_new::<Value>();
+    let mut main_args: Vec<Value> = vec_with_capacity::<Value>(2);
     vec_push::<Value>(&mut main_args, argc);
     vec_push::<Value>(&mut main_args, argv);
 
@@ -6456,7 +6457,7 @@ fn emu_execute_call(
     callee: &String,
     arguments: &Vec<LTypedValue>,
 ) -> Value {
-    let mut arg_values: Vec<Value> = vec_new::<Value>();
+    let mut arg_values: Vec<Value> = vec_with_capacity::<Value>(vec_len::<LTypedValue>(arguments));
     let mut i: usize = 0;
     while i < vec_len::<LTypedValue>(arguments) {
         let LTypedValue::Pair(ty, argument_value): &LTypedValue = vec_at::<LTypedValue>(arguments, i);
@@ -6553,7 +6554,7 @@ enum Args {
 }
 
 fn args_new(argc: usize, argv: *mut *mut u8) -> Args {
-    let mut args: Vec<String> = vec_new::<String>();
+    let mut args: Vec<String> = vec_with_capacity::<String>(argc);
     unsafe {
         let mut i: usize = 0;
         while i < argc {
@@ -6600,7 +6601,7 @@ fn args_subargs(args: &Args, i: usize) -> Args {
             string_push(&mut name, ' ');
         }
     }
-    let mut arguments: Vec<String> = vec_new::<String>();
+    let mut arguments: Vec<String> = vec_with_capacity::<String>(args_len(args) - i);
     vec_push::<String>(&mut arguments, name);
     while j < args_len(args) {
         let argument: &String = args_at(args, j);
@@ -7879,7 +7880,7 @@ fn rType_clone(t: &RType) -> RType {
 
 /// Clone a vector of Rust types.
 fn types_clone(types: &Vec<RType>) -> Vec<RType> {
-    let mut clone: Vec<RType> = vec_new::<RType>();
+    let mut clone: Vec<RType> = vec_with_capacity::<RType>(vec_len::<RType>(types));
     let mut i: usize = 0;
     while i < vec_len::<RType>(types) {
         let ty: RType = rType_clone(vec_at::<RType>(types, i));
@@ -7971,7 +7972,7 @@ fn value_clone(value: &Value) -> Value {
     match value {
         Value::Int(value) => Value::Int(*value),
         Value::Array(array) => {
-            let mut clone: Vec<usize> = vec_new::<usize>();
+            let mut clone: Vec<usize> = vec_with_capacity::<usize>(vec_len::<usize>(array));
             let mut i: usize = 0;
             while i < vec_len::<usize>(array) {
                 let value: usize = *vec_at::<usize>(array, i);
