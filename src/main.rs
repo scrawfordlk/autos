@@ -7109,14 +7109,11 @@ fn stringMap_insert_or_update<T>(map: &mut StringMap<T>, key: &String, value: T)
 
 /// Get a shared reference to the value for a key.
 fn stringMap_get<'a, T>(map: &'a StringMap<T>, key: &String) -> Option<&'a T> {
-    let bucket: &Vec<StringMapEntry<T>> = stringMap_bucket::<T>(map, key);
+    let StringMap::Map(buckets): &StringMap<T> = map;
+    let bucket_index: usize = string_hash(key, vec_len::<Vec<StringMapEntry<T>>>(buckets));
+    let bucket: &Vec<StringMapEntry<T>> = vec_at::<Vec<StringMapEntry<T>>>(buckets, bucket_index);
 
-    let length: usize = vec_len::<StringMapEntry<T>>(bucket);
-    if length == 0 {
-        return Option::<&T>::None;
-    }
-
-    let mut nth: usize = length; // traverse backwards due to construction of the collision list
+    let mut nth: usize = vec_len::<StringMapEntry<T>>(bucket); // traverse backwards due to construction of the collision list
     while nth > 0 {
         let entry: &StringMapEntry<T> = vec_at::<StringMapEntry<T>>(bucket, nth - 1);
         let other_key: &String = stringMapEntry_get_key::<T>(entry);
@@ -7132,12 +7129,7 @@ fn stringMap_get<'a, T>(map: &'a StringMap<T>, key: &String) -> Option<&'a T> {
 fn stringMap_get_mut<'a, T>(map: &'a mut StringMap<T>, key: &String) -> Option<&'a mut T> {
     let bucket: &mut Vec<StringMapEntry<T>> = stringMap_bucket_mut::<T>(map, key);
 
-    let length: usize = vec_len::<StringMapEntry<T>>(bucket);
-    if length == 0 {
-        return Option::<&mut T>::None;
-    }
-
-    let mut nth: usize = length; // traverse backwards due to construction of the collision list
+    let mut nth: usize = vec_len::<StringMapEntry<T>>(bucket); // traverse backwards due to construction of the collision list
     while nth > 0 {
         let other_key: &String =
             stringMapEntry_get_key::<T>(vec_at_mut::<StringMapEntry<T>>(bucket, nth - 1));
@@ -7154,12 +7146,8 @@ fn stringMap_get_mut<'a, T>(map: &'a mut StringMap<T>, key: &String) -> Option<&
 /// Remove the first entry with key `key` and return true if it was removed.
 fn stringMap_remove<T>(map: &mut StringMap<T>, key: &String) -> bool {
     let bucket: &mut Vec<StringMapEntry<T>> = stringMap_bucket_mut::<T>(map, key);
-    let length: usize = vec_len::<StringMapEntry<T>>(bucket);
-    if length == 0 {
-        return false;
-    }
 
-    let mut nth: usize = length; // traverse backwards due to construction of the collision list
+    let mut nth: usize = vec_len::<StringMapEntry<T>>(bucket); // traverse backwards due to construction of the collision list
     while nth > 0 {
         let entry: &StringMapEntry<T> = vec_at::<StringMapEntry<T>>(bucket, nth - 1);
         let other_key: &String = stringMapEntry_get_key::<T>(entry);
@@ -7170,12 +7158,6 @@ fn stringMap_remove<T>(map: &mut StringMap<T>, key: &String) -> bool {
         nth = nth - 1;
     }
     false
-}
-
-/// Get a shared reference to the bucket by hashing the given key `k` and indexing into the hashtable `b`.
-fn stringMap_bucket<'a, T>(StringMap::Map(b): &'a StringMap<T>, k: &String) -> &'a Vec<StringMapEntry<T>> {
-    let bucket_index: usize = string_hash(k, vec_len::<Vec<StringMapEntry<T>>>(b));
-    vec_at::<Vec<StringMapEntry<T>>>(b, bucket_index)
 }
 
 /// Get a mutable reference to the bucket by hashing the given key `k` and indexing into the hashtable `b`.
