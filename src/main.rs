@@ -3001,7 +3001,7 @@ fn codegen_scope_insert(codegen: &mut Codegen, name: &String, ty: RType, pointer
 fn codegen_scope_lookup(Codegen::Gen(_, _, _, stack, _, _): &Codegen, name: &String) -> STPair {
     match stringMapStack_get::<STPair>(stack, name) {
         Option::Some(variable) => stPair_clone(variable),
-        Option::None => STPair::ST(string_new(), RType::Unit), // semantic analysis makes this impossible
+        Option::None => stPair_unreachable(), // semantic analysis makes this impossible
     }
 }
 
@@ -3304,37 +3304,27 @@ fn codegen_return(codegen: &mut Codegen, icg: &ICodegen, returned: &Option<Box<R
 /// Emit LLVM-IR for an assignment expression.
 fn codegen_assignment(codegen: &mut Codegen, icg: &ICodegen, left: &RAstExpr, right: &RAstExpr) -> STPair {
     let STPair::ST(mut right_name, _): STPair = codegen_expression(codegen, icg, right);
-    let STPair::ST(pointer_name, left_type): STPair = codegen_assignment_lvalue(codegen, icg, left);
-    right_name = codegen_emit_load_if_enum(codegen, icg, right_name, &left_type);
-    codegen_emit_store(codegen, icg, &left_type, &right_name, &pointer_name);
-    STPair::ST(right_name, RType::Unit)
-}
-
-fn codegen_assignment_lvalue(codegen: &mut Codegen, icg: &ICodegen, expression: &RAstExpr) -> STPair {
-    match expression {
+    let STPair::ST(pointer_name, left_type): STPair = match left {
         RAstExpr::Variable(name) => codegen_scope_lookup(codegen, name),
-
         RAstExpr::Unary(op, value) => match op {
             RAstUnaryOp::Dereference => {
                 let STPair::ST(pointer_name, pointer_type): STPair =
                     codegen_expression(codegen, icg, box_deref::<RAstExpr>(value));
 
-                match pointer_type {
-                    RType::Reference(inner, _) => {
-                        let ty: RType = rType_clone(box_deref::<RType>(&inner));
-                        STPair::ST(pointer_name, ty)
-                    },
-                    RType::RawPointerMut(inner) => {
-                        let ty: RType = rType_clone(box_deref::<RType>(&inner));
-                        STPair::ST(pointer_name, ty)
-                    },
-                    _ => STPair::ST(string_new(), RType::Unit), // should not be reachable
-                }
+                let inner: RType = match pointer_type {
+                    RType::Reference(inner, _) => rType_clone(box_deref::<RType>(&inner)),
+                    RType::RawPointerMut(inner) => rType_clone(box_deref::<RType>(&inner)),
+                    _ => RType::Unit, // should be unreachable
+                };
+                STPair::ST(pointer_name, inner)
             },
-            _ => STPair::ST(string_new(), RType::Unit),
+            _ => stPair_unreachable(),
         },
-        _ => STPair::ST(string_new(), RType::Unit), // should not be reachable
-    }
+        _ => stPair_unreachable(),
+    };
+    right_name = codegen_emit_load_if_enum(codegen, icg, right_name, &left_type);
+    codegen_emit_store(codegen, icg, &left_type, &right_name, &pointer_name);
+    STPair::ST(right_name, RType::Unit)
 }
 
 /// Emit LLVM-IR for a binary expression.
@@ -7894,6 +7884,11 @@ fn types_clone(types: &Vec<RType>) -> Vec<RType> {
 /// Clone a STPair
 fn stPair_clone(STPair::ST(string, ty): &STPair) -> STPair {
     STPair::ST(string_clone(string), rType_clone(ty))
+}
+
+/// Serves as dummy. A correct program should never be able to cause execution of this.
+fn stPair_unreachable() -> STPair {
+    STPair::ST(string_new(), RType::Unit)
 }
 
 /// Clone an LLVM token.
