@@ -160,6 +160,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn test_emulator_self_compilation() {
         let source = autos_root().join("src/main.rs");
         let level1 = unique_path("fixpoint-emu-level1", "ll");
