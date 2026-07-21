@@ -7978,7 +7978,9 @@ fn string_clone(String::Inner(Vec::Vec(ptr, len, _)): &String) -> String {
 
 // --------------------------------- Drop ---------------------------------
 
-/// Drop a Vec, i.e. it deallocate the underlying buffer.
+/// Drop a Vec, i.e. deallocate the underlying buffer. This only frees the memory used for the buffer. If
+/// the elements own memory, it is disregarded and leaked (e.g. Vec<String>). If that is the case, then
+/// a custom Drop implementation is more suited than this function.
 fn drop_vec<T>(Vec::Vec(ptr, _, _): Vec<T>) {
     unsafe { free(ptr as *mut u8) }
 }
