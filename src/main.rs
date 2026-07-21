@@ -3890,17 +3890,15 @@ fn codegen_bind_or_destructure(
     expr_name: &String,
     expr_type: &RType,
 ) {
-    let scrutinee: Scrutinee = scrutinee_from_type(expr_type);
-
     match pattern {
         RAstPattern::Identifier(_, identifier) => {
-            let expr_type: RType = scrutinee_binding_type(&scrutinee);
-            let ptr: String = codegen_emit_alloca(codegen, icg, &expr_type);
-            let name: String = codegen_emit_load_if_enum(codegen, icg, string_clone(expr_name), &expr_type);
-            codegen_emit_store(codegen, icg, &expr_type, &name, &ptr);
-            codegen_scope_insert(codegen, identifier, expr_type, ptr);
+            let ptr: String = codegen_emit_alloca(codegen, icg, expr_type);
+            let name: String = codegen_emit_load_if_enum(codegen, icg, string_clone(expr_name), expr_type);
+            codegen_emit_store(codegen, icg, expr_type, &name, &ptr);
+            codegen_scope_insert(codegen, identifier, rType_clone(expr_type), ptr);
         },
         RAstPattern::EnumVariant(name, variant, inner_patterns) => {
+            let scrutinee: Scrutinee = scrutinee_from_type(expr_type);
             // assume all inner patterns are irrefutable
             if vec_len::<RAstPattern>(inner_patterns) > 0 {
                 let is_enum_reference: bool = rType_is_enum(codegen, scrutinee_match_type(&scrutinee));
