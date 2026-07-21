@@ -9,6 +9,7 @@
     clippy::upper_case_acronyms,
     clippy::manual_is_multiple_of,
     clippy::char_lit_as_u8,
+    clippy::zero_ptr,
     while_true,
     non_snake_case,
     unused_assignments
@@ -6892,14 +6893,17 @@ enum Vec<T> {
 
 /// Create an empty vector.
 fn vec_new<T>() -> Vec<T> {
-    vec_with_capacity::<T>(1)
+    Vec::<T>::Vec(0 as *mut T, 0, 0)
 }
 
 /// Create a vector with fixed starting capacity.
 fn vec_with_capacity<T>(initial_capacity: usize) -> Vec<T> {
-    let capacity: usize = max(initial_capacity, 1);
-    let ptr: *mut T = unsafe { alloc::<T>(capacity) };
-    Vec::<T>::Vec(ptr, 0, capacity)
+    if initial_capacity > 0 {
+        let ptr: *mut T = unsafe { alloc::<T>(initial_capacity) };
+        Vec::<T>::Vec(ptr, 0, initial_capacity)
+    } else {
+        Vec::<T>::Vec(0 as *mut T, 0, 0)
+    }
 }
 
 /// Create a vector with a fixed initial length.
@@ -6924,13 +6928,17 @@ fn vec_len<T>(Vec::Vec(_, len, _): &Vec<T>) -> usize {
 /// Ensure capacity for extra elements.
 fn vec_accomodate_extra_space<T>(Vec::Vec(ptr, len, cap): &mut Vec<T>, space: usize) {
     if *cap < *len + space {
+        let old_cap: usize = *cap;
+        *cap = max(*cap, 1);
         while *cap < *len + space {
             *cap = *cap * 2;
         }
         unsafe {
             let new_ptr: *mut T = alloc::<T>(*cap);
             memcopy::<T>(new_ptr, *ptr, *len);
-            free(*ptr as *mut u8);
+            if old_cap != 0 {
+                free(*ptr as *mut u8);
+            };
             *ptr = new_ptr;
         };
     }
