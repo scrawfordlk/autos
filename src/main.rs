@@ -914,16 +914,16 @@ fn rAstEnum_size(codegen: &mut Codegen, icg: &ICodegen, e: &RAstEnum, generic: &
 }
 
 /// Get the types of the given enum variant's fields.
-fn rAstEnum_get_variant_fields(variants: &Vec<RAstVariant>, variant: &String) -> Option<Vec<RType>> {
+fn rAstEnum_variant_fields<'a>(variants: &'a Vec<RAstVariant>, variant: &String) -> Option<&'a Vec<RType>> {
     let mut i: usize = 0;
     while i < vec_len::<RAstVariant>(variants) {
         let RAstVariant::Variant(name, types): &RAstVariant = vec_at::<RAstVariant>(variants, i);
         if string_eq(name, variant) {
-            return Option::<Vec<RType>>::Some(types_clone(types));
+            return Option::<&Vec<RType>>::Some(types);
         }
         i = i + 1;
     }
-    Option::<Vec<RType>>::None
+    Option::<&Vec<RType>>::None
 }
 
 /// Get an identifying discriminator for a given variant of variants.
@@ -2701,16 +2701,16 @@ fn semantic_check_enum(
             Option::<Box<RType>>::None
         },
     };
-    let fields: Vec<RType> = match rAstEnum_get_variant_fields(variants, variant) {
+    let fields: &Vec<RType> = match rAstEnum_variant_fields(variants, variant) {
         Option::Some(fields) => fields,
         _ => semantic_error(&string("use of undefined enum variant constructor")),
     };
-    if vec_len::<RType>(&fields) != vec_len::<RAstExpr>(values) {
+    if vec_len::<RType>(fields) != vec_len::<RAstExpr>(values) {
         semantic_error(&string("enum constructor does not correct amount of fields"));
     }
     let mut i: usize = 0;
-    while i < vec_len::<RType>(&fields) {
-        let field_type: &RType = vec_at::<RType>(&fields, i);
+    while i < vec_len::<RType>(fields) {
+        let field_type: &RType = vec_at::<RType>(fields, i);
         let field_type: RType = rType_instantiate_generic(field_type, generic, globals);
         let expr: &RAstExpr = vec_at::<RAstExpr>(values, i);
         let expr_type: RType = semantic_check_expression(semantic, expr, globals);
@@ -2858,7 +2858,7 @@ fn semantic_check_pattern(
             let mut enum_type: RType = RType::Enum(string_clone(enum_name), Option::<Box<RType>>::None);
             let generic: Option<RType> = rType_extract_enum_generic(scrutinee_match_type(&scrutinee));
 
-            let fields: Vec<RType> = match stringMap_get::<Item>(globals, enum_name) {
+            let fields: &Vec<RType> = match stringMap_get::<Item>(globals, enum_name) {
                 Option::Some(item) => match item {
                     Item::Enum(RAstEnum::Enum(_, variants, is_generic)) => {
                         if *is_generic {
@@ -2870,7 +2870,7 @@ fn semantic_check_pattern(
                             string_push_str(&mut msg, " has more than one variant");
                             semantic_error(&msg);
                         }
-                        match rAstEnum_get_variant_fields(variants, variant) {
+                        match rAstEnum_variant_fields(variants, variant) {
                             Option::Some(fields) => fields,
                             _ => semantic_error(&string("unknown enum variant used in pattern")),
                         }
@@ -2879,14 +2879,14 @@ fn semantic_check_pattern(
                 },
                 _ => semantic_error(&string("unknown enum used in pattern")),
             };
-            if vec_len::<RType>(&fields) != vec_len::<RAstPattern>(inner_patterns) {
+            if vec_len::<RType>(fields) != vec_len::<RAstPattern>(inner_patterns) {
                 semantic_error(&string("enum field count mismatch in pattern"));
             }
             let mut i: usize = 0;
             while i < vec_len::<RAstPattern>(inner_patterns) {
                 let pattern: &RAstPattern = vec_at::<RAstPattern>(inner_patterns, i);
-                let mut field_type: RType =
-                    rType_instantiate_generic(vec_at::<RType>(&fields, i), &generic, globals);
+                let field: &RType = vec_at::<RType>(fields, i);
+                let mut field_type: RType = rType_instantiate_generic(field, &generic, globals);
                 field_type = scrutinee_inherit_borrow(&scrutinee, &field_type);
                 match pattern {
                     RAstPattern::Identifier(mutable, name) => {
@@ -3925,10 +3925,10 @@ fn codegen_enum_destructure(
     scrutinee: &Scrutinee,
 ) {
     let generic: Option<RType> = rType_extract_enum_generic(scrutinee_match_type(scrutinee));
-    let fields: Vec<RType> = match iCodegen_search_global(icg, name) {
+    let fields: &Vec<RType> = match iCodegen_search_global(icg, name) {
         Option::Some(item) => match item {
             Item::Enum(RAstEnum::Enum(_, variants, _)) => {
-                match rAstEnum_get_variant_fields(variants, variant) {
+                match rAstEnum_variant_fields(variants, variant) {
                     Option::Some(fields) => fields,
                     _ => return, // assume this does not occur
                 }
@@ -3940,9 +3940,9 @@ fn codegen_enum_destructure(
 
     let mut offset: String = codegen_emit_pointer_add(codegen, icg, initial_offset, &RType::Usize, 1); // skip discriminant
     let mut i: usize = 0;
-    while i < vec_len::<RType>(&fields) {
+    while i < vec_len::<RType>(fields) {
         let ty: RType =
-            rType_instantiate_generic(vec_at::<RType>(&fields, i), &generic, iCodegen_globals(icg));
+            rType_instantiate_generic(vec_at::<RType>(fields, i), &generic, iCodegen_globals(icg));
         let pattern: &RAstPattern = vec_at::<RAstPattern>(patterns, i);
         match pattern {
             RAstPattern::Identifier(_, name) => {
@@ -7009,9 +7009,9 @@ fn vec_set<T>(vec: &mut Vec<T>, index: usize, value: T) -> bool {
 
 /// Append all elements from one vector to another.
 fn vec_extend<T>(vec: &mut Vec<T>, other: &Vec<T>) {
+    let len: usize = vec_len::<T>(vec);
     let other_len: usize = vec_len::<T>(other);
     vec_accomodate_extra_space::<T>(vec, other_len);
-    let len: usize = vec_len::<T>(vec);
     unsafe {
         let dest: *mut T = ptr_add::<T>(vec_ptr::<T>(vec), len);
         let src: *mut T = vec_ptr::<T>(other);
