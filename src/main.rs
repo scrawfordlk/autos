@@ -7967,16 +7967,13 @@ fn value_clone(value: &Value) -> Value {
 }
 
 /// Clone a string.
-fn string_clone(string: &String) -> String {
-    let len: usize = string_len(string);
-    let mut clone: String = string_with_capacity(len);
-    let mut i: usize = 0;
-    while i < len {
-        let character: char = string_at(string, i);
-        string_push(&mut clone, character);
-        i = i + 1;
-    }
-    clone
+fn string_clone(String::Inner(Vec::Vec(ptr, len, _)): &String) -> String {
+    let mut clone: Vec<u8> = vec_with_capacity::<u8>(*len);
+    unsafe {
+        memcopy::<u8>(vec_ptr::<u8>(&clone), *ptr, *len);
+        vec_set_len::<u8>(&mut clone, *len);
+    };
+    String::Inner(clone)
 }
 
 // --------------------------------- Drop ---------------------------------
