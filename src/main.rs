@@ -815,21 +815,6 @@ fn rAstLiteral_type(literal: &RLiteral) -> RType {
     }
 }
 
-/// Return true if the pattern is refutable
-fn rAstPattern_is_refutable(globals: &StringMap<Item>, pattern: &RAstPattern) -> bool {
-    match pattern {
-        RAstPattern::Literal(_) => true,
-        RAstPattern::Wildcard | RAstPattern::Identifier(_, _) => false,
-        RAstPattern::EnumVariant(name, _, _) => match stringMap_get::<Item>(globals, name) {
-            Option::Some(item) => match item {
-                Item::Enum(RAstEnum::Enum(_, variants, _)) => vec_len::<RAstVariant>(variants) > 1,
-                _ => true,
-            },
-            _ => true,
-        },
-    }
-}
-
 fn rAstPattern_is_wildcard(pattern: &RAstPattern) -> bool {
     match pattern {
         RAstPattern::Wildcard => true,
@@ -2066,17 +2051,6 @@ fn semantic_expect_bool_type(ty: &RType) {
     }
 }
 
-/// Lookup a variable in local scopes.
-fn semantic_lookup_variable(semantic: &Semantic, name: &String) -> Option<Variable> {
-    match stringMapStack_get::<Variable>(semantic_locals(semantic), name) {
-        Option::Some(entry) => {
-            let Variable::Variable(variable_type, mutable): &Variable = entry;
-            Option::<Variable>::Some(Variable::Variable(rType_clone(variable_type), *mutable))
-        },
-        Option::None => Option::<Variable>::None,
-    }
-}
-
 /// Enter a new local scope.
 fn semantic_enter_scope(semantic: &mut Semantic) {
     stringMapStack_push_empty::<Variable>(semantic_locals_mut(semantic));
@@ -2451,42 +2425,36 @@ fn semantic_check_assign(
     globals: &StringMap<Item>,
 ) -> RType {
     let right_type: RType = semantic_check_expression(semantic, right, globals);
-    let left_type: RType = semantic_check_assign_lvalue(semantic, left, globals);
-    semantic_expect_coerced_type_match(semantic, &right_type, &left_type);
-    RType::Unit
-}
-
-fn semantic_check_assign_lvalue(
-    semantic: &mut Semantic,
-    expression: &RAstExpr,
-    globals: &StringMap<Item>,
-) -> RType {
-    match expression {
+    let left_type: RType = match left {
         RAstExpr::Variable(name) => semantic_check_variable_use(semantic, true, name),
         RAstExpr::Unary(op, value) => match op {
             RAstUnaryOp::Dereference => {
-                let pointer_type: RType =
-                    semantic_check_expression(semantic, box_deref::<RAstExpr>(value), globals);
-                match pointer_type {
+                let expr: &RAstExpr = box_deref::<RAstExpr>(value);
+                let pointer_type: RType = semantic_check_expression(semantic, expr, globals);
+                let left_type: &RType = match &pointer_type {
                     RType::Reference(inner, mutable) => {
-                        if not(mutable) {
+                        if not(*mutable) {
                             semantic_error(&string("invalid assignment using immutable reference"));
                         }
-                        rType_clone(box_deref::<RType>(&inner))
+                        box_deref::<RType>(inner)
                     },
                     RType::RawPointerMut(inner) => {
                         if not(semantic_is_unsafe_context(semantic)) {
                             semantic_error(&string("raw pointer dereference requires unsafe"));
                         }
-                        rType_clone(box_deref::<RType>(&inner))
+                        box_deref::<RType>(inner)
                     },
                     _ => semantic_error(&string("invalid assignment to an expression")),
-                }
+                };
+                semantic_expect_coerced_type_match(semantic, &right_type, left_type);
+                return RType::Unit;
             },
             _ => semantic_error(&string("invalid assignment target")),
         },
         _ => semantic_error(&string("invalid assignment target")),
-    }
+    };
+    semantic_expect_coerced_type_match(semantic, &right_type, &left_type);
+    RType::Unit
 }
 
 fn semantic_check_binary_op(
@@ -2567,14 +2535,14 @@ fn semantic_check_unary_op(
 }
 
 fn semantic_check_variable_use(semantic: &mut Semantic, mutable: bool, name: &String) -> RType {
-    match semantic_lookup_variable(semantic, name) {
+    match stringMapStack_get::<Variable>(semantic_locals(semantic), name) {
         Option::Some(Variable::Variable(ty, is_mutable)) => {
-            if and(mutable, not(is_mutable)) {
+            if and(mutable, not(*is_mutable)) {
                 let mut message: String = string("immutable variable cannot be used in mutable context: ");
                 string_push_string(&mut message, name);
                 semantic_error(&message)
             }
-            ty
+            rType_clone(ty)
         },
         _ => {
             let mut message: String = string("undefined variable: ");
