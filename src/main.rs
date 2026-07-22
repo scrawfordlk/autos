@@ -985,35 +985,10 @@ fn rType_is_enum(codegen: &Codegen, ty: &RType) -> bool {
     }
 }
 
-fn rType_is_reference(ty: &RType) -> bool {
-    match ty {
-        RType::Reference(_, _) => true,
-        _ => false,
-    }
-}
-
-/// Return true if the `ty` is either a raw pointer or a (mutable) reference.
 fn rType_is_pointer(ty: &RType) -> bool {
     match ty {
-        RType::RawPointerMut(_) => true,
-        _ => rType_is_reference(ty),
-    }
-}
-
-/// Return the type that the scrutinee is matched on, which is either the type of the scrutinee or
-/// the type a reference pointers to.
-fn rType_get_match_type(ty: &RType) -> &RType {
-    match ty {
-        RType::Reference(inner, _) => box_deref::<RType>(inner),
-        ty => ty,
-    }
-}
-
-/// If the given scrutinee type is a reference, the returned type is a reference to `ty`, otherwise, return `ty`.
-fn rType_inherit_borrow(scrutinee_type: &RType, ty: RType) -> RType {
-    match scrutinee_type {
-        RType::Reference(_, mutable) => RType::Reference(box_new::<RType>(ty), *mutable),
-        _ => ty,
+        RType::Reference(_, _) | RType::RawPointerMut(_) => true,
+        _ => false,
     }
 }
 
@@ -1121,6 +1096,57 @@ fn rType_extract_enum_generic(ty: &RType) -> Option<RType> {
         RType::Reference(inner, _) => rType_extract_enum_generic(box_deref::<RType>(inner)),
         RType::RawPointerMut(inner) => rType_extract_enum_generic(box_deref::<RType>(inner)),
         _ => Option::<RType>::None,
+    }
+}
+
+/// Possible types of a scrutinee in a match expression. The contained type is the type the Scrutinee is matched
+/// against, while the variant encodes whether bindings are (mutable) references.
+#[derive(Debug)]
+enum Scrutinee {
+    Value(RType),
+    /// inner type, mutable
+    Reference(RType, bool),
+}
+
+/// Construct Scrutinee from a given Rust type.
+fn scrutinee_from_type(ty: &RType) -> Scrutinee {
+    match ty {
+        RType::Reference(inner, mutable) => {
+            Scrutinee::Reference(rType_clone(box_deref::<RType>(inner)), *mutable)
+        },
+        _ => Scrutinee::Value(rType_clone(ty)),
+    }
+}
+
+/// Return the type that the scrutinee is matched on.
+fn scrutinee_match_type(scrutinee: &Scrutinee) -> &RType {
+    match scrutinee {
+        Scrutinee::Value(ty) => ty,
+        Scrutinee::Reference(ty, _) => ty,
+    }
+}
+
+/// If the scrutinee is a reference, the returned type is a reference to `ty`, otherwise, return `ty`.
+fn scrutinee_inherit_borrow(scrutinee: &Scrutinee, ty: &RType) -> RType {
+    match scrutinee {
+        Scrutinee::Value(_) => rType_clone(ty),
+        Scrutinee::Reference(_, mutable) => RType::Reference(box_new::<RType>(rType_clone(ty)), *mutable),
+    }
+}
+
+/// Return the type of the binding, which binds the given scrutinee.
+fn scrutinee_binding_type(scrutinee: &Scrutinee) -> RType {
+    match scrutinee {
+        Scrutinee::Value(ty) => rType_clone(ty),
+        Scrutinee::Reference(ty, mutable) => RType::Reference(box_new::<RType>(rType_clone(ty)), *mutable),
+    }
+}
+
+/// Return true if the type of the scrutinee is a reference.
+fn scrutinee_is_reference(scrutinee: &Scrutinee) -> bool {
+    match scrutinee {
+        Scrutinee::Reference(_, _) => true,
+        _ => false,
     }
 }
 
@@ -2803,6 +2829,7 @@ fn semantic_check_pattern(
     refutable_ok: bool,
     globals: &StringMap<Item>,
 ) {
+    let scrutinee: Scrutinee = scrutinee_from_type(expression_type);
     let pattern_type: RType = match pattern {
         RAstPattern::Literal(literal) => {
             if not(refutable_ok) {
@@ -2810,7 +2837,7 @@ fn semantic_check_pattern(
             }
             match literal {
                 RAstPatternLiteral::Int(_) => {
-                    if rType_is_numeric(rType_get_match_type(expression_type)) {
+                    if rType_is_numeric(scrutinee_match_type(&scrutinee)) {
                         return; // numeric expression matches on numeric pattern
                     } else {
                         RType::Usize
@@ -2821,14 +2848,15 @@ fn semantic_check_pattern(
             }
         },
         RAstPattern::Identifier(mutable, name) => {
-            semantic_insert_variable(semantic, name, rType_clone(expression_type), *mutable);
+            let variable_type: RType = scrutinee_binding_type(&scrutinee);
+            semantic_insert_variable(semantic, name, variable_type, *mutable);
             semantic_check_generic_usage(semantic, expression_type);
             return; // type agnostic
         },
         RAstPattern::Wildcard => return, // type agnostic
         RAstPattern::EnumVariant(enum_name, variant, inner_patterns) => {
             let mut enum_type: RType = RType::Enum(string_clone(enum_name), Option::<Box<RType>>::None);
-            let generic: Option<RType> = rType_extract_enum_generic(rType_get_match_type(expression_type));
+            let generic: Option<RType> = rType_extract_enum_generic(scrutinee_match_type(&scrutinee));
 
             let fields: &Vec<RType> = match stringMap_get::<Item>(globals, enum_name) {
                 Option::Some(item) => match item {
@@ -2859,7 +2887,7 @@ fn semantic_check_pattern(
                 let pattern: &RAstPattern = vec_at::<RAstPattern>(inner_patterns, i);
                 let field: &RType = vec_at::<RType>(fields, i);
                 let mut field_type: RType = rType_instantiate_generic(field, &generic, globals);
-                field_type = rType_inherit_borrow(expression_type, field_type);
+                field_type = scrutinee_inherit_borrow(&scrutinee, &field_type);
                 match pattern {
                     RAstPattern::Identifier(mutable, name) => {
                         semantic_insert_variable(semantic, name, field_type, *mutable);
@@ -2875,7 +2903,7 @@ fn semantic_check_pattern(
             enum_type
         },
     };
-    semantic_expect_type_match(semantic, &pattern_type, rType_get_match_type(expression_type));
+    semantic_expect_type_match(semantic, &pattern_type, scrutinee_match_type(&scrutinee));
 }
 
 // -----------------------------------------------------------------
@@ -3116,7 +3144,7 @@ fn codegen_builtin_functions(codegen: &mut Codegen, icg: &ICodegen) {
     codegen_emit_function_end(codegen);
 
     codegen_emit_line(codegen, string("define i64 @str..len(ptr %str) {\nentry:"));
-    let len_ptr: String = codegen_emit_pointer_add_type(codegen, icg, &string("%str"), &RType::Usize, 1);
+    let len_ptr: String = codegen_emit_pointer_add(codegen, icg, &string("%str"), &RType::Usize, 1);
     let len: String = codegen_emit_load(codegen, icg, &RType::Usize, &len_ptr);
     codegen_emit_ret_value(codegen, icg, &RType::Usize, &len);
     codegen_emit_function_end(codegen);
@@ -3418,8 +3446,7 @@ fn codegen_literal(codegen: &mut Codegen, icg: &ICodegen, literal: &RLiteral) ->
             let struct_ptr: String = codegen_emit_alloca(codegen, icg, &str_type);
             let string_ptr_type: RType = RType::RawPointerMut(box_new::<RType>(RType::U8));
             codegen_emit_store(codegen, icg, &string_ptr_type, &string_ptr, &struct_ptr);
-            let len_ptr: String =
-                codegen_emit_pointer_add_type(codegen, icg, &struct_ptr, &string_ptr_type, 1);
+            let len_ptr: String = codegen_emit_pointer_add(codegen, icg, &struct_ptr, &string_ptr_type, 1);
             let length: String = integer_to_string(string_len(value));
             codegen_emit_store(codegen, icg, &RType::Usize, &length, &len_ptr);
             STPair::ST(struct_ptr, str_type)
@@ -3480,7 +3507,7 @@ fn codegen_enum(
     let enum_ptr: String = codegen_emit_alloca(codegen, icg, &enum_type);
     codegen_emit_store(codegen, icg, &RType::Usize, &tag, &enum_ptr);
 
-    let mut offset_ptr: String = codegen_emit_pointer_add_type(codegen, icg, &enum_ptr, &RType::Usize, 1);
+    let mut offset_ptr: String = codegen_emit_pointer_add(codegen, icg, &enum_ptr, &RType::Usize, 1);
     let mut i: usize = 0;
     while i < vec_len::<RAstExpr>(values) {
         let expression: &RAstExpr = vec_at::<RAstExpr>(values, i);
@@ -3488,7 +3515,7 @@ fn codegen_enum(
         register = codegen_emit_load_if_enum(codegen, icg, register, &ty);
         codegen_emit_store(codegen, icg, &ty, &register, &offset_ptr);
         if i < vec_len::<RAstExpr>(values) - 1 {
-            offset_ptr = codegen_emit_pointer_add_type(codegen, icg, &offset_ptr, &ty, 1);
+            offset_ptr = codegen_emit_pointer_add(codegen, icg, &offset_ptr, &ty, 1);
         } // only compute next address if there is another field
         i = i + 1;
     }
@@ -3818,13 +3845,14 @@ fn codegen_arm_match(
     fail_label: &String,
 ) {
     let eq: RAstComparisonOp = RAstComparisonOp::Eq;
-    let is_enum_reference: bool = rType_is_enum(codegen, rType_get_match_type(expr_type));
-    let expr_name: &String = if and(rType_is_reference(expr_type), not(is_enum_reference)) {
-        &codegen_emit_load(codegen, icg, rType_get_match_type(expr_type), expr_name)
+    let scrutinee: Scrutinee = scrutinee_from_type(expr_type);
+    let is_enum_reference: bool = rType_is_enum(codegen, scrutinee_match_type(&scrutinee));
+    let expr_name: &String = if and(scrutinee_is_reference(&scrutinee), not(is_enum_reference)) {
+        &codegen_emit_load(codegen, icg, scrutinee_match_type(&scrutinee), expr_name)
     } else {
         expr_name
     };
-    let expr_type: &RType = rType_get_match_type(expr_type);
+    let expr_type: &RType = scrutinee_match_type(&scrutinee);
 
     match pattern {
         RAstPattern::Literal(literal) => {
@@ -3859,15 +3887,16 @@ fn codegen_bind_or_destructure(
             codegen_scope_insert(codegen, identifier, rType_clone(expr_type), ptr);
         },
         RAstPattern::EnumVariant(name, variant, inner_patterns) => {
+            let scrutinee: Scrutinee = scrutinee_from_type(expr_type);
             // assume all inner patterns are irrefutable
             if vec_len::<RAstPattern>(inner_patterns) > 0 {
-                let is_enum_reference: bool = rType_is_enum(codegen, rType_get_match_type(expr_type));
-                let expr_name: &String = if and(rType_is_reference(expr_type), not(is_enum_reference)) {
-                    &codegen_emit_load(codegen, icg, rType_get_match_type(expr_type), expr_name)
+                let is_enum_reference: bool = rType_is_enum(codegen, scrutinee_match_type(&scrutinee));
+                let expr_name: &String = if and(scrutinee_is_reference(&scrutinee), not(is_enum_reference)) {
+                    &codegen_emit_load(codegen, icg, scrutinee_match_type(&scrutinee), expr_name)
                 } else {
                     expr_name
                 };
-                codegen_enum_destructure(codegen, icg, name, expr_type, variant, expr_name, inner_patterns);
+                codegen_enum_destructure(codegen, icg, name, variant, expr_name, inner_patterns, &scrutinee);
             }
         },
         _ => {}, // do not destructure or bind values for literal or wildcard
@@ -3879,28 +3908,27 @@ fn codegen_enum_destructure(
     codegen: &mut Codegen,
     icg: &ICodegen,
     name: &String,
-    expr_type: &RType,
     variant: &String,
     initial_offset: &String,
     patterns: &Vec<RAstPattern>,
+    scrutinee: &Scrutinee,
 ) {
-    let generic: Option<RType> = rType_extract_enum_generic(rType_get_match_type(expr_type));
+    let generic: Option<RType> = rType_extract_enum_generic(scrutinee_match_type(scrutinee));
     let fields: &Vec<RType> = match iCodegen_get_enum_variant_fields(icg, name, variant) {
         Option::Some(fields) => fields,
         _ => return, // assume this case does not happen
     };
-    let mut offset: String = codegen_emit_pointer_add_type(codegen, icg, initial_offset, &RType::Usize, 1); // skip discriminant
+    let mut offset: String = codegen_emit_pointer_add(codegen, icg, initial_offset, &RType::Usize, 1); // skip discriminant
     let mut i: usize = 0;
     while i < vec_len::<RType>(fields) {
         let ty: RType =
             rType_instantiate_generic(vec_at::<RType>(fields, i), &generic, iCodegen_globals(icg));
-        let size: usize = rType_size(codegen, icg, &ty);
         let pattern: &RAstPattern = vec_at::<RAstPattern>(patterns, i);
         match pattern {
             RAstPattern::Identifier(_, name) => {
-                let variable_type: RType = rType_inherit_borrow(expr_type, ty);
+                let variable_type: RType = scrutinee_inherit_borrow(scrutinee, &ty);
                 let pointer: String = codegen_emit_alloca(codegen, icg, &variable_type);
-                if rType_is_reference(expr_type) {
+                if scrutinee_is_reference(scrutinee) {
                     codegen_emit_store(codegen, icg, &variable_type, &offset, &pointer);
                 } else {
                     let field_value: String = codegen_emit_load(codegen, icg, &variable_type, &offset);
@@ -3910,13 +3938,13 @@ fn codegen_enum_destructure(
             },
             RAstPattern::EnumVariant(name, variant, inner_patterns) => {
                 if vec_len::<RAstPattern>(inner_patterns) > 0 {
-                    codegen_enum_destructure(codegen, icg, name, expr_type, variant, &offset, inner_patterns);
+                    codegen_enum_destructure(codegen, icg, name, variant, &offset, inner_patterns, scrutinee);
                 }
             },
             _ => {}, // assume otherwise it is wildcard (irrefutable pattern)
         }
         if i < vec_len::<RAstPattern>(patterns) - 1 {
-            offset = codegen_emit_pointer_add(codegen, icg, &offset, size, 1);
+            offset = codegen_emit_pointer_add(codegen, icg, &offset, &ty, 1);
         }
         i = i + 1;
     }
@@ -4285,27 +4313,16 @@ fn codegen_emit_load(codegen: &mut Codegen, icg: &ICodegen, ty: &RType, pointer:
 /// %<name> = inttoptr i64 %t1 to ptr
 /// ```
 /// Returns `%<name>`.
-fn codegen_emit_pointer_add_type(
+fn codegen_emit_pointer_add(
     codegen: &mut Codegen,
     icg: &ICodegen,
     pointer: &String,
     ty: &RType,
     index: usize,
 ) -> String {
-    let size: usize = rType_size(codegen, icg, ty);
-    codegen_emit_pointer_add(codegen, icg, pointer, size, index)
-}
-
-fn codegen_emit_pointer_add(
-    codegen: &mut Codegen,
-    icg: &ICodegen,
-    pointer: &String,
-    size: usize,
-    index: usize,
-) -> String {
     let ptr_type: RType = RType::RawPointerMut(box_new::<RType>(RType::Unit)); // dummy type to use `ptr` type
     let addition: RAstArithmeticOp = RAstArithmeticOp::Add;
-    let offset: String = integer_to_string(index * size);
+    let offset: String = integer_to_string(index * rType_size(codegen, icg, ty));
 
     let ptrtoint: CastOperation = CastOperation::PtrToInt;
     let inttoptr: CastOperation = CastOperation::IntToPtr;
