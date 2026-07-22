@@ -10,7 +10,7 @@ self: clean autos
 self-self: clean autos
 	./autos -c src/main.rs -e -c src/main.rs -o autos.ll
 
-test:
+test: clean
 	cd tests && cargo test --verbose
 
 test-self-self:
