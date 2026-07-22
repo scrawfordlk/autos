@@ -3158,7 +3158,7 @@ fn codegen_function(codegen: &mut Codegen, icg: &ICodegen, function: &RAstFuncti
         let RAstVariable::Variable(pattern, param_type): &RAstVariable =
             vec_at::<RAstVariable>(parameters, i);
         let mut parameter: String = string("%");
-        string_push_string(&mut parameter, &integer_to_string(i)); // TODO: need correct param name
+        string_push_string(&mut parameter, &integer_to_string(i));
 
         codegen_bind_or_destructure(codegen, icg, pattern, &parameter, param_type);
         i = i + 1;
@@ -6590,7 +6590,6 @@ fn unreachable() -> ! {
 }
 
 /// Report an error message with source location and exit.
-/// TODO: not subset-conform
 fn report_error(file: &SourceFile, message: &String) -> ! {
     let line: usize = sourceFile_current_line(file);
     let col: usize = sourceFile_current_column(file);
