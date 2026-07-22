@@ -3706,12 +3706,11 @@ fn codegen_while(codegen: &mut Codegen, icg: &ICodegen, condition: &RAstExpr, bo
 fn codegen_match(codegen: &mut Codegen, icg: &ICodegen, scrutinee: &RAstExpr, arms: &Vec<RAstArm>) -> STPair {
     let STPair::ST(expr_name, expr_type): STPair = codegen_expression(codegen, icg, scrutinee);
 
-    let end_label: String = codegen_next_label(codegen, "match.end");
-
     // SSA: Allocate memory for potential result value, though size is still unknown.
     let result: String = codegen_emit_alloca(codegen, icg, &RType::Unit);
     let alloca_idx: usize = codegen_code_last_index(codegen);
-    let mut return_type: RType = RType::Never; // still unknown, coercing arm types yields correct type
+    let mut return_type: RType = RType::Never; // still unknown, lub-coercing arm types yields correct type
+    let end_label: String = codegen_next_label(codegen, "match.end");
 
     let mut i: usize = 0;
     while i < vec_len::<RAstArm>(arms) {
@@ -3780,10 +3779,7 @@ fn codegen_arm(
             codegen_arm_match(
                 codegen, icg, pattern, expr_name, expr_type, &arm_label, fail_label,
             );
-            if and(
-                rAstPattern_is_refutable(iCodegen_globals(icg), pattern),
-                not(is_last_pattern),
-            ) {
+            if not(is_last_pattern) {
                 codegen_emit_label(codegen, fail_label); // next pattern of arm
             }
         } // otherwise arm is executed unconditionally
@@ -3792,24 +3788,22 @@ fn codegen_arm(
     }
 
     if not(is_last_arm) {
-        codegen_emit_label(codegen, &arm_label);
+        codegen_emit_label(codegen, &arm_label); // start of arm body
     }
-    let pattern: &RAstPattern = vec_at::<RAstPattern>(patterns, 0); // assume the arm only has a single pattern
+    // destructure only the first pattern, assuming there is only one (enforced by semantic analysis)
+    let pattern: &RAstPattern = vec_at::<RAstPattern>(patterns, 0);
     codegen_bind_or_destructure(codegen, icg, pattern, expr_name, expr_type);
 
     let STPair::ST(mut arm_value, arm_type): STPair = codegen_expression(codegen, icg, arm_expr);
     if rType_has_value(&arm_type) {
         arm_value = codegen_emit_load_if_enum(codegen, icg, arm_value, &arm_type);
-        codegen_emit_store(codegen, icg, &arm_type, &arm_value, result_pointer);
+        codegen_emit_store(codegen, icg, &arm_type, &arm_value, result_pointer); // SSA: store result
     }
 
-    // arm evaluated, so jump to end
-    codegen_emit_br(codegen, end_label);
-
+    codegen_emit_br(codegen, end_label); // arm evaluated, so jump to end
     if not(is_last_arm) {
-        codegen_emit_label(codegen, &else_label);
+        codegen_emit_label(codegen, &else_label); // start label for next arm condition
     }
-
     arm_type
 }
 
