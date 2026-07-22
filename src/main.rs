@@ -985,6 +985,13 @@ fn rType_is_enum(codegen: &Codegen, ty: &RType) -> bool {
     }
 }
 
+fn rType_is_reference(ty: &RType) -> bool {
+    match ty {
+        RType::Reference(_, _) => true,
+        _ => false,
+    }
+}
+
 fn rType_is_pointer(ty: &RType) -> bool {
     match ty {
         RType::Reference(_, _) | RType::RawPointerMut(_) => true,
@@ -3936,9 +3943,19 @@ fn codegen_enum_destructure(
                 }
                 codegen_scope_insert(codegen, name, variable_type, pointer);
             },
-            RAstPattern::EnumVariant(name, variant, inner_patterns) => {
-                if vec_len::<RAstPattern>(inner_patterns) > 0 {
-                    codegen_enum_destructure(codegen, icg, name, variant, &offset, inner_patterns, scrutinee);
+            RAstPattern::EnumVariant(name, variant, patterns) => {
+                if vec_len::<RAstPattern>(patterns) > 0 {
+                    if rType_is_reference(&ty) {
+                        // This enum is actually a reference to an enum. This means this field does
+                        // not store an entire enum, but only a pointer to an enum.
+                        let enum_ptr: String = codegen_emit_load(codegen, icg, &ty, &offset);
+                        let scrutinee: Scrutinee = scrutinee_from_type(&ty);
+                        codegen_enum_destructure(
+                            codegen, icg, name, variant, &enum_ptr, patterns, &scrutinee,
+                        );
+                    } else {
+                        codegen_enum_destructure(codegen, icg, name, variant, &offset, patterns, scrutinee);
+                    }
                 }
             },
             _ => {}, // assume otherwise it is wildcard (irrefutable pattern)
