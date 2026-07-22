@@ -2924,6 +2924,30 @@ fn iCodegen_search_global<'a>(codegen: &'a ICodegen, name: &String) -> Option<&'
     stringMap_get::<Item>(iCodegen_globals(codegen), name)
 }
 
+fn iCodegen_get_enum_discriminator(icg: &ICodegen, name: &String, variant: &String) -> usize {
+    match iCodegen_search_global(icg, name) {
+        Option::Some(item) => match item {
+            Item::Enum(RAstEnum::Enum(_, variants, _)) => variants_get_discriminator(variants, variant),
+            _ => 0, // assume this case does not occur
+        },
+        _ => 0, // assume this case does not occur
+    }
+}
+
+fn iCodegen_get_enum_variant_fields<'a>(
+    icg: &'a ICodegen,
+    name: &String,
+    variant: &String,
+) -> Option<&'a Vec<RType>> {
+    match iCodegen_search_global(icg, name) {
+        Option::Some(item) => match item {
+            Item::Enum(RAstEnum::Enum(_, variants, _)) => rAstEnum_variant_fields(variants, variant),
+            _ => Option::<&Vec<RType>>::None,
+        },
+        _ => Option::<&Vec<RType>>::None,
+    }
+}
+
 fn codegen_new() -> Codegen {
     let locals: StringMapStack<STPair> = stringMapStack_new::<STPair>();
     let counter: Counter = Counter::Counter(0, 0);
@@ -3822,15 +3846,7 @@ fn codegen_arm_match(
             codegen_emit_br_conditional(codegen, &cond, arm_label, fail_label);
         },
         RAstPattern::EnumVariant(name, variant, _) => {
-            let tag: usize = match iCodegen_search_global(icg, name) {
-                Option::Some(item) => match item {
-                    Item::Enum(RAstEnum::Enum(_, variants, _)) => {
-                        variants_get_discriminator(variants, variant)
-                    },
-                    _ => 0, // assume this case does not occur
-                },
-                _ => 0, // assume this case does not occur
-            };
+            let tag: usize = iCodegen_get_enum_discriminator(icg, name, variant);
             let tag: String = integer_to_string(tag);
             let expr_tag: String = codegen_emit_load(codegen, icg, &RType::Usize, expr_name);
             let cond: String = codegen_emit_icmp(codegen, icg, &eq, &RType::Usize, &tag, &expr_tag);
@@ -3882,17 +3898,9 @@ fn codegen_enum_destructure(
     patterns: &Vec<RAstPattern>,
 ) {
     let generic: Option<RType> = rType_extract_enum_generic(rType_get_match_type(expr_type));
-    let fields: &Vec<RType> = match iCodegen_search_global(icg, name) {
-        Option::Some(item) => match item {
-            Item::Enum(RAstEnum::Enum(_, variants, _)) => {
-                match rAstEnum_variant_fields(variants, variant) {
-                    Option::Some(fields) => fields,
-                    _ => return, // assume this does not occur
-                }
-            },
-            _ => return, // assume this does not occur
-        },
-        _ => return, // assume this case does not occur
+    let fields: &Vec<RType> = match iCodegen_get_enum_variant_fields(icg, name, variant) {
+        Option::Some(fields) => fields,
+        _ => return, // assume this case does not happen
     };
 
     let mut offset: String = codegen_emit_pointer_add_type(codegen, icg, initial_offset, &RType::Usize, 1); // skip discriminant
