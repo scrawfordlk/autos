@@ -3703,26 +3703,22 @@ fn codegen_while(codegen: &mut Codegen, icg: &ICodegen, condition: &RAstExpr, bo
     STPair::ST(string_new(), RType::Unit) // while always returns unit
 }
 
-/// Emit LLVM-IR for a match expression.
-fn codegen_match(codegen: &mut Codegen, icg: &ICodegen, value: &RAstExpr, arms: &Vec<RAstArm>) -> STPair {
-    let STPair::ST(expr_name, expr_type): STPair = codegen_expression(codegen, icg, value);
+fn codegen_match(codegen: &mut Codegen, icg: &ICodegen, scrutinee: &RAstExpr, arms: &Vec<RAstArm>) -> STPair {
+    let STPair::ST(expr_name, expr_type): STPair = codegen_expression(codegen, icg, scrutinee);
 
     let end_label: String = codegen_next_label(codegen, "match.end");
 
-    // Allocate memory for potential result value, though size is still unknown.
-    // In the event that the result type is unit, this instruction will be removed later.
+    // SSA: Allocate memory for potential result value, though size is still unknown.
     let result: String = codegen_emit_alloca(codegen, icg, &RType::Unit);
     let alloca_idx: usize = codegen_code_last_index(codegen);
-
     let mut return_type: RType = RType::Never; // still unknown, coercing arm types yields correct type
 
     let mut i: usize = 0;
     while i < vec_len::<RAstArm>(arms) {
-        codegen_push_scope(codegen);
-
-        let is_last_arm: bool = i == vec_len::<RAstArm>(arms) - 1;
         let arm: &RAstArm = vec_at::<RAstArm>(arms, i);
+        let is_last_arm: bool = i == vec_len::<RAstArm>(arms) - 1;
 
+        codegen_push_scope(codegen);
         let arm_type: RType = codegen_arm(
             codegen,
             icg,
@@ -3733,14 +3729,12 @@ fn codegen_match(codegen: &mut Codegen, icg: &ICodegen, value: &RAstExpr, arms: 
             &result,
             &end_label,
         );
+        codegen_pop_scope(codegen);
 
         return_type = rType_lub_coerce(return_type, arm_type);
-        codegen_pop_scope(codegen);
         i = i + 1;
     }
-
-    // start of the merge block
-    codegen_emit_label(codegen, &end_label);
+    codegen_emit_label(codegen, &end_label); // start of merge block
 
     let result: String = if rType_has_value(&return_type) {
         // now we know the type and thus the size to allocate on the stack
@@ -3753,9 +3747,8 @@ fn codegen_match(codegen: &mut Codegen, icg: &ICodegen, value: &RAstExpr, arms: 
         }
     } else {
         codegen_fixup(codegen, alloca_idx, string_new()); // alloca was not needed
-        string_new() // no value is returned, so some placeholder
+        string_new() // some placeholder
     };
-
     STPair::ST(result, return_type)
 }
 
@@ -3902,7 +3895,6 @@ fn codegen_enum_destructure(
         Option::Some(fields) => fields,
         _ => return, // assume this case does not happen
     };
-
     let mut offset: String = codegen_emit_pointer_add_type(codegen, icg, initial_offset, &RType::Usize, 1); // skip discriminant
     let mut i: usize = 0;
     while i < vec_len::<RType>(fields) {
