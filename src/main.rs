@@ -6025,7 +6025,7 @@ fn emu_set_exit_code(Emu::Emu(_, _, _, _, _, _, exit_code): &mut Emu, code: usiz
 }
 
 /// Allocate `size` many bytes on the stack and return the address.
-fn emu_allocate_stack(emulator: &mut Emu, size: usize) -> Option<usize> {
+fn emu_stack_alloc(emulator: &mut Emu, size: usize) -> Option<usize> {
     let bytes: usize = round_to_next_multiple(size, size_of::<usize>());
     let stack_pointer: usize = emu_get_sp(emulator);
     let frame_size: usize = emu_get_frame_size(emulator);
@@ -6050,7 +6050,7 @@ fn emu_malloc(emulator: &mut Emu, mut size: usize) -> Option<usize> {
     size = size + size_of::<usize>() * 2; // 16 bytes for block metadata (size & next pointer)
     let aligned_size: usize = round_to_next_multiple(size, size_of::<usize>());
 
-    let free_block: usize = emu_reuse_free_block_best_fit(emulator, size);
+    let free_block: usize = emu_reuse_free_block_first_fit(emulator, size);
     if free_block != 0 {
         // entire block reused => metadata is not modified
         return Option::<usize>::Some(free_block + size_of::<usize>() * 2);
@@ -6157,6 +6157,10 @@ fn emu_reuse_free_block_first_fit(emulator: &mut Emu, size: usize) -> usize {
 
 /// Free the memory block.
 fn emu_free(emulator: &mut Emu, pointer: usize) {
+    if pointer == 0 {
+        return; // free() performs no operation if the pointer is NULL
+    }
+
     let block_start: usize = pointer - size_of::<usize>() * 2;
     let next_address: usize = block_start + size_of::<usize>();
 
@@ -6542,7 +6546,7 @@ fn emu_evaluate_assign_op(emulator: &mut Emu, ast: &LAst, locals: &StringMap<Val
         },
         AssignOp::Alloca(allocated_type) => {
             let space: usize = lType_size(allocated_type);
-            match emu_allocate_stack(emulator, space) {
+            match emu_stack_alloc(emulator, space) {
                 Option::Some(address) => Value::Int(address),
                 Option::None => panic("Stack overflow encountered during emulation"),
             }
@@ -7041,7 +7045,6 @@ fn vec_len<T>(Vec::Vec(_, len, _): &Vec<T>) -> usize {
 /// Ensure capacity for extra elements.
 fn vec_accomodate_extra_space<T>(Vec::Vec(ptr, len, cap): &mut Vec<T>, space: usize) {
     if *cap < *len + space {
-        let old_cap: usize = *cap;
         *cap = max(*cap, 1);
         while *cap < *len + space {
             *cap = *cap * 2;
@@ -7049,9 +7052,7 @@ fn vec_accomodate_extra_space<T>(Vec::Vec(ptr, len, cap): &mut Vec<T>, space: us
         unsafe {
             let new_ptr: *mut T = alloc::<T>(*cap);
             memcopy::<T>(new_ptr, *ptr, *len);
-            if old_cap != 0 {
-                free(*ptr as *mut u8);
-            };
+            free(*ptr as *mut u8);
             *ptr = new_ptr;
         };
     }
