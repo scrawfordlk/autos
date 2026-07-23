@@ -6662,14 +6662,16 @@ fn args_new(argc: usize, argv: *mut *mut u8) -> Args {
     unsafe {
         let mut i: usize = 0;
         while i < argc {
+            let mut string: String = string_new();
             let arg: *mut u8 = *ptr_add::<*mut u8>(argv, i);
-            let mut null_index: usize = 0;
-            while *ptr_add::<u8>(arg, null_index) != 0 as u8 {
-                null_index = null_index + 1;
+
+            let mut j: usize = 0;
+            while *ptr_add::<u8>(arg, j) != 0 as u8 {
+                string_push(&mut string, *ptr_add::<u8>(arg, j) as char);
+                j = j + 1;
             }
-            let length: usize = null_index; // do not include the NULL-termination
-            let arg: String = String::Inner(Vec::<u8>::Vec(arg, length, length));
-            vec_push::<String>(&mut args, arg);
+
+            vec_push::<String>(&mut args, string);
             i = i + 1;
         }
     }
