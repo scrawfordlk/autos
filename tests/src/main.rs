@@ -173,6 +173,7 @@ mod tests {
             .arg("-o")
             .arg(&level1)
             .arg("-e")
+            .arg("100")
             .arg("-c")
             .arg(&source)
             .arg("-o")
@@ -324,6 +325,7 @@ mod tests {
             .arg("-o")
             .arg(&output)
             .arg("-e")
+            .arg("10")
             .stdout(Stdio::null())
             .status()
             .expect("able to run bootstrapped autos");
@@ -338,6 +340,7 @@ mod tests {
     fn emulate_llvm(path: &Path) -> i32 {
         let status = Command::new(autos_binary())
             .arg("-e")
+            .arg("10")
             .arg(path)
             .status()
             .expect("able to run LLVM emulator");
