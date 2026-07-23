@@ -26,6 +26,7 @@ fn main(argc: usize, argv: *mut *mut u8) {
         let source: String = read_file(string_clone(input_name));
 
         let mut do_emulate: bool = false;
+        let mut emulator_memory_size: usize = 0;
         let mut do_semantic_analysis: bool = true;
         let mut output_file: Option<String> = Option::<String>::None;
 
@@ -42,8 +43,12 @@ fn main(argc: usize, argv: *mut *mut u8) {
             i = i + 1;
         }
         if arg_eq(&args, i, "-e") {
+            if i + 1 >= args_len(&args) {
+                print_help_exit();
+            }
             do_emulate = true;
-            i = i + 1;
+            emulator_memory_size = parse_memory_size_mb(args_at(&args, i + 1));
+            i = i + 2;
         }
 
         let output_code: String = compile(source, do_semantic_analysis);
@@ -54,28 +59,44 @@ fn main(argc: usize, argv: *mut *mut u8) {
         write_file(output_name, &output_code);
         if do_emulate {
             let args_rest: Args = args_subargs(&args, i);
-            let exit_code: usize = emulate(output_code, 100000000, &args_rest);
+            let exit_code: usize = emulate(output_code, emulator_memory_size, &args_rest);
             exit_process(exit_code);
         }
         exit_process(0);
     }
     if arg_eq(&args, 1, "-e") {
-        if args_len(&args) <= 2 {
+        if args_len(&args) <= 3 {
             print_help_exit()
         }
-        let input_name: &String = args_at(&args, 2);
+        let memory_size: usize = parse_memory_size_mb(args_at(&args, 2));
+        let input_name: &String = args_at(&args, 3);
         let llvm: String = read_file(string_clone(input_name));
-        let args_rest: Args = args_subargs(&args, 3);
-        let exit_code: usize = emulate(llvm, 100000000, &args_rest);
+        let args_rest: Args = args_subargs(&args, 4);
+        let exit_code: usize = emulate(llvm, memory_size, &args_rest);
         exit_process(exit_code);
     }
     print_help_exit()
 }
 
 fn print_help_exit() -> ! {
-    print_str("Usage: autos ( -c <input> [ -o <output> ] [ --unsafe ] [ -e ... ] | -e <input> ... )");
+    print_str(
+        "Usage: autos ( -c <input> [ -o <output> ] [ --unsafe ] [ -e <mb> ... ] | -e <mb> <input> ... )",
+    );
     println();
     exit_process(1);
+}
+
+fn parse_memory_size_mb(value: &String) -> usize {
+    match string_to_integer(value, 10) {
+        Option::Some(memory_mb) => {
+            if memory_mb == 0 {
+                print_help_exit()
+            } else {
+                memory_mb * 1000000
+            }
+        },
+        Option::None => print_help_exit(),
+    }
 }
 
 // -----------------------------------------------------------------
