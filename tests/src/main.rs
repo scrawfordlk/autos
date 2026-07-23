@@ -120,6 +120,7 @@ mod tests {
             .arg(&level1)
             .arg("-o")
             .arg(&l1)
+            .arg("-Wno-override-module") // ignores the missing triple warning
             .stdout(Stdio::null())
             .status()
             .expect("able to lower self-compiled compiler code to machine code");
@@ -243,7 +244,10 @@ mod tests {
     }
 
     fn run_binary(path: &Path) -> i32 {
-        let status = Command::new(path).status().expect("able to execute binary");
+        let status = Command::new(path)
+            .stdout(Stdio::null())
+            .status()
+            .expect("able to execute binary");
         status
             .code()
             .unwrap_or_else(|| panic!("binary {} terminates with exit code", path.display()))
@@ -342,6 +346,7 @@ mod tests {
             .arg("-e")
             .arg("10")
             .arg(path)
+            .stdout(Stdio::null())
             .status()
             .expect("able to run LLVM emulator");
         status.code().expect("returns an exit code")
@@ -376,6 +381,8 @@ mod tests {
                         .current_dir(&root)
                         .arg("build")
                         .arg("--release")
+                        .stdout(Stdio::null())
+                        .stderr(Stdio::null())
                         .status()
                         .expect("able to compile autos in release mode");
                     assert!(
