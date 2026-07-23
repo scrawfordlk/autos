@@ -107,23 +107,22 @@ fn parse_memory_size_mb(value: &String) -> usize {
 
 /// Compile source code into LLVM-IR.
 fn compile(source: String, do_semantic_analysis: bool) -> String {
+    print_str("[Starting Compilation]");
+    println();
     let mut lexer: RLexer = rLexer_new(source);
     let ast: RAst = parse_language(&mut lexer);
-    print_str("=> Parsing Complete");
-    println();
+    print_str("=> Completed Parsing\n");
 
     let items: StringMap<Item> = collect_items(&ast);
     if do_semantic_analysis {
         semantic_check_run(&ast, &items);
-        print_str("=> Semantic Analysis Complete");
-        println();
+        print_str("=> Completed Semantic Analysis\n");
     }
 
     let mut codegen: Codegen = codegen_new();
     let icg: ICodegen = iCodegenStatic_new(ast, items);
     codegen_language(&mut codegen, &icg);
-    print_str("=> Code Generation Complete");
-    println();
+    print_str("=> Completed Code Generation\n");
 
     codegen_into_llvm(codegen)
 }
@@ -6321,10 +6320,14 @@ fn emulate(source: String, memory_size: usize, args: &Args) -> usize {
     vec_push::<Value>(&mut main_args, argc);
     vec_push::<Value>(&mut main_args, argv);
 
-    match emu_execute_function(&mut emulator, &ast, &string("main"), &main_args) {
+    print_str("[Starting Emulation]\n");
+    let exit_code: usize = (match emu_execute_function(&mut emulator, &ast, &string("main"), &main_args) {
         Value::Int(value) => value,
         _ => panic("unexpected return value for main"),
-    }
+    }) % 256; // exit code is 16-bit integer
+    print_str("=> Exited with exit code ");
+    print_string(&integer_to_string(exit_code));
+    exit_code
 }
 
 /// Execute the given function's body.
