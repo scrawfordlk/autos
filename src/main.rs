@@ -6043,6 +6043,10 @@ fn emu_allocate_stack(emulator: &mut Emu, size: usize) -> Option<usize> {
 /// Allocate `size` bytes on the heap and return the address. (Actually, it allocates `size + 16`
 /// bytes to store size and free-list pointer of the block and returns the address offsetted by 16).
 fn emu_malloc(emulator: &mut Emu, mut size: usize) -> Option<usize> {
+    if size == 0 {
+        return Option::<usize>::Some(0); // malloc() can return NULL in this case
+    }
+
     size = size + size_of::<usize>() * 2; // 16 bytes for block metadata (size & next pointer)
     let aligned_size: usize = round_to_next_multiple(size, size_of::<usize>());
 
