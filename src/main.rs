@@ -6335,6 +6335,7 @@ fn emulate(source: String, memory_size: usize, args: &Args) -> usize {
     }) % 256; // exit code is 16-bit integer
     print_str("=> Exited with exit code ");
     print_string(&integer_to_string(exit_code));
+    println();
     exit_code
 }
 
