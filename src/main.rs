@@ -54,7 +54,7 @@ fn main(argc: usize, argv: *mut *mut u8) {
         write_file(output_name, &output_code);
         if do_emulate {
             let args_rest: Args = args_subargs(&args, i);
-            let exit_code: usize = emulate(output_code, 1000000000, &args_rest);
+            let exit_code: usize = emulate(output_code, 100000000, &args_rest);
             exit_process(exit_code);
         }
         exit_process(0);
@@ -66,7 +66,7 @@ fn main(argc: usize, argv: *mut *mut u8) {
         let input_name: &String = args_at(&args, 2);
         let llvm: String = read_file(string_clone(input_name));
         let args_rest: Args = args_subargs(&args, 3);
-        let exit_code: usize = emulate(llvm, 1000000000, &args_rest);
+        let exit_code: usize = emulate(llvm, 100000000, &args_rest);
         exit_process(exit_code);
     }
     print_help_exit()
