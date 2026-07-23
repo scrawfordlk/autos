@@ -5921,6 +5921,8 @@ enum Emu {
         usize,
         /// bump pointer (points to top of heap)
         usize,
+        /// head of free-list (address)
+        usize,
         /// exit code, if the program exited
         Option<usize>,
     ),
@@ -5932,55 +5934,65 @@ fn emu_new(memory_size: usize, ast: &LAst) -> Emu {
     let stack_pointer: usize = memory_size;
     let memory: Vec<u8> = unsafe { vec_with_len::<u8>(memory_size) };
     let globals: StringMap<usize> = stringMap_new::<usize>();
-    let mut emulator: Emu = Emu::Emu(globals, memory, stack_pointer, 0, 0, Option::<usize>::None);
+    let mut emulator: Emu = Emu::Emu(globals, memory, stack_pointer, 0, 0, 0, Option::<usize>::None);
     let heap_start: usize = emu_initialise_global_data(&mut emulator, ast);
-    let Emu::Emu(_, _, _, _, bump_pointer, _): &mut Emu = &mut emulator;
+    let Emu::Emu(_, _, _, _, bump_pointer, _, _): &mut Emu = &mut emulator;
     *bump_pointer = heap_start;
     emulator
 }
 
 /// Get a shared reference to the global values.
-fn emu_globals(Emu::Emu(globals, _, _, _, _, _): &Emu) -> &StringMap<usize> {
+fn emu_globals(Emu::Emu(globals, _, _, _, _, _, _): &Emu) -> &StringMap<usize> {
     globals
 }
 
 /// Get mutable access to the global values.
-fn emu_globals_mut(Emu::Emu(globals, _, _, _, _, _): &mut Emu) -> &mut StringMap<usize> {
+fn emu_globals_mut(Emu::Emu(globals, _, _, _, _, _, _): &mut Emu) -> &mut StringMap<usize> {
     globals
 }
 
 /// Get the current value of the stack pointer.
-fn emu_get_sp(Emu::Emu(_, _, stack_pointer, _, _, _): &Emu) -> usize {
+fn emu_get_sp(Emu::Emu(_, _, stack_pointer, _, _, _, _): &Emu) -> usize {
     *stack_pointer
 }
 
 /// Set the value of the stack pointer.
-fn emu_set_sp(Emu::Emu(_, _, stack_pointer, _, _, _): &mut Emu, value: usize) {
+fn emu_set_sp(Emu::Emu(_, _, stack_pointer, _, _, _, _): &mut Emu, value: usize) {
     *stack_pointer = value;
 }
 
 /// Get the size of the active stack frame in bytes.
-fn emu_get_frame_size(Emu::Emu(_, _, _, frame_size, _, _): &Emu) -> usize {
+fn emu_get_frame_size(Emu::Emu(_, _, _, frame_size, _, _, _): &Emu) -> usize {
     *frame_size
 }
 
 /// Set the size of the active stack frame.
-fn emu_set_frame_size(Emu::Emu(_, _, _, frame_size, _, _): &mut Emu, value: usize) {
+fn emu_set_frame_size(Emu::Emu(_, _, _, frame_size, _, _, _): &mut Emu, value: usize) {
     *frame_size = value;
 }
 
 /// Get the current value of the allocator's bump pointer.
-fn emu_get_bump_pointer(Emu::Emu(_, _, _, _, bump_pointer, _): &Emu) -> usize {
+fn emu_get_bump_pointer(Emu::Emu(_, _, _, _, bump_pointer, _, _): &Emu) -> usize {
     *bump_pointer
 }
 
 /// Increases the allocator's bump pointer by `value`.
-fn emu_increase_bump_pointer(Emu::Emu(_, _, _, _, bump_pointer, _): &mut Emu, value: usize) {
+fn emu_increase_bump_pointer(Emu::Emu(_, _, _, _, bump_pointer, _, _): &mut Emu, value: usize) {
     *bump_pointer = *bump_pointer + value;
 }
 
+/// Get the address of the first free-list node.
+fn emu_get_freelist_head(Emu::Emu(_, _, _, _, _, freelist, _): &Emu) -> usize {
+    *freelist
+}
+
+/// Set the head of the free-list to the given address.
+fn emu_set_freelist_head(Emu::Emu(_, _, _, _, _, freelist, _): &mut Emu, address: usize) {
+    *freelist = address;
+}
+
 /// Return true if exit was requested and return the code.
-fn emu_exit_code(Emu::Emu(_, _, _, _, _, exit_code): &Emu) -> Option<usize> {
+fn emu_exit_code(Emu::Emu(_, _, _, _, _, _, exit_code): &Emu) -> Option<usize> {
     match exit_code {
         Option::Some(code) => Option::<usize>::Some(*code),
         Option::None => Option::<usize>::None,
@@ -5988,7 +6000,7 @@ fn emu_exit_code(Emu::Emu(_, _, _, _, _, exit_code): &Emu) -> Option<usize> {
 }
 
 /// Set the exit code and mark the program as exited.
-fn emu_set_exit_code(Emu::Emu(_, _, _, _, _, exit_code): &mut Emu, code: usize) {
+fn emu_set_exit_code(Emu::Emu(_, _, _, _, _, _, exit_code): &mut Emu, code: usize) {
     *exit_code = Option::<usize>::Some(code);
 }
 
@@ -6008,24 +6020,130 @@ fn emu_allocate_stack(emulator: &mut Emu, size: usize) -> Option<usize> {
     }
 }
 
-/// Allocate `size` bytes on the heap and return the address.
-fn emu_allocate_heap(emulator: &mut Emu, mut size: usize) -> Option<usize> {
-    size = max(size, 1);
-    let mut aligned_size: usize = round_to_next_multiple(size, size_of::<usize>());
+/// Allocate `size` bytes on the heap and return the address. (Actually, it allocates `size + 16`
+/// bytes to store size and free-list pointer of the block and returns the address offsetted by 16).
+fn emu_malloc(emulator: &mut Emu, mut size: usize) -> Option<usize> {
+    size = size + size_of::<usize>() * 2; // 16 bytes for block metadata (size & next pointer)
+    let aligned_size: usize = round_to_next_multiple(size, size_of::<usize>());
+
+    let free_block: usize = emu_reuse_free_block_best_fit(emulator, size);
+    if free_block != 0 {
+        // entire block reused => metadata is not modified
+        return Option::<usize>::Some(free_block + size_of::<usize>() * 2);
+    }
+
+    // reusing free block failed => increase bump pointer to allocate new block
     let mut bump_pointer: usize = emu_get_bump_pointer(emulator);
-
-    if bump_pointer + aligned_size >= emu_get_sp(emulator) {
-        return Option::<usize>::None;
-    }
     if bump_pointer == 0 {
-        // HACK: allocate 8 extra bytes and return the address 8 to avoid
-        // returning 0 (0 is a sentinel value for malloc(), indicating failure)
-        aligned_size = aligned_size + size_of::<usize>();
-        bump_pointer = size_of::<usize>();
+        bump_pointer = bump_pointer + size_of::<usize>();
+        emu_increase_bump_pointer(emulator, size_of::<usize>()); // do not use address 0
+    }
+    if bump_pointer + aligned_size >= emu_get_sp(emulator) {
+        return Option::<usize>::None; // OOM
     }
 
-    emu_increase_bump_pointer(emulator, aligned_size);
-    Option::<usize>::Some(bump_pointer)
+    emu_increase_bump_pointer(emulator, aligned_size); // allocation
+    // store metadata (free-list pointer is not yet needed)
+    emu_store_bytes(emulator, bump_pointer, &Value::Int(aligned_size), 8);
+    Option::<usize>::Some(bump_pointer + size_of::<usize>() * 2) // return address after block size
+}
+
+/// Given the address of a memory block, returns the size of it.
+fn emu_mem_block_size(emulator: &Emu, block_address: usize) -> usize {
+    value_get_int(&emu_load_bytes(emulator, block_address, size_of::<usize>()))
+}
+
+/// Given the address of a memory block, returns the address of the next memory block in the freelist.
+fn emu_mem_block_next(emulator: &Emu, block_address: usize) -> usize {
+    value_get_int(&emu_load_bytes(
+        emulator,
+        block_address + size_of::<usize>(),
+        size_of::<usize>(),
+    ))
+}
+
+/// Given the address of a memory block, updates the next-pointer to point to `next`.
+fn emu_mem_block_set_next(emulator: &mut Emu, block_address: usize, next: usize) {
+    emu_store_bytes(
+        emulator,
+        block_address + size_of::<usize>(),
+        &Value::Int(next),
+        size_of::<usize>(),
+    );
+}
+
+/// Returns address of free memory block using best-fit, if it exists, else NULL.
+fn emu_reuse_free_block_best_fit(emulator: &mut Emu, size: usize) -> usize {
+    let mut best_fit: usize = 0;
+    let mut best_fit_size: usize = 18446744073709551615; // usize::MAX
+    let mut best_fit_predecessor: usize = 0;
+
+    let mut block: usize = emu_get_freelist_head(emulator);
+    let mut block_size: usize = 0;
+    let mut block_predecessor: usize = 0;
+
+    while block != 0 {
+        block_size = emu_mem_block_size(emulator, block);
+        if and(size <= block_size, block_size < best_fit_size) {
+            best_fit = block;
+            best_fit_size = block_size;
+            best_fit_predecessor = block_predecessor;
+        }
+
+        block_predecessor = block;
+        block = emu_mem_block_next(emulator, block);
+    }
+
+    if best_fit != 0 {
+        let next: usize = emu_mem_block_next(emulator, best_fit);
+
+        if best_fit_predecessor != 0 {
+            emu_mem_block_set_next(emulator, best_fit_predecessor, next);
+        } else {
+            emu_set_freelist_head(emulator, next);
+        }
+    }
+    best_fit
+}
+
+/// Returns address of free memory block using first-fit, if it exists, else NULL.
+fn emu_reuse_free_block_first_fit(emulator: &mut Emu, size: usize) -> usize {
+    let mut block: usize = emu_get_freelist_head(emulator);
+    let mut block_size: usize = 0;
+    let mut predecessor: usize = 0;
+    while block != 0 {
+        block_size = emu_mem_block_size(emulator, block);
+        if size <= block_size {
+            let next: usize = emu_mem_block_next(emulator, block);
+
+            if predecessor != 0 {
+                emu_mem_block_set_next(emulator, predecessor, next);
+            } else {
+                emu_set_freelist_head(emulator, next);
+            }
+
+            return block;
+        }
+
+        predecessor = block;
+        block = emu_mem_block_next(emulator, block);
+    }
+    0
+}
+
+/// Free the memory block.
+fn emu_free(emulator: &mut Emu, pointer: usize) {
+    let block_start: usize = pointer - size_of::<usize>() * 2;
+    let next_address: usize = block_start + size_of::<usize>();
+
+    let head: usize = emu_get_freelist_head(emulator);
+    if head == 0 {
+        emu_store_bytes(emulator, next_address, &Value::Int(0), size_of::<usize>());
+        emu_set_freelist_head(emulator, block_start);
+    } else {
+        emu_store_bytes(emulator, next_address, &Value::Int(head), size_of::<usize>());
+        emu_set_freelist_head(emulator, block_start);
+    }
 }
 
 /// Push the given args onto the stack and return a `argv` pointer.
@@ -6098,7 +6216,7 @@ fn emu_deallocate_stack_frame(emulator: &mut Emu) {
 }
 
 /// Get a raw pointer to the memory the given address points to.
-fn emu_get_memory_pointer(Emu::Emu(_, memory, _, _, _, _): &mut Emu, address: usize) -> Option<*mut u8> {
+fn emu_get_memory_pointer(Emu::Emu(_, memory, _, _, _, _, _): &mut Emu, address: usize) -> Option<*mut u8> {
     match vec_get_mut::<u8>(memory, address) {
         Option::Some(address) => Option::<*mut u8>::Some(address as *mut u8),
         Option::None => Option::<*mut u8>::None,
@@ -6107,7 +6225,7 @@ fn emu_get_memory_pointer(Emu::Emu(_, memory, _, _, _, _): &mut Emu, address: us
 
 /// Store a little-endian integer value at `address` using `byte_count` bytes.
 fn emu_store_bytes(emulator: &mut Emu, address: usize, value: &Value, mut byte_count: usize) -> bool {
-    let Emu::Emu(_, memory, _, _, _, _): &mut Emu = emulator;
+    let Emu::Emu(_, memory, _, _, _, _, _): &mut Emu = emulator;
 
     match value {
         Value::Int(value) => {
@@ -6137,7 +6255,7 @@ fn emu_store_bytes(emulator: &mut Emu, address: usize, value: &Value, mut byte_c
 
 /// Load a little-endian integer value from `address` using `byte_count` bytes.
 fn emu_load_bytes(emulator: &Emu, address: usize, byte_count: usize) -> Value {
-    let Emu::Emu(_, memory, _, _, _, _): &Emu = emulator;
+    let Emu::Emu(_, memory, _, _, _, _, _): &Emu = emulator;
 
     if byte_count <= 8 {
         let mut value: usize = 0;
@@ -6241,15 +6359,15 @@ fn emu_execute_builtin(emulator: &mut Emu, builtin: &BuiltIn, arguments: &Vec<Va
         },
         BuiltIn::Malloc => {
             let size: usize = value_get_int(vec_at::<Value>(arguments, 0));
-            match emu_allocate_heap(emulator, size) {
+            match emu_malloc(emulator, size) {
                 Option::Some(address) => address,
                 Option::None => 0, // = NULL
             }
         },
         BuiltIn::Free => {
-            let ptr: usize = value_get_int(vec_at::<Value>(arguments, 0));
-            // TODO: allocator frees the memory
-            0
+            let pointer: usize = value_get_int(vec_at::<Value>(arguments, 0));
+            emu_free(emulator, pointer);
+            0 // free returns void, so this is ignored
         },
         BuiltIn::Open => {
             let path: usize = value_get_int(vec_at::<Value>(arguments, 0));
