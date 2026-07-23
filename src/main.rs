@@ -8435,7 +8435,7 @@ fn read_file(mut filename: String) -> String {
         }
 
         let mut string: Vec<u8> = vec_new::<u8>();
-        let buffer_len: usize = 1048576;
+        let buffer_len: usize = 16384;
         let mut buffer: Vec<u8> = vec_with_len::<u8>(buffer_len);
         let buffer_ptr: *mut u8 = vec_ptr::<u8>(&buffer);
         while true {
