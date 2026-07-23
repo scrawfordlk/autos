@@ -8,7 +8,7 @@ self: clean autos
 	./autos -c src/main.rs -o autos.ll
 
 self-self: clean autos
-	./autos -c src/main.rs -e -c src/main.rs -o autos.ll
+	./autos -c src/main.rs -e 100 -c src/main.rs -o autos.ll
 
 test: clean
 	cd tests && cargo test --verbose
