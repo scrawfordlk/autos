@@ -1,6 +1,6 @@
 define i64 @main() {
 entry:
-  %arr = alloca [3 x i8]
+  %arr = alloca [3 x i8], i64 1
 
   store i8 10, ptr %arr
 

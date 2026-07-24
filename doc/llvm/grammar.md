@@ -47,7 +47,7 @@ cast        -> ( "zext" | "trunc" | ptrtoint | inttoptr ) type value "to" type
 
 call        -> "call" type global "(" [ type value { "," type value } ] ")"
 
-alloca      -> "alloca" type
+alloca      -> "alloca" type "," "i64" number
 
 load        -> "load" type "," "ptr" value
 ```
