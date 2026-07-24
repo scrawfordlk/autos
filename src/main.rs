@@ -3876,10 +3876,14 @@ fn codegen_bind_or_destructure(
 ) {
     match pattern {
         RAstPattern::Identifier(_, identifier) => {
-            let ptr: String = codegen_emit_alloca(codegen, icg, expr_type);
-            let name: String = codegen_emit_load_if_enum(codegen, icg, string_clone(expr_name), expr_type);
-            codegen_emit_store(codegen, icg, expr_type, &name, &ptr);
-            codegen_scope_insert(codegen, identifier, rType_clone(expr_type), ptr);
+            let register: String = if not(rType_is_enum(codegen, expr_type)) {
+                let ptr: String = codegen_emit_alloca(codegen, icg, expr_type);
+                codegen_emit_store(codegen, icg, expr_type, expr_name, &ptr);
+                ptr
+            } else {
+                string_clone(expr_name) // enums are moved, so no need to copy
+            };
+            codegen_scope_insert(codegen, identifier, rType_clone(expr_type), register);
         },
         RAstPattern::EnumVariant(name, variant, inner_patterns) => {
             let scrutinee: Scrutinee = scrutinee_from_type(expr_type);
