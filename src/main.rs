@@ -6165,13 +6165,8 @@ fn emu_free(emulator: &mut Emu, pointer: usize) {
     let next_address: usize = block_start + size_of::<usize>();
 
     let head: usize = emu_get_freelist_head(emulator);
-    if head == 0 {
-        emu_store_bytes(emulator, next_address, &Value::Int(0), size_of::<usize>());
-        emu_set_freelist_head(emulator, block_start);
-    } else {
-        emu_store_bytes(emulator, next_address, &Value::Int(head), size_of::<usize>());
-        emu_set_freelist_head(emulator, block_start);
-    }
+    emu_store_bytes(emulator, next_address, &Value::Int(head), size_of::<usize>());
+    emu_set_freelist_head(emulator, block_start);
 }
 
 /// Push the given args onto the stack and return a `argv` pointer.
