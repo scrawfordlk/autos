@@ -3499,7 +3499,7 @@ fn codegen_enum(
         _ => Option::<Box<RType>>::None,
     };
     let enum_type: RType = RType::Enum(string_clone(enum_name), mapping);
-    let enum_ptr: String = codegen_emit_alloca(codegen, icg, &enum_type, 1);
+    let enum_ptr: String = codegen_emit_allocate_enum(codegen, icg, &enum_type);
     codegen_emit_store(codegen, icg, &RType::Usize, &tag, &enum_ptr);
 
     let mut offset_ptr: String = codegen_emit_pointer_add(codegen, icg, &enum_ptr, &RType::Usize, 1);
@@ -4279,6 +4279,15 @@ fn codegen_emit_alloca(codegen: &mut Codegen, icg: &ICodegen, ty: &RType, count:
     string_push_string(&mut line, &integer_to_string(count));
     codegen_emit_line(codegen, line);
     name
+}
+
+/// Given an enum type, allocate memory on the stack to store this enum, using `alloca`.
+fn codegen_emit_allocate_enum(codegen: &mut Codegen, icg: &ICodegen, ty: &RType) -> String {
+    let size: usize = rType_size(codegen, icg, ty);
+    if size % 8 != 0 {
+        panic("enum size should be aligned to 8 bytes");
+    }
+    codegen_emit_alloca(codegen, icg, &RType::Usize, size / 8)
 }
 
 /// Emit a store instruction for a given Rust type.
