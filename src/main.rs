@@ -912,7 +912,7 @@ fn rAstEnum_size(codegen: &mut Codegen, icg: &ICodegen, e: &RAstEnum, generic: &
         max_size = max(max_size, size);
         i = i + 1;
     }
-    // The size is aligned to 8, because the current implementation uses i64 arrays (8 byte wide elements).
+    // The size is aligned to 8, because the current implementation uses i64 (8 byte wide) elements.
     // If the size were not aligned to 8, there would be a size mismatch between size_of::<T>() (which is
     // the size returned here) and the actual size of the allocated memory (which is always a multiple of 8).
     round_to_next_multiple(8 + max_size, 8) // + 8 bytes for the discriminant
@@ -5072,7 +5072,7 @@ fn lLexer_skip_line(lexer: &mut LLexer) {
 // ------------------------- Parser --------------------------------
 // -----------------------------------------------------------------
 
-/// The parser state for a LLVM-IR module.
+/// The parser state for a LLLVM program.
 enum LParser {
     /// lexer, result AST, symbol table, number of registers
     Parser(LLexer, LAst, StringMap<LType>, usize),
@@ -5338,7 +5338,6 @@ enum LType {
     I8,
     I64,
     Ptr,
-    Array(usize, Box<LType>),
     Void,
 }
 
@@ -5347,7 +5346,6 @@ fn lType_bitwidth(ty: &LType) -> usize {
         LType::I1 => 1,
         LType::I8 => 8,
         LType::I64 | LType::Ptr => 64,
-        LType::Array(len, inner) => *len * lType_bitwidth(box_deref::<LType>(inner)),
         LType::Void => 0,
     }
 }
@@ -5502,11 +5500,22 @@ fn lparse_string(parser: &mut LParser) {
     let name: String = parser_expect_identifier(parser, false);
     parser_expect_token(parser, &LToken::Assign);
     parser_expect_token(parser, &LToken::Constant);
-    lparse_type(parser);
+
+    parser_expect_token(parser, &LToken::LBracket);
+    let len: usize = lparse_integer(parser);
+    parser_expect_token(parser, &LToken::X);
+    parser_expect_token(parser, &LToken::I8);
+    parser_expect_token(parser, &LToken::RBracket);
 
     match parser_current_token(parser) {
         LToken::CString(value) => {
             let string_value: String = string_clone(value);
+            if string_len(&string_value) != len {
+                parser_error(
+                    parser,
+                    &string("c-string length does not match with declared length"),
+                )
+            }
             parser_next_token(parser);
             if not(lAst_insert_global(
                 lparser_ast_mut(parser),
@@ -5943,21 +5952,6 @@ fn lparse_type(parser: &mut LParser) -> LType {
         LToken::I64 => LType::I64,
         LToken::Void => LType::Void,
         LToken::Ptr => LType::Ptr,
-        LToken::LBracket => {
-            let len: usize = lparse_integer(parser);
-            match parser_current_token(parser) {
-                LToken::X => {
-                    parser_next_token(parser);
-                },
-                _ => {
-                    let message: String = parser_expected_message(parser, &string("x in LLVM array type"));
-                    parser_error(parser, &message)
-                },
-            }
-            let inner: LType = lparse_type(parser);
-            parser_expect_token(parser, &LToken::RBracket);
-            LType::Array(len, box_new::<LType>(inner))
-        },
         _ => {
             let message: String = parser_expected_message(parser, &string("LLVM type"));
             parser_error(parser, &message)
@@ -5966,10 +5960,10 @@ fn lparse_type(parser: &mut LParser) -> LType {
 }
 
 fn lparse_value(parser: &mut LParser) -> LValue {
-    match parser_current_token(parser) {
-        LToken::Global(_) => LValue::Global(parser_expect_identifier(parser, false)),
-        LToken::Local(_) => LValue::Register(parser_expect_identifier(parser, true)),
-        LToken::Integer(value) => LValue::Literal(lparse_integer(parser)),
+    match parser_consume_current_token(parser) {
+        LToken::Global(ident) => LValue::Global(ident),
+        LToken::Local(ident) => LValue::Register(ident),
+        LToken::Integer(value) => LValue::Literal(value),
         _ => {
             let message: String = parser_expected_message(parser, &string("LLVM value"));
             parser_error(parser, &message)
@@ -5997,20 +5991,7 @@ enum ExecFlow<'a> {
     /// label
     Jump(&'a String),
     /// return value
-    Return(Value),
-}
-
-/// Value of a LLVM virtual register.
-enum Value {
-    Int(usize),
-    Array(Vec<usize>),
-}
-
-fn value_get_int(value: &Value) -> usize {
-    match value {
-        Value::Int(value) => *value,
-        _ => panic("expected an integer value in register!"),
-    }
+    Return(usize),
 }
 
 /// Type that encapsulates the state of the LLVM emulator.
@@ -6153,32 +6134,23 @@ fn emu_malloc(emulator: &mut Emu, mut size: usize) -> Option<usize> {
 
     emu_increase_bump_pointer(emulator, aligned_size); // allocation
     // store metadata (free-list pointer is not yet needed)
-    emu_store_bytes(emulator, bump_pointer, &Value::Int(aligned_size), 8);
+    emu_store_bytes(emulator, bump_pointer, aligned_size, 8);
     Option::<usize>::Some(bump_pointer + size_of::<usize>() * 2) // return address after block size
 }
 
 /// Given the address of a memory block, returns the size of it.
 fn emu_mem_block_size(emulator: &Emu, block_address: usize) -> usize {
-    value_get_int(&emu_load_bytes(emulator, block_address, size_of::<usize>()))
+    emu_load_bytes(emulator, block_address, size_of::<usize>())
 }
 
 /// Given the address of a memory block, returns the address of the next memory block in the freelist.
 fn emu_mem_block_next(emulator: &Emu, block_address: usize) -> usize {
-    value_get_int(&emu_load_bytes(
-        emulator,
-        block_address + size_of::<usize>(),
-        size_of::<usize>(),
-    ))
+    emu_load_bytes(emulator, block_address + size_of::<usize>(), size_of::<usize>())
 }
 
 /// Given the address of a memory block, updates the next-pointer to point to `next`.
-fn emu_mem_block_set_next(emulator: &mut Emu, block_address: usize, next: usize) {
-    emu_store_bytes(
-        emulator,
-        block_address + size_of::<usize>(),
-        &Value::Int(next),
-        size_of::<usize>(),
-    );
+fn emu_mem_block_set_next(emulator: &mut Emu, block: usize, next: usize) {
+    emu_store_bytes(emulator, block + size_of::<usize>(), next, size_of::<usize>());
 }
 
 /// Returns address of free memory block using best-fit, if it exists, else NULL.
@@ -6250,12 +6222,12 @@ fn emu_free(emulator: &mut Emu, pointer: usize) {
     let next_address: usize = block_start + size_of::<usize>();
 
     let head: usize = emu_get_freelist_head(emulator);
-    emu_store_bytes(emulator, next_address, &Value::Int(head), size_of::<usize>());
+    emu_store_bytes(emulator, next_address, head, size_of::<usize>());
     emu_set_freelist_head(emulator, block_start);
 }
 
 /// Push the given args onto the stack and return a `argv` pointer.
-fn emu_push_argv(emulator: &mut Emu, args: &Args) -> Value {
+fn emu_push_argv(emulator: &mut Emu, args: &Args) -> usize {
     // Allocate space for argv on stack
     let mut size: usize = 0;
     let mut i: usize = 0;
@@ -6267,26 +6239,26 @@ fn emu_push_argv(emulator: &mut Emu, args: &Args) -> Value {
     let new_sp: usize = emu_get_sp(emulator) - size;
     emu_set_sp(emulator, new_sp);
 
-    let NULL: Value = Value::Int(0);
+    let NULL: usize = 0;
     let mut offset: usize = new_sp + args_len(args) * size_of::<usize>();
     i = 0;
     while i < args_len(args) {
         // store pointer to argument in pointer array
         let pointer_address: usize = new_sp + i * size_of::<usize>();
-        emu_store_bytes(emulator, pointer_address, &Value::Int(offset), size_of::<usize>());
+        emu_store_bytes(emulator, pointer_address, offset, size_of::<usize>());
 
         let arg: &String = args_at(args, i);
         let mut j: usize = 0;
         while j < string_len(arg) {
             let byte: usize = string_at(arg, j) as usize;
-            emu_store_bytes(emulator, offset + j, &Value::Int(byte), 1);
+            emu_store_bytes(emulator, offset + j, byte, 1);
             j = j + 1;
         }
-        emu_store_bytes(emulator, offset + string_len(arg), &NULL, 1);
+        emu_store_bytes(emulator, offset + string_len(arg), NULL, 1);
         offset = offset + string_len(arg) + 1;
         i = i + 1;
     }
-    Value::Int(new_sp) // pointer to pointer array
+    new_sp // pointer to pointer array
 }
 
 /// Load LLVM-IR C-Strings into the data segment and return the next available address (= start of the
@@ -6303,7 +6275,7 @@ fn emu_initialise_global_data(emulator: &mut Emu, ast: &LAst) -> usize {
         let mut j: usize = 0;
         while j < string_len(value) {
             let character: usize = string_at(value, j) as usize;
-            emu_store_bytes(emulator, address + j, &Value::Int(character), 1);
+            emu_store_bytes(emulator, address + j, character, 1);
             j = j + 1;
         }
 
@@ -6332,69 +6304,40 @@ fn emu_get_memory_pointer(Emu::Emu(_, memory, _, _, _, _, _): &mut Emu, address:
 }
 
 /// Store a little-endian integer value at `address` using `byte_count` bytes.
-fn emu_store_bytes(emulator: &mut Emu, address: usize, value: &Value, mut byte_count: usize) -> bool {
+fn emu_store_bytes(emulator: &mut Emu, address: usize, value: usize, byte_count: usize) -> bool {
     let Emu::Emu(_, memory, _, _, _, _, _): &mut Emu = emulator;
-
-    match value {
-        Value::Int(value) => {
-            let mut remaining: usize = *value;
-            let mut i: usize = 0;
-            while i < byte_count {
-                let byte: u8 = (remaining % 256) as u8;
-                if not(vec_set::<u8>(memory, address + i, byte)) {
-                    return false;
-                }
-                remaining = remaining / 256;
-                i = i + 1;
-            }
-        },
-        Value::Array(array) => {
-            let mut i: usize = 0;
-            while i < vec_len::<usize>(array) {
-                let value: usize = *vec_at::<usize>(array, i);
-                emu_store_bytes(emulator, address + i * 8, &Value::Int(value), size_of::<usize>());
-                byte_count = byte_count - size_of::<usize>();
-                i = i + 1;
-            }
-        },
+    let mut remaining: usize = value;
+    let mut i: usize = 0;
+    while i < byte_count {
+        let byte: u8 = (remaining % 256) as u8;
+        if not(vec_set::<u8>(memory, address + i, byte)) {
+            return false;
+        }
+        remaining = remaining / 256;
+        i = i + 1;
     }
     true
 }
 
 /// Load a little-endian integer value from `address` using `byte_count` bytes.
-fn emu_load_bytes(emulator: &Emu, address: usize, byte_count: usize) -> Value {
+fn emu_load_bytes(emulator: &Emu, address: usize, byte_count: usize) -> usize {
     let Emu::Emu(_, memory, _, _, _, _, _): &Emu = emulator;
-
-    if byte_count <= 8 {
-        let mut value: usize = 0;
-        let mut factor: usize = 1;
-        let mut i: usize = 0;
-        while i < byte_count {
-            match vec_get::<u8>(memory, address + i) {
-                Option::Some(byte) => {
-                    value = value + (*byte as usize) * factor;
-                    if i + 1 < byte_count {
-                        factor = factor * 256;
-                    }
-                },
-                _ => panic("invalid address for load"),
-            }
-            i = i + 1;
+    let mut value: usize = 0;
+    let mut factor: usize = 1;
+    let mut i: usize = 0;
+    while i < byte_count {
+        match vec_get::<u8>(memory, address + i) {
+            Option::Some(byte) => {
+                value = value + (*byte as usize) * factor;
+                if i + 1 < byte_count {
+                    factor = factor * 256;
+                }
+            },
+            _ => panic("invalid address for load"),
         }
-        Value::Int(value as usize)
-    } else {
-        let mut array: Vec<usize> = vec_with_capacity::<usize>(byte_count / size_of::<usize>() + 1);
-        let mut offset: usize = 0;
-        while offset < byte_count {
-            let value: usize = match emu_load_bytes(emulator, address + offset, size_of::<usize>()) {
-                Value::Int(value) => value,
-                _ => panic("invalid address for load when loading array"),
-            };
-            vec_push::<usize>(&mut array, value);
-            offset = offset + size_of::<usize>();
-        }
-        Value::Array(array)
+        i = i + 1;
     }
+    value
 }
 
 /// Parse and emulate LLVM source and return the return value of `@main`.
@@ -6402,17 +6345,14 @@ fn emulate(source: String, memory_size: usize, args: &Args) -> usize {
     let ast: LAst = lparse_to_ast(source);
     let mut emulator: Emu = emu_new(memory_size, &ast);
 
-    let argc: Value = Value::Int(args_len(args));
-    let argv: Value = emu_push_argv(&mut emulator, args);
-    let mut main_args: Vec<Value> = vec_with_capacity::<Value>(2);
-    vec_push::<Value>(&mut main_args, argc);
-    vec_push::<Value>(&mut main_args, argv);
+    let argc: usize = args_len(args);
+    let argv: usize = emu_push_argv(&mut emulator, args);
+    let mut main_args: Vec<usize> = vec_with_capacity::<usize>(2);
+    vec_push::<usize>(&mut main_args, argc);
+    vec_push::<usize>(&mut main_args, argv);
 
     print_str("[Starting Emulation]\n");
-    let exit_code: usize = (match emu_execute_function(&mut emulator, &ast, &string("main"), &main_args) {
-        Value::Int(value) => value,
-        _ => panic("unexpected return value for main"),
-    }) % 256; // exit code is 16-bit integer
+    let exit_code: usize = emu_execute_function(&mut emulator, &ast, &string("main"), &main_args) % 256; // exit code is 16-bit integer
     print_str("=> Exited with exit code ");
     print_string(&integer_to_string(exit_code));
     println();
@@ -6420,22 +6360,19 @@ fn emulate(source: String, memory_size: usize, args: &Args) -> usize {
 }
 
 /// Execute the given function's body.
-fn emu_execute_function(emulator: &mut Emu, ast: &LAst, name: &String, args: &Vec<Value>) -> Value {
+fn emu_execute_function(emulator: &mut Emu, ast: &LAst, name: &String, args: &Vec<usize>) -> usize {
     match lAst_lookup_function(ast, name) {
-        LFunction::BuiltIn(builtin) => {
-            let value: usize = emu_execute_builtin(emulator, builtin, args);
-            Value::Int(value)
-        },
+        LFunction::BuiltIn(builtin) => emu_execute_builtin(emulator, builtin, args),
         LFunction::Function(parameters, first_label, blocks, register_count) => {
             let previous_frame_size: usize = emu_get_frame_size(emulator);
             emu_set_frame_size(emulator, 0);
-            let mut locals: StringMap<Value> = stringMap_with_len::<Value>(*register_count);
+            let mut locals: StringMap<usize> = stringMap_with_len::<usize>(*register_count);
 
             let mut i: usize = 0;
             while i < vec_len::<LParameter>(parameters) {
                 let LParameter::Parameter(name, _): &LParameter = vec_at::<LParameter>(parameters, i);
-                let value: &Value = vec_at::<Value>(args, i);
-                stringMap_insert_or_update::<Value>(&mut locals, name, value_clone(value));
+                let value: usize = *vec_at::<usize>(args, i);
+                stringMap_insert_or_update::<usize>(&mut locals, name, value);
                 i = i + 1;
             }
 
@@ -6463,47 +6400,47 @@ fn emu_execute_function(emulator: &mut Emu, ast: &LAst, name: &String, args: &Ve
 }
 
 /// Execute one builtin function and return its value.
-fn emu_execute_builtin(emulator: &mut Emu, builtin: &BuiltIn, arguments: &Vec<Value>) -> usize {
+fn emu_execute_builtin(emulator: &mut Emu, builtin: &BuiltIn, arguments: &Vec<usize>) -> usize {
     match builtin {
         BuiltIn::Exit => {
-            let exit_code: usize = value_get_int(vec_at::<Value>(arguments, 0));
+            let exit_code: usize = *vec_at::<usize>(arguments, 0);
             emu_set_exit_code(emulator, exit_code);
             exit_code
         },
         BuiltIn::Malloc => {
-            let size: usize = value_get_int(vec_at::<Value>(arguments, 0));
+            let size: usize = *vec_at::<usize>(arguments, 0);
             match emu_malloc(emulator, size) {
                 Option::Some(address) => address,
                 Option::None => 0, // = NULL
             }
         },
         BuiltIn::Free => {
-            let pointer: usize = value_get_int(vec_at::<Value>(arguments, 0));
+            let pointer: usize = *vec_at::<usize>(arguments, 0);
             emu_free(emulator, pointer);
-            0 // free returns void, so this is ignored
+            0 // free() returns void, so this is ignored
         },
         BuiltIn::Open => {
-            let path: usize = value_get_int(vec_at::<Value>(arguments, 0));
-            let flags: usize = value_get_int(vec_at::<Value>(arguments, 1));
-            let mode: usize = value_get_int(vec_at::<Value>(arguments, 2));
+            let path: usize = *vec_at::<usize>(arguments, 0);
+            let flags: usize = *vec_at::<usize>(arguments, 1);
+            let mode: usize = *vec_at::<usize>(arguments, 2);
             match emu_get_memory_pointer(emulator, path) {
                 Option::Some(ptr) => unsafe { open(ptr, flags, mode) },
                 _ => panic("trying to pass an out-of-bounds address to open()"),
             }
         },
         BuiltIn::Read => {
-            let fd: usize = value_get_int(vec_at::<Value>(arguments, 0));
-            let buf: usize = value_get_int(vec_at::<Value>(arguments, 1));
-            let count: usize = value_get_int(vec_at::<Value>(arguments, 2));
+            let fd: usize = *vec_at::<usize>(arguments, 0);
+            let buf: usize = *vec_at::<usize>(arguments, 1);
+            let count: usize = *vec_at::<usize>(arguments, 2);
             match emu_get_memory_pointer(emulator, buf) {
                 Option::Some(ptr) => unsafe { read(fd, ptr, count) },
                 _ => panic("trying to read() at an out-of-bound address"),
             }
         },
         BuiltIn::Write => {
-            let fd: usize = value_get_int(vec_at::<Value>(arguments, 0));
-            let buf: usize = value_get_int(vec_at::<Value>(arguments, 1));
-            let count: usize = value_get_int(vec_at::<Value>(arguments, 2));
+            let fd: usize = *vec_at::<usize>(arguments, 0);
+            let buf: usize = *vec_at::<usize>(arguments, 1);
+            let count: usize = *vec_at::<usize>(arguments, 2);
             match emu_get_memory_pointer(emulator, buf) {
                 Option::Some(ptr) => unsafe { write(fd, ptr, count) },
                 _ => panic("trying to write() at an out-of-bound address"),
@@ -6516,7 +6453,7 @@ fn emu_execute_builtin(emulator: &mut Emu, builtin: &BuiltIn, arguments: &Vec<Va
 fn emu_execute_instructions<'a>(
     emulator: &mut Emu,
     ast: &LAst,
-    locals: &mut StringMap<Value>,
+    locals: &mut StringMap<usize>,
     instructions: &'a Vec<Instruction>,
 ) -> ExecFlow<'a> {
     let mut i: usize = 0;
@@ -6524,32 +6461,25 @@ fn emu_execute_instructions<'a>(
         let instruction: &Instruction = vec_at::<Instruction>(instructions, i);
 
         match instruction {
-            Instruction::Assignment(assign_instruction) => {
-                emu_execute_assignment(emulator, ast, locals, assign_instruction);
+            Instruction::Assignment(assign) => emu_execute_assignment(emulator, ast, locals, assign),
+            Instruction::Store(ty, value, address) => emu_execute_store(emulator, locals, ty, value, address),
+            Instruction::Call(Call::Call(return_type, callee, arguments)) => {
+                emu_execute_call(emulator, ast, locals, return_type, callee, arguments);
             },
-            Instruction::Store(ty, value, address) => {
-                emu_execute_store(emulator, locals, ty, value, address);
-            },
-            Instruction::Call(Call::Call(call_type, callee, arguments)) => {
-                emu_execute_call(emulator, ast, locals, call_type, callee, arguments);
-            },
-
             Instruction::Ret(return_type, return_value) => {
                 return ExecFlow::Return(match return_value {
                     Option::Some(value) => {
-                        let mut value: Value = llvm_eval_value(emulator, locals, value);
-                        llvm_overflow_value(&mut value, return_type);
-                        value
+                        let value: usize = llvm_eval_value(emulator, locals, value);
+                        llvm_overflow_value(value, return_type)
                     },
-                    Option::None => Value::Int(0),
+                    Option::None => 0,
                 });
             },
             Instruction::Br(branch) => {
                 return match branch {
                     Branch::Unconditional(target_label) => ExecFlow::Jump(target_label),
                     Branch::Conditional(condition, then_label, else_label) => {
-                        let condition_value: usize =
-                            value_get_int(&llvm_eval_value(emulator, locals, condition));
+                        let condition_value: usize = llvm_eval_value(emulator, locals, condition);
 
                         if condition_value == 1 {
                             ExecFlow::Jump(then_label)
@@ -6562,7 +6492,7 @@ fn emu_execute_instructions<'a>(
         }
 
         match emu_exit_code(emulator) {
-            Option::Some(code) => return ExecFlow::Return(Value::Int(code)),
+            Option::Some(code) => return ExecFlow::Return(code),
             Option::None => {},
         };
 
@@ -6575,68 +6505,54 @@ fn emu_execute_instructions<'a>(
 fn emu_execute_assignment(
     emulator: &mut Emu,
     ast: &LAst,
-    locals: &mut StringMap<Value>,
+    locals: &mut StringMap<usize>,
     AssignInstruction::Assign(target, operation): &AssignInstruction,
 ) {
-    let value: Value = emu_evaluate_assign_op(emulator, ast, locals, operation);
-    stringMap_insert_or_update::<Value>(locals, target, value);
+    let value: usize = emu_evaluate_assign_op(emulator, ast, locals, operation);
+    stringMap_insert_or_update::<usize>(locals, target, value);
 }
 
 /// Evaluate the value of the assignment operation.
-fn emu_evaluate_assign_op(emulator: &mut Emu, ast: &LAst, locals: &StringMap<Value>, op: &AssignOp) -> Value {
+fn emu_evaluate_assign_op(emulator: &mut Emu, ast: &LAst, locals: &StringMap<usize>, op: &AssignOp) -> usize {
     match op {
         AssignOp::Binary(operator, result_type, left, right) => {
-            let mut lhs: Value = llvm_eval_value(emulator, locals, left);
-            let mut rhs: Value = llvm_eval_value(emulator, locals, right);
-            llvm_overflow_value(&mut lhs, result_type);
-            llvm_overflow_value(&mut rhs, result_type);
-            let lhs: usize = value_get_int(&lhs);
-            let rhs: usize = value_get_int(&rhs);
-
-            let value: usize = match operator {
+            let lhs: usize = llvm_overflow_value(llvm_eval_value(emulator, locals, left), result_type);
+            let rhs: usize = llvm_overflow_value(llvm_eval_value(emulator, locals, right), result_type);
+            match operator {
                 BinaryOp::Add => lhs + rhs,
                 BinaryOp::Sub => lhs - rhs,
                 BinaryOp::Mul => lhs * rhs,
                 BinaryOp::Udiv => lhs / rhs,
                 BinaryOp::Urem => lhs % rhs,
-            };
-            Value::Int(value)
+            }
         },
         AssignOp::Icmp(predicate, operand_type, left, right) => {
-            let mut lhs: Value = llvm_eval_value(emulator, locals, left);
-            let mut rhs: Value = llvm_eval_value(emulator, locals, right);
-            llvm_overflow_value(&mut lhs, operand_type);
-            llvm_overflow_value(&mut rhs, operand_type);
-            let lhs: usize = value_get_int(&lhs);
-            let rhs: usize = value_get_int(&rhs);
-
-            let result: bool = match predicate {
+            let lhs: usize = llvm_overflow_value(llvm_eval_value(emulator, locals, left), operand_type);
+            let rhs: usize = llvm_overflow_value(llvm_eval_value(emulator, locals, right), operand_type);
+            (match predicate {
                 IcmpOp::Eq => lhs == rhs,
                 IcmpOp::Ne => lhs != rhs,
                 IcmpOp::Ugt => lhs > rhs,
                 IcmpOp::Uge => lhs >= rhs,
                 IcmpOp::Ult => lhs < rhs,
                 IcmpOp::Ule => lhs <= rhs,
-            };
-            Value::Int(result as usize)
+            }) as usize
         },
         AssignOp::Cast(cast_op, to_type, value) => {
-            let mut evaluated_value: Value = llvm_eval_value(emulator, locals, value);
-            llvm_overflow_value(&mut evaluated_value, to_type);
-            evaluated_value
+            let evaluated_value: usize = llvm_eval_value(emulator, locals, value);
+            llvm_overflow_value(evaluated_value, to_type)
         },
         AssignOp::Alloca(allocated_type, count) => {
             let space: usize = *count * lType_size(allocated_type);
             match emu_stack_alloc(emulator, space) {
-                Option::Some(address) => Value::Int(address),
+                Option::Some(address) => address,
                 Option::None => panic("Stack overflow encountered during emulation"),
             }
         },
         AssignOp::Load(loaded_type, address_value) => {
-            let address: usize = value_get_int(&llvm_eval_value(emulator, locals, address_value));
-            let mut value: Value = emu_load_bytes(emulator, address, lType_size(loaded_type));
-            llvm_overflow_value(&mut value, loaded_type);
-            value
+            let address: usize = llvm_eval_value(emulator, locals, address_value);
+            let value: usize = emu_load_bytes(emulator, address, lType_size(loaded_type));
+            llvm_overflow_value(value, loaded_type)
         },
         AssignOp::Call(Call::Call(call_type, callee, arguments)) => {
             emu_execute_call(emulator, ast, locals, call_type, callee, arguments)
@@ -6648,68 +6564,61 @@ fn emu_evaluate_assign_op(emulator: &mut Emu, ast: &LAst, locals: &StringMap<Val
 fn emu_execute_call(
     emulator: &mut Emu,
     ast: &LAst,
-    locals: &StringMap<Value>,
+    locals: &StringMap<usize>,
     call_type: &LType,
     callee: &String,
     arguments: &Vec<LTypedValue>,
-) -> Value {
-    let mut arg_values: Vec<Value> = vec_with_capacity::<Value>(vec_len::<LTypedValue>(arguments));
+) -> usize {
+    let mut arg_values: Vec<usize> = vec_with_capacity::<usize>(vec_len::<LTypedValue>(arguments));
     let mut i: usize = 0;
     while i < vec_len::<LTypedValue>(arguments) {
         let LTypedValue::Pair(ty, argument_value): &LTypedValue = vec_at::<LTypedValue>(arguments, i);
-        let mut value: Value = llvm_eval_value(emulator, locals, argument_value);
-        llvm_overflow_value(&mut value, ty);
-        vec_push::<Value>(&mut arg_values, value);
+        let value: usize = llvm_eval_value(emulator, locals, argument_value);
+        vec_push::<usize>(&mut arg_values, llvm_overflow_value(value, ty));
         i = i + 1;
     }
 
-    let mut value: Value = emu_execute_function(emulator, ast, callee, &arg_values);
-    llvm_overflow_value(&mut value, call_type);
-    drop_vec::<Value>(arg_values);
-    value
+    let value: usize = emu_execute_function(emulator, ast, callee, &arg_values);
+    drop_vec::<usize>(arg_values);
+    llvm_overflow_value(value, call_type)
 }
 
 /// Normalize a value so it wraps around according to the given type.
-fn llvm_overflow_value(value: &mut Value, ty: &LType) {
-    let modulo: usize = match ty {
-        LType::I1 => 2,
-        LType::I8 => 256,
-        _ => return,
-    };
-    match value {
-        Value::Int(value) => *value = *value % modulo,
-        _ => {},
+fn llvm_overflow_value(value: usize, ty: &LType) -> usize {
+    match ty {
+        LType::I1 => value % 2,
+        LType::I8 => value % 256,
+        _ => value,
     }
 }
 
 /// Execute the given store instruction.
 fn emu_execute_store(
     emulator: &mut Emu,
-    locals: &StringMap<Value>,
+    locals: &StringMap<usize>,
     store_type: &LType,
     value: &LValue,
     address: &LValue,
 ) {
-    let mut value: Value = llvm_eval_value(emulator, locals, value);
-    llvm_overflow_value(&mut value, store_type);
-    let target_address: usize = value_get_int(&llvm_eval_value(emulator, locals, address));
+    let value: usize = llvm_overflow_value(llvm_eval_value(emulator, locals, value), store_type);
+    let target_address: usize = llvm_eval_value(emulator, locals, address);
     let byte_count: usize = lType_size(store_type);
 
-    if not(emu_store_bytes(emulator, target_address, &value, byte_count)) {
+    if not(emu_store_bytes(emulator, target_address, value, byte_count)) {
         panic("invalid LLVM store address");
     }
 }
 
 /// Evaluate the value of a virtual register, global name or literal.
-fn llvm_eval_value(emulator: &Emu, locals: &StringMap<Value>, value: &LValue) -> Value {
+fn llvm_eval_value(emulator: &Emu, locals: &StringMap<usize>, value: &LValue) -> usize {
     match value {
-        LValue::Literal(number) => Value::Int(*number),
-        LValue::Register(name) => match stringMap_get::<Value>(locals, name) {
-            Option::Some(register_value) => value_clone(register_value),
+        LValue::Literal(number) => *number,
+        LValue::Register(name) => match stringMap_get::<usize>(locals, name) {
+            Option::Some(register_value) => *register_value,
             Option::None => panic("unknown LLVM register"),
         },
         LValue::Global(name) => match stringMap_get::<usize>(emu_globals(emulator), name) {
-            Option::Some(value) => Value::Int(*value),
+            Option::Some(value) => *value,
             Option::None => panic("unknown LLVM global value"),
         },
     }
@@ -7445,13 +7354,6 @@ fn llvmType_eq(left: &LType, right: &LType) -> bool {
             LType::Ptr => true,
             _ => false,
         },
-        LType::Array(left_len, left_inner) => match right {
-            LType::Array(right_len, right_inner) => and(
-                *left_len == *right_len,
-                llvmType_eq(box_deref::<LType>(left_inner), box_deref::<LType>(right_inner)),
-            ),
-            _ => false,
-        },
         LType::Void => match right {
             LType::Void => true,
             _ => false,
@@ -8136,27 +8038,7 @@ fn llvmType_clone(ty: &LType) -> LType {
         LType::I8 => LType::I8,
         LType::I64 => LType::I64,
         LType::Ptr => LType::Ptr,
-        LType::Array(len, inner) => {
-            LType::Array(*len, box_new::<LType>(llvmType_clone(box_deref::<LType>(inner))))
-        },
         LType::Void => LType::Void,
-    }
-}
-
-/// Clone an LLVM value.
-fn value_clone(value: &Value) -> Value {
-    match value {
-        Value::Int(value) => Value::Int(*value),
-        Value::Array(array) => {
-            let mut clone: Vec<usize> = vec_with_capacity::<usize>(vec_len::<usize>(array));
-            let mut i: usize = 0;
-            while i < vec_len::<usize>(array) {
-                let value: usize = *vec_at::<usize>(array, i);
-                vec_push::<usize>(&mut clone, value);
-                i = i + 1;
-            }
-            Value::Array(clone)
-        },
     }
 }
 
@@ -8174,34 +8056,30 @@ fn string_clone(String::Inner(Vec::Vec(ptr, len, _)): &String) -> String {
 
 /// Drop a Vec, i.e. deallocate the underlying buffer. This only frees the memory used for the buffer. If
 /// the elements own memory, it is disregarded and leaked (e.g. Vec<String>). If that is the case, then
-/// a custom Drop implementation is more suited than this function.
+/// a custom Drop implementation is more suitable than this function.
 fn drop_vec<T>(Vec::Vec(ptr, _, _): Vec<T>) {
     unsafe { free(ptr as *mut u8) }
 }
 
 /// Drop a StringMap<Value> map, i.e. deallocate all associated values.
-fn drop_stringValueMap(StringMap::Map(buckets): StringMap<Value>) {
+fn drop_stringValueMap(StringMap::Map(buckets): StringMap<usize>) {
     let mut i: usize = 0;
-    while i < vec_len::<Vec<StringMapEntry<Value>>>(&buckets) {
+    while i < vec_len::<Vec<StringMapEntry<usize>>>(&buckets) {
         unsafe {
-            let bucket: &Vec<StringMapEntry<Value>> = vec_at::<Vec<StringMapEntry<Value>>>(&buckets, i);
+            let bucket: &Vec<StringMapEntry<usize>> = vec_at::<Vec<StringMapEntry<usize>>>(&buckets, i);
             let mut j: usize = 0;
-            while j < vec_len::<StringMapEntry<Value>>(bucket) {
-                let StringMapEntry::Entry(name, value): &StringMapEntry<Value> =
-                    vec_at::<StringMapEntry<Value>>(bucket, j);
+            while j < vec_len::<StringMapEntry<usize>>(bucket) {
+                let StringMapEntry::Entry(name, _): &StringMapEntry<usize> =
+                    vec_at::<StringMapEntry<usize>>(bucket, j);
                 let String::Inner(Vec::Vec(str_ptr, _, _)): &String = name;
                 free(*str_ptr);
-                match value {
-                    Value::Array(Vec::Vec(array_ptr, _, _)) => free(*array_ptr as *mut u8),
-                    _ => {},
-                }
                 j = j + 1;
             }
-            free(vec_ptr::<StringMapEntry<Value>>(bucket) as *mut u8);
+            free(vec_ptr::<StringMapEntry<usize>>(bucket) as *mut u8);
         }
         i = i + 1;
     }
-    drop_vec::<Vec<StringMapEntry<Value>>>(buckets);
+    drop_vec::<Vec<StringMapEntry<usize>>>(buckets);
 }
 
 // ------------------------- String -------------------------------

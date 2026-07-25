@@ -5,7 +5,7 @@
 ```
 llvm     -> { string | function }
 
-string   -> global "=" "constant" array "c"" { printable_character } """
+string   -> global "=" "constant" "[" number "x" "i8" "]" "c"" { printable_character } """
 
 function -> "define" type global
             "(" [ type local { "," type local } ] ")"
@@ -57,7 +57,7 @@ load        -> "load" type "," "ptr" value
 ```
 local      -> "%" identifier
 
-type       -> integer | "void" | "ptr" | "[" number "x" integer ]"
+type       -> integer | "void" | "ptr"
 
 integer    -> "i64" | "i8" | "i1"
 

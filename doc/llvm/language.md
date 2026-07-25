@@ -1,44 +1,47 @@
-# LLVM-IR
+# LLLVM
 
 ## 1. What a program looks like
 
-An LLVM-IR file is a sequence of:
+An LLLVM-IR file is a sequence of:
 
-- global constants
+- global string constants
 - function declarations (`declare`)
 - function definitions (`define`)
 
 Example:
 
 ```llvm
-@.msg = constant [5 x i8] c"hello"
+@msg = constant [5 x i8] c"hello"
 
-declare i64 @read()
+declare i64 @exit(i64)
 
 define i64 @main() {
 entry:
-  %x = call i64 @read()
+  call void @exit(42);
+  %x = add i64 11, 22
   ret i64 %x
 }
 ```
 
-## 2. Names, registers, and symbols
+## 2. Names
 
-- `%name` is a local variable, often referred to as virtual register. Register allocation is handled by the backend, therefore there are infinite virtual registers.
-- `@name` is a global symbol (global data or function name).
-- Labels (like `entry:`) mark basic blocks inside a function.
+- `%name` is a local variable, often referred to as virtual register.
+  Register allocation is handled by the backend, hence there is no restriction
+  on the number of registers.
+- `@name` is a global name (either referring to a string literal or a function).
+- `name:` denotes a label for a basic block
 
 ## 3. Types
 
 - `i1`, `i8`, `i64`: integers with width of 1, 8 or 64 respectively
 - `void`: no return value
 - `ptr`: pointer
-- `[N x <type>]`: array with `N` elements of type `<type>`
 
-Every instruction is explicitly typed. For example, arithmetic states the operand type:
+Every instruction is explicitly typed. For example, arithmetic operators state the
+operand type:
 
 ```llvm
-%sum = add i64 %a, %b
+%product = mul i64 %a, %b
 ```
 
 ## 4. Constants and literals
@@ -46,19 +49,24 @@ Every instruction is explicitly typed. For example, arithmetic states the operan
 Supported literals:
 
 - integer literal: `0`, `42`
-- string literal for constant byte arrays: `c"hello"`
+- string literals: `c"hello"`
 
-Global constants use the form:
+String literals are global constant and use the syntax:
 
 ```llvm
-@name = constant <type> <literal>
+@name = constant [<len> x i8] <literal>
 ```
+
+Where `<len>` is the number of bytes of the literal (must match).
 
 Example:
 
 ```llvm
-@.msg = constant [6 x i8] c"hello\00"
+@msg = constant [6 x i8] c"hello\00"
 ```
+
+As one can see, escaping with a backslash allows specifying the code of an ASCII
+character using a two-digit hexadecimal number.
 
 ## 5. Functions
 
@@ -73,11 +81,12 @@ declare void @exit(i64)
 
 Declarable functions are:
 
+- `exit()`
+- `malloc()`
+- `free()`
 - `open()`
 - `read()`
 - `write()`
-- `malloc()`
-- `exit()`
 
 ### Definition (`define`)
 
@@ -93,13 +102,10 @@ entry:
 
 ## 6. Basic blocks and control flow
 
-A function body is made of basic blocks. A block is:
-
-1. One label (`entry:`) at the beginning,
-2. $n$ normal instructions,
-3. one terminator instruction (`ret` or `br`) at the end.
-
-(A terminator instruction does not have to be at the end of a block. It may also appear anywhere else.)
+A function body is made of a sequence of labelled basic blocks. A block contains
+arbitrary many instructions and requires the last instruction to be
+a terminator instruction (`ret` or `br`). (A terminator instruction does not
+have to be at the end of a block. It may also appear anywhere else.)
 
 Branch instruction (`br`):
 
@@ -115,7 +121,7 @@ Branch instruction (`br`):
   br i1 %cond, label %then, label %else
   ```
 
-Here, `%name` denotes a label, not a virtual register with a value.
+Here, `%name` denotes a label, **not** a virtual register with a value.
 
 ## 7. Instruction set in this subset
 
@@ -148,7 +154,10 @@ Example:
 
 ### Casting
 
-Casting can be done by zero-extending a type with a smaller bitwidth to a type with a larger bitwidth, by truncating a type with a larger bitwidth to a type with a smaller bitwidth, by interpreting an integer as a pointer or by interpreting a pointer as an integer.
+Casting can be done by zero-extending a type with a smaller bitwidth to a type
+with a larger bitwidth, by truncating a type with a larger bitwidth to a type
+with a smaller bitwidth, by interpreting an integer as a pointer or by
+interpreting a pointer as an integer.
 
 Examples:
 
@@ -168,14 +177,15 @@ Examples:
 %p2 = inttoptr i64 %new.pointer to ptr
 ```
 
-As one can see, pointer arithmetic can be performed in this way, making the infamous `getelementptr` instruction redundant.
+As one can see, pointer arithmetic can be performed in this way, making the
+infamous `getelementptr` instruction redundant.
 
 ### Function call
 
-Calls another function and optionally captures the return value:
+Call another function and optionally capture the return value:
 
 ```llvm
-%v = call i64 @read()
+%v = call i64 @read_i64()
 call void @write_i64(i64 %v)
 ```
 
@@ -193,9 +203,9 @@ ret i64 %r
 
 ## 8. Static Single Assignment (SSA) form
 
-LLVM-IR follows Static Single Assignment (SSA) form:
+LLVM-IR (and hence LLLVM) is in **Static Single Assignment form (SSA)**:
 
-1. All virtual registers may only be assigned to once (their contents can't be mutated).
+1. All virtual registers may only be assigned to once.
 2. All uses of virtual registers may only refer to a single definition.
 
 So this is valid:
@@ -205,7 +215,7 @@ So this is valid:
 %x1 = mul i64 %x0, 2
 ```
 
-while this violates SSA and hence is invalid:
+Whereas this violates SSA and hence is invalid:
 
 ```llvm
 %x = add i64 %y, 1
