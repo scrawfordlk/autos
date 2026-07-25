@@ -3491,7 +3491,7 @@ fn codegen_enum(
         _ => Option::<Box<RType>>::None,
     };
     let enum_type: RType = RType::Enum(string_clone(enum_name), mapping);
-    let enum_ptr: String = codegen_emit_allocate_enum(codegen, icg, &enum_type);
+    let enum_ptr: String = codegen_emit_alloca(codegen, icg, &enum_type, 1);
     codegen_emit_store(codegen, icg, &RType::Usize, &tag, &enum_ptr);
 
     let mut offset_ptr: String = codegen_emit_pointer_add(codegen, icg, &enum_ptr, &RType::Usize, 1);
@@ -3560,7 +3560,7 @@ fn codegen_call(
         // add a special sret parameter which will hold the enum return value
         let dummy_ptr: RType = RType::RawPointerMut(box_new::<RType>(RType::Unit));
         vec_push::<RType>(&mut value_types, dummy_ptr);
-        let sret: String = codegen_emit_allocate_enum(codegen, icg, &return_type);
+        let sret: String = codegen_emit_alloca(codegen, icg, &return_type, 1);
         vec_push::<String>(&mut value_names, sret);
     }
 
@@ -4278,25 +4278,24 @@ fn codegen_emit_cast(
 /// ```
 /// Returns `%<name>`.
 fn codegen_emit_alloca(codegen: &mut Codegen, icg: &ICodegen, ty: &RType, count: usize) -> String {
-    let name: String = codegen_next_register(codegen);
-    let mut line: String = string_new();
-    string_push_str(&mut line, "  ");
-    string_push_string(&mut line, &name);
-    string_push_str(&mut line, " = alloca ");
-    string_push_string(&mut line, &rType_to_llvm_name(codegen, icg, ty));
-    string_push_str(&mut line, ", i64 ");
-    string_push_string(&mut line, &integer_to_string(count));
-    codegen_emit_line(codegen, line);
-    name
-}
-
-/// Given an enum type, allocate memory on the stack to store this enum, using `alloca`.
-fn codegen_emit_allocate_enum(codegen: &mut Codegen, icg: &ICodegen, ty: &RType) -> String {
-    let size: usize = rType_size(codegen, icg, ty);
-    if size % 8 != 0 {
-        panic("enum size should be aligned to 8 bytes");
+    if not(rType_is_enum(codegen, ty)) {
+        let name: String = codegen_next_register(codegen);
+        let mut line: String = string_new();
+        string_push_str(&mut line, "  ");
+        string_push_string(&mut line, &name);
+        string_push_str(&mut line, " = alloca ");
+        string_push_string(&mut line, &rType_to_llvm_name(codegen, icg, ty));
+        string_push_str(&mut line, ", i64 ");
+        string_push_string(&mut line, &integer_to_string(count));
+        codegen_emit_line(codegen, line);
+        name
+    } else {
+        let size: usize = rType_size(codegen, icg, ty) * count;
+        if size % 8 != 0 {
+            panic("enum size should be aligned to 8 bytes");
+        }
+        codegen_emit_alloca(codegen, icg, &RType::Usize, size / 8)
     }
-    codegen_emit_alloca(codegen, icg, &RType::Usize, size / 8)
 }
 
 /// Emit a store instruction for a given Rust type.
@@ -4628,8 +4627,17 @@ fn codegen_fixup_alloca_type(codegen: &mut Codegen, icg: &ICodegen, index: usize
         i = i + 1;
     }
 
-    string_push_string(&mut new_alloca, &rType_to_llvm_name(codegen, icg, new_type));
-    string_push_str(&mut new_alloca, ", i64 1");
+    if rType_is_enum(codegen, new_type) {
+        let size: usize = rType_size(codegen, icg, new_type);
+        if size % 8 != 0 {
+            panic("fixed up enum size should be aligned to 8 bytes");
+        }
+        string_push_str(&mut new_alloca, "i64, i64 ");
+        string_push_string(&mut new_alloca, &integer_to_string(size / 8));
+    } else {
+        string_push_string(&mut new_alloca, &rType_to_llvm_name(codegen, icg, new_type));
+        string_push_str(&mut new_alloca, ", i64 1");
+    }
 
     codegen_fixup(codegen, index, new_alloca);
 }
