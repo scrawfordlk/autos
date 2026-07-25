@@ -3165,16 +3165,7 @@ fn codegen_function(codegen: &mut Codegen, icg: &ICodegen, function: &RAstFuncti
         return; // do not generate generic functions unless type parameter is instantiated
     }
 
-    let llvm_return_type: String = if codegen_is_main(codegen) {
-        if rType_eq(return_type, &RType::Unit) {
-            string("i64")
-        } else {
-            rType_to_llvm_name(codegen, icg, return_type)
-        }
-    } else {
-        rType_to_llvm_name(codegen, icg, return_type)
-    };
-    codegen_emit_fn_signature(codegen, icg, name, &llvm_return_type, parameters);
+    codegen_emit_fn_signature(codegen, icg, name, return_type, parameters);
 
     codegen_push_scope(codegen);
     let mut i: usize = 0;
@@ -4470,10 +4461,18 @@ fn codegen_emit_fn_signature(
     codegen: &mut Codegen,
     icg: &ICodegen,
     fn_name: &String,
-    return_type_name: &String,
+    return_type: &RType,
     parameters: &Vec<RAstVariable>,
 ) {
     code_start_new_function(codegen_code_mut(codegen)); // Start code generation for new function
+
+    let return_type_name: &String = if rType_is_enum(codegen, return_type) {
+        &rType_to_llvm_name(codegen, icg, return_type)
+    } else if and(str_eq(fn_name, "main"), rType_eq(return_type, &RType::Unit)) {
+        &string("i64") // fn main() -> () should return i64 0 as exit code
+    } else {
+        &rType_to_llvm_name(codegen, icg, return_type)
+    };
 
     let mut line: String = string_new();
     string_push_str(&mut line, "define ");
