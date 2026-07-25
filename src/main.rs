@@ -3183,7 +3183,6 @@ fn codegen_function(codegen: &mut Codegen, icg: &ICodegen, function: &RAstFuncti
     match return_type {
         RType::Unit | RType::Never => {
             if codegen_is_main(codegen) {
-                // exit with success
                 codegen_emit_ret_value(codegen, icg, &RType::Usize, &integer_to_string(0));
             } else {
                 codegen_emit_ret_void(codegen);
@@ -3192,18 +3191,20 @@ fn codegen_function(codegen: &mut Codegen, icg: &ICodegen, function: &RAstFuncti
         _ => {
             if rType_eq(&block_type, &RType::Never) {
                 // there is not value, so dummy return value that is never reached anyway
-                value_name = if rType_is_enum(codegen, return_type) {
-                    codegen_emit_alloca(codegen, icg, return_type, 1)
+                if rType_is_enum(codegen, return_type) {
+                    codegen_emit_ret_void(codegen);
                 } else if rType_is_pointer(return_type) {
                     let dummy_ptr: RType = RType::RawPointerMut(box_new::<RType>(RType::Usize));
                     let op: CastOperation = CastOperation::IntToPtr;
-                    codegen_emit_cast(codegen, icg, &op, &RType::Usize, &dummy_ptr, &string("0"))
+                    let val: String =
+                        codegen_emit_cast(codegen, icg, &op, &RType::Usize, &dummy_ptr, &string("0"));
+                    codegen_emit_ret_value(codegen, icg, return_type, &val);
                 } else {
-                    string("0")
+                    codegen_emit_ret_value(codegen, icg, return_type, &string("0"));
                 };
+            } else {
+                codegen_emit_ret_value(codegen, icg, return_type, &value_name);
             }
-            value_name = codegen_emit_load_if_enum(codegen, icg, value_name, return_type);
-            codegen_emit_ret_value(codegen, icg, return_type, &value_name);
         },
     };
     codegen_pop_scope(codegen);
@@ -3297,9 +3298,8 @@ fn codegen_expression(codegen: &mut Codegen, icg: &ICodegen, expression: &RAstEx
 fn codegen_return(codegen: &mut Codegen, icg: &ICodegen, returned: &Option<Box<RAstExpr>>) -> STPair {
     match returned {
         Option::Some(expression) => {
-            let STPair::ST(mut name, ty): STPair =
+            let STPair::ST(name, ty): STPair =
                 codegen_expression(codegen, icg, box_deref::<RAstExpr>(expression));
-            name = codegen_emit_load_if_enum(codegen, icg, name, &ty);
             codegen_emit_ret_value(codegen, icg, &ty, &name);
         },
         Option::None => {
@@ -3516,17 +3516,6 @@ fn codegen_call(
     values: &Vec<RAstExpr>,
     generic: &Option<RType>,
 ) -> STPair {
-    let mut value_types: Vec<RType> = vec_with_capacity::<RType>(vec_len::<RAstExpr>(values));
-    let mut value_names: Vec<String> = vec_with_capacity::<String>(vec_len::<RAstExpr>(values));
-    let mut i: usize = 0;
-    while i < vec_len::<RAstExpr>(values) {
-        let value: &RAstExpr = vec_at::<RAstExpr>(values, i);
-        let STPair::ST(value_name, value_type): STPair = codegen_expression(codegen, icg, value);
-        vec_push::<RType>(&mut value_types, value_type);
-        vec_push::<String>(&mut value_names, value_name);
-        i = i + 1;
-    }
-
     let mut return_type: RType = match iCodegen_search_global(icg, name) {
         Option::Some(item) => match item {
             Item::Function(return_type, _, _, _) => rType_clone(return_type),
@@ -3564,19 +3553,39 @@ fn codegen_call(
         _ => false,
     };
 
-    let mut result_name: String = if rType_has_value(&return_type) {
+    let mut value_types: Vec<RType> = vec_with_capacity::<RType>(vec_len::<RAstExpr>(values) + 1);
+    let mut value_names: Vec<String> = vec_with_capacity::<String>(vec_len::<RAstExpr>(values) + 1);
+
+    if rType_is_enum(codegen, &return_type) {
+        // add a special sret parameter which will hold the enum return value
+        let dummy_ptr: RType = RType::RawPointerMut(box_new::<RType>(RType::Unit));
+        vec_push::<RType>(&mut value_types, dummy_ptr);
+        let sret: String = codegen_emit_allocate_enum(codegen, icg, &return_type);
+        vec_push::<String>(&mut value_names, sret);
+    }
+
+    // compute arguments and push them onto vec
+    let mut i: usize = 0;
+    while i < vec_len::<RAstExpr>(values) {
+        let value: &RAstExpr = vec_at::<RAstExpr>(values, i);
+        let STPair::ST(value_name, value_type): STPair = codegen_expression(codegen, icg, value);
+        vec_push::<RType>(&mut value_types, value_type);
+        vec_push::<String>(&mut value_names, value_name);
+        i = i + 1;
+    }
+
+    // emit the call and assign the result
+    let result_name: String = if rType_is_enum(codegen, &return_type) {
+        codegen_emit_call_side_effect(codegen, icg, name, &RType::Unit, &value_types, &value_names);
+        string_clone(vec_at::<String>(&value_names, 0)) // sret parameter holds result
+    } else if rType_has_value(&return_type) {
         codegen_emit_call_assign(codegen, icg, name, &return_type, &value_types, &value_names)
     } else {
-        codegen_emit_call_void(codegen, icg, name, &return_type, &value_types, &value_names);
+        codegen_emit_call_side_effect(codegen, icg, name, &return_type, &value_types, &value_names);
         string_new()
     };
 
-    if rType_is_enum(codegen, &return_type) {
-        let pointer: String = codegen_emit_alloca(codegen, icg, &return_type, 1);
-        codegen_emit_store(codegen, icg, &return_type, &result_name, &pointer);
-        result_name = pointer;
-    }
-
+    // generate callee if they are generic and were not generated yet
     let items: &Vec<RAstItem> = iCodegen_ast_items(icg);
     match generic {
         Option::Some(_) => {
@@ -4162,14 +4171,22 @@ fn codegen_emit_icmp(
 /// ```llvm
 /// ret <ty> <value>
 /// ```
+/// Enums are returned using sret.
 fn codegen_emit_ret_value(codegen: &mut Codegen, icg: &ICodegen, ty: &RType, value: &String) {
-    let mut line: String = string_new();
-    string_push_str(&mut line, "  ");
-    string_push_str(&mut line, "ret ");
-    string_push_string(&mut line, &rType_to_llvm_name(codegen, icg, ty));
-    string_push(&mut line, ' ');
-    string_push_string(&mut line, value);
-    codegen_emit_line(codegen, line);
+    if not(rType_is_enum(codegen, ty)) {
+        let mut line: String = string_new();
+        string_push_str(&mut line, "  ");
+        string_push_str(&mut line, "ret ");
+        string_push_string(&mut line, &rType_to_llvm_name(codegen, icg, ty));
+        string_push(&mut line, ' ');
+        string_push_string(&mut line, value);
+        codegen_emit_line(codegen, line);
+    } else {
+        // do not directly return the enum, instead copy to sret parameter
+        let e: String = codegen_emit_load(codegen, icg, ty, value);
+        codegen_emit_store(codegen, icg, ty, &e, &string("%sret"));
+        codegen_emit_line(codegen, string("  ret void"));
+    }
 }
 
 /// Emit a return instruction with no value.
@@ -4356,7 +4373,7 @@ fn codegen_emit_load_if_enum(codegen: &mut Codegen, icg: &ICodegen, value: Strin
 
 /// Emit a call instruction that assigns the return value to a register.
 /// ```llvm
-/// %<register> = call <ty> @<name>(<type> <arg>, ...)
+/// %<register> = call <return_type> @<callee>(<arg_type> <arg>, ...)
 /// ```
 /// Returns `%<register>`.
 fn codegen_emit_call_assign(
@@ -4380,9 +4397,9 @@ fn codegen_emit_call_assign(
 
 /// Emit a call instruction without assigning its (potential) return value.
 /// ```llvm
-/// call <ty> @<name>(<type> <arg>, ...)
+/// call <return_type> @<callee>(<arg_type> <arg>, ...)
 /// ```
-fn codegen_emit_call_void(
+fn codegen_emit_call_side_effect(
     codegen: &mut Codegen,
     icg: &ICodegen,
     callee: &String,
@@ -4467,7 +4484,7 @@ fn codegen_emit_fn_signature(
     code_start_new_function(codegen_code_mut(codegen)); // Start code generation for new function
 
     let return_type_name: &String = if rType_is_enum(codegen, return_type) {
-        &rType_to_llvm_name(codegen, icg, return_type)
+        &string("void") // enums are returned using sret
     } else if and(str_eq(fn_name, "main"), rType_eq(return_type, &RType::Unit)) {
         &string("i64") // fn main() -> () should return i64 0 as exit code
     } else {
@@ -4481,6 +4498,14 @@ fn codegen_emit_fn_signature(
     let name: String = codegen_mangle_name(codegen, fn_name);
     string_push_string(&mut line, &name);
     string_push_str(&mut line, "(");
+
+    // add hidden first parameter sret if this function returns enum
+    if rType_is_enum(codegen, return_type) {
+        string_push_str(&mut line, "ptr %sret");
+        if vec_len::<RAstVariable>(parameters) > 0 {
+            string_push(&mut line, ',');
+        }
+    }
 
     let mut i: usize = 0;
     let len: usize = vec_len::<RAstVariable>(parameters);
