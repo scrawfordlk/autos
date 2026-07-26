@@ -3140,32 +3140,6 @@ entry:
   ret ptr %p
 }";
     codegen_emit_line(codegen, string(as_ptr));
-
-    let memcpy: &str = "define void @..autos.memcpy(ptr %dst, ptr %src, i64 %bytes) {
-entry:
-  %i = alloca i64, i64 1
-  store i64 0, ptr %i
-  br label %loop
-loop:
-  %iv = load i64, ptr %i
-  %done = icmp uge i64 %iv, %bytes
-  br i1 %done, label %exit, label %copy
-copy:
-  %srci = ptrtoint ptr %src to i64
-  %srcoff = add i64 %srci, %iv
-  %srcptr = inttoptr i64 %srcoff to ptr
-  %byte = load i8, ptr %srcptr
-  %dsti = ptrtoint ptr %dst to i64
-  %dstoff = add i64 %dsti, %iv
-  %dstptr = inttoptr i64 %dstoff to ptr
-  store i8 %byte, ptr %dstptr
-  %next = add i64 %iv, 1
-  store i64 %next, ptr %i
-  br label %loop
-exit:
-  ret void
-}";
-    codegen_emit_line(codegen, string(memcpy));
 }
 
 /// Emit LLVM-IR for one extern block.
@@ -4396,13 +4370,13 @@ fn codegen_emit_pointer_add(
 /// Emit a memcpy call which copies `size_of::<ty>()` bytes from `src` to `dest`.
 fn codegen_emit_memcpy(codegen: &mut Codegen, icg: &ICodegen, dest: &String, src: &String, ty: &RType) {
     let size: usize = rType_size(codegen, icg, ty);
-    let mut line: String = string("  call void @..autos.memcpy(ptr ");
+    let mut line: String = string("  call void @llvm.memcpy.p0.p0.i64(ptr ");
     string_push_string(&mut line, dest);
     string_push_str(&mut line, ", ptr ");
     string_push_string(&mut line, src);
     string_push_str(&mut line, ", i64 ");
     string_push_string(&mut line, &integer_to_string(size));
-    string_push(&mut line, ')');
+    string_push_str(&mut line, ", i1 0)"); // isvolatile parameter is not supported by autos
     codegen_emit_line(codegen, line);
 }
 
@@ -5132,6 +5106,7 @@ fn lparser_set_register_count(LParser::Parser(_, _, _, counter): &mut LParser, v
 fn lparse_to_ast(source: String) -> LAst {
     let mut parser: LParser = lparser_new(source);
     lparse_language(&mut parser);
+    lparse_insert_intrinsics(&mut parser);
     let LParser::Parser(_, ast, _, _): LParser = parser;
     ast
 }
@@ -5324,7 +5299,7 @@ enum LFunction {
     BuiltIn(BuiltIn),
 }
 
-/// Supported LLVM-IR declared functions.
+/// Supported LLLVM-IR declared or intrinsic functions.
 enum BuiltIn {
     Exit,
     Malloc,
@@ -5332,6 +5307,7 @@ enum BuiltIn {
     Open,
     Read,
     Write,
+    Memcpy, // intrinsic for performance
 }
 
 /// Represents a parameter of an LLVM function.
@@ -5496,6 +5472,12 @@ enum LValue {
 // TODO: drop this: the AST does not need to know about types. Parser ensures type safety.
 enum LTypedValue {
     Pair(LType, LValue),
+}
+
+/// Insert intrinsics into the AST.
+fn lparse_insert_intrinsics(parser: &mut LParser) {
+    let name: String = string("llvm.memcpy.p0.p0.i64");
+    parser_lAst_insert_function(parser, &name, LFunction::BuiltIn(BuiltIn::Memcpy));
 }
 
 fn lparse_language(parser: &mut LParser) {
@@ -6453,6 +6435,22 @@ fn emu_execute_builtin(emulator: &mut Emu, builtin: &BuiltIn, arguments: &Vec<us
                 Option::Some(ptr) => unsafe { write(fd, ptr, count) },
                 _ => panic("trying to write() at an out-of-bound address"),
             }
+        },
+        BuiltIn::Memcpy => {
+            let dest: usize = *vec_at::<usize>(arguments, 0);
+            let src: usize = *vec_at::<usize>(arguments, 1);
+            let len: usize = *vec_at::<usize>(arguments, 2);
+            // autos does not support the isvolatile parameter, so it's ignored
+            let dest: *mut u8 = match emu_get_memory_pointer(emulator, dest) {
+                Option::Some(address) => address,
+                Option::None => panic("trying to call the intrinsic memcpy() with an invalid dest pointer"),
+            };
+            let src: *mut u8 = match emu_get_memory_pointer(emulator, src) {
+                Option::Some(address) => address,
+                Option::None => panic("trying to call the intrinsic memcpy() with an invalid src pointer"),
+            };
+            unsafe { memcopy::<u8>(dest, src, len) };
+            0 // returns void, so this is ignored
         },
     }
 }
