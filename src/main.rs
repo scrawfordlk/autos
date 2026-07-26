@@ -2158,6 +2158,16 @@ fn castOperation_select_operation(left_type: &RType, right_type: &RType) -> Cast
                     CastOperation::Invalid
                 }
             },
+            RType::Reference(right_inner, other_mutable) => {
+                if and(
+                    rType_eq(box_deref::<RType>(left_inner), box_deref::<RType>(right_inner)),
+                    or(not(*other_mutable), *mutable), // other_mutable => mutable
+                ) {
+                    CastOperation::None
+                } else {
+                    CastOperation::Invalid
+                }
+            },
             _ => CastOperation::Invalid,
         },
         RType::RawPointerMut(_) => match right_type {
