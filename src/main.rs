@@ -131,7 +131,6 @@ fn compile(source: String, do_semantic_analysis: bool) -> String {
 // ---------------------- Lexical Analysis -------------------------
 // -----------------------------------------------------------------
 
-#[derive(Debug)]
 enum RToken {
     Fn,          // "fn"
     Enum,        // "enum"
@@ -181,7 +180,6 @@ enum RToken {
 }
 
 /// Literal tokens.
-#[derive(Debug)]
 enum RLiteral {
     Int(usize),
     String(String),
@@ -716,7 +714,6 @@ enum RAstPatternLiteral {
 }
 
 /// Types from the Rust subset.
-#[derive(Debug)]
 enum RType {
     U8,
     Usize,
@@ -1102,7 +1099,6 @@ fn rType_extract_enum_generic(ty: &RType) -> Option<RType> {
 
 /// Possible types of a scrutinee in a match expression. The contained type is the type the Scrutinee is matched
 /// against, while the variant encodes whether bindings are (mutable) references.
-#[derive(Debug)]
 enum Scrutinee {
     Value(RType),
     /// inner type, mutable
@@ -4693,7 +4689,6 @@ fn codegen_fixup_alloca_type(codegen: &mut Codegen, icg: &ICodegen, index: usize
 // -----------------------------------------------------------------
 
 /// Tokens produced by the LLVM lexer.
-#[derive(Debug)]
 enum LToken {
     Define,             // "define"
     Declare,            // "declare"
@@ -5342,7 +5337,6 @@ enum LParameter {
 }
 
 /// Supported LLVM types in the subset.
-#[derive(Debug)]
 enum LType {
     I1,
     I8,
@@ -5476,7 +5470,6 @@ fn assignOp_get_type(operation: &AssignOp) -> LType {
 }
 
 /// Represents an LLVM value operand.
-#[derive(Debug)]
 enum LValue {
     /// identifier
     Register(String),
@@ -6956,7 +6949,6 @@ fn digit_to_ascii(digit: u8) -> char {
 // ------------------------ Option<T> ------------------------------
 
 /// Optional type that can contain some value with type T or no value.
-#[derive(Debug)]
 enum Option<T> {
     Some(T),
     None,
@@ -6982,7 +6974,6 @@ fn unwrap<T>(opt: Option<T>) -> T {
 // -------------------------- Box<T> ------------------------------
 
 /// Pointer to heap that owns its value.
-#[derive(Debug)]
 enum Box<T> {
     Ptr(*mut T),
 }
@@ -7002,7 +6993,6 @@ fn box_deref<T>(Box::Ptr(ptr): &Box<T>) -> &T {
 // -------------------------- Vec<T> ------------------------------
 
 /// Generic contiguous growable buffer.
-#[derive(Debug)]
 enum Vec<T> {
     /// start, length, capacity
     Vec(*mut T, usize, usize),
@@ -8095,7 +8085,6 @@ fn drop_stringValueMap(StringMap::Map(buckets): StringMap<usize>) {
 // ------------------------- String -------------------------------
 
 /// A growable ASCII string.
-#[derive(Debug)]
 enum String {
     Inner(Vec<u8>),
 }
