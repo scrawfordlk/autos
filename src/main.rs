@@ -5099,12 +5099,12 @@ fn lparser_ast_mut(LParser::Parser(_, ast, _, _): &mut LParser) -> &mut LAst {
 }
 
 /// Insert register name. Returns false on duplicate.
-fn parser_symtable_insert(LParser::Parser(_, _, locals, _): &mut LParser, name: &String, ty: LType) -> bool {
+fn lparser_symtable_insert(LParser::Parser(_, _, locals, _): &mut LParser, name: &String, ty: LType) -> bool {
     stringMap_insert_or_update::<LType>(locals, name, ty)
 }
 
 /// Lookup a register type in the local symbol table.
-fn parser_symtable_get<'a>(
+fn lparser_symtable_get<'a>(
     LParser::Parser(_, _, registers, _): &'a LParser,
     name: &String,
 ) -> Option<&'a LType> {
@@ -5112,19 +5112,19 @@ fn parser_symtable_get<'a>(
 }
 
 /// Clear local register table buckets.
-fn parser_symtable_reset(LParser::Parser(_, _, registers, _): &mut LParser) {
+fn lparser_symtable_reset(LParser::Parser(_, _, registers, _): &mut LParser) {
     *registers = stringMap_new::<LType>();
 }
 
-fn parser_register_count(LParser::Parser(_, _, _, counter): &LParser) -> usize {
+fn lparser_register_count(LParser::Parser(_, _, _, counter): &LParser) -> usize {
     *counter
 }
 
-fn parser_increment_register_count(LParser::Parser(_, _, _, counter): &mut LParser) {
+fn lparser_increment_register_count(LParser::Parser(_, _, _, counter): &mut LParser) {
     *counter = *counter + 1;
 }
 
-fn parser_set_register_count(LParser::Parser(_, _, _, counter): &mut LParser, value: usize) {
+fn lparser_set_register_count(LParser::Parser(_, _, _, counter): &mut LParser, value: usize) {
     *counter = value;
 }
 
@@ -5137,32 +5137,32 @@ fn lparse_to_ast(source: String) -> LAst {
 }
 
 /// Get current LLVM parser token.
-fn parser_current_token(parser: &LParser) -> &LToken {
+fn lparser_current_token(parser: &LParser) -> &LToken {
     lLexer_current_token(lparser_lexer(parser))
 }
 
 /// Consume and return the current LLVM parser token.
-fn parser_consume_current_token(parser: &mut LParser) -> LToken {
+fn lparser_consume_current_token(parser: &mut LParser) -> LToken {
     let lexer: &LLexer = lparser_lexer(parser);
     let token: LToken = lToken_clone(lLexer_current_token(lexer));
-    parser_next_token(parser);
+    lparser_next_token(parser);
     token
 }
 
 /// Advance and return next LLVM parser token.
-fn parser_next_token(LParser::Parser(lexer, _, _, _): &mut LParser) {
+fn lparser_next_token(LParser::Parser(lexer, _, _, _): &mut LParser) {
     lLexer_next_token(lexer);
 }
 
 /// Check whether parser current token equals expected token.
-fn parser_current_token_eq(parser: &LParser, token: &LToken) -> bool {
-    lToken_eq(parser_current_token(parser), token)
+fn lparser_current_token_eq(parser: &LParser, token: &LToken) -> bool {
+    lToken_eq(lparser_current_token(parser), token)
 }
 
 /// Try consuming one token and report success.
-fn parser_try_consume(parser: &mut LParser, token: &LToken) -> bool {
-    if parser_current_token_eq(parser, token) {
-        parser_next_token(parser);
+fn lparser_try_consume(parser: &mut LParser, token: &LToken) -> bool {
+    if lparser_current_token_eq(parser, token) {
+        lparser_next_token(parser);
         true
     } else {
         false
@@ -5170,73 +5170,77 @@ fn parser_try_consume(parser: &mut LParser, token: &LToken) -> bool {
 }
 
 /// Require and consume one token.
-fn parser_expect_token(parser: &mut LParser, token: &LToken) {
-    if not(parser_try_consume(parser, token)) {
-        let message: String = parser_expected_message(parser, &lToken_to_string(token));
-        parser_error(parser, &message);
+fn lparser_expect_token(parser: &mut LParser, token: &LToken) {
+    if not(lparser_try_consume(parser, token)) {
+        let message: String = lparser_expected_message(parser, &lToken_to_string(token));
+        lparser_error(parser, &message);
     }
 }
 
 /// Read and consume one identifier token.
-fn parser_expect_identifier(parser: &mut LParser, is_local: bool) -> String {
+fn lparser_expect_identifier(parser: &mut LParser, is_local: bool) -> String {
     if is_local {
-        match parser_current_token(parser) {
+        match lparser_current_token(parser) {
             LToken::Local(identifier) => {
                 let value: String = string_clone(identifier);
-                parser_next_token(parser);
+                lparser_next_token(parser);
                 value
             },
             LToken::LabelIdent(identifier) => {
                 let value: String = string_clone(identifier);
-                parser_next_token(parser);
+                lparser_next_token(parser);
                 value
             },
             _ => {
-                let message: String = parser_expected_message(parser, &string("local LLVM identifier"));
-                parser_error(parser, &message)
+                let message: String = lparser_expected_message(parser, &string("local LLVM identifier"));
+                lparser_error(parser, &message)
             },
         }
     } else {
-        match parser_current_token(parser) {
+        match lparser_current_token(parser) {
             LToken::Global(identifier) => {
                 let value: String = string_clone(identifier);
-                parser_next_token(parser);
+                lparser_next_token(parser);
                 value
             },
             _ => {
-                let message: String = parser_expected_message(parser, &string("global LLVM identifier"));
-                parser_error(parser, &message)
+                let message: String = lparser_expected_message(parser, &string("global LLVM identifier"));
+                lparser_error(parser, &message)
             },
         }
     }
 }
 
-fn parser_expect_value_type(parser: &LParser, value: &LValue, expected: &LType) {
-    if not(parser_value_has_type(parser, value, expected)) {
-        parser_warning(parser, &string("LLVM value does not match expected type"));
+fn lparser_expect_type(parser: &LParser, actual: &LType, expected: &LType) {
+    if not(lType_eq(actual, expected)) {
+        let mut msg: String = string("expected ");
+        string_push_str(&mut msg, lType_to_str(expected));
+        string_push_str(&mut msg, ", but got: ");
+        string_push_str(&mut msg, lType_to_str(actual));
+        lparser_warning(parser, &msg);
     }
 }
 
-fn parser_value_has_type(parser: &LParser, value: &LValue, expected: &LType) -> bool {
-    match value {
-        LValue::Register(name) => match parser_symtable_get(parser, name) {
-            Option::Some(actual) => llvmType_eq(actual, expected),
+fn lparser_expect_value_type(parser: &LParser, value: &LValue, expected: &LType) {
+    let matches: bool = match value {
+        LValue::Register(name) => match lparser_symtable_get(parser, name) {
+            Option::Some(actual) => lType_eq(actual, expected),
             Option::None => false,
         },
         LValue::Literal(_) => match expected {
             LType::I1 | LType::I8 | LType::I64 => true, // allow overflows
             _ => false,
         },
-        LValue::Global(_) => match expected {
-            LType::Ptr => true,
-            _ => false,
-        },
+        LValue::Global(_) => lType_eq(&LType::Ptr, expected),
+    };
+    if not(matches) {
+        lparser_warning(parser, &string("LLLVM value does not match expected type"));
     }
 }
 
 /// Return true if the current token indicates the start of a new instruction.
-fn parser_is_instruction_start(parser: &mut LParser) -> bool {
-    match parser_current_token(parser) {
+fn lparser_is_instruction_start(parser: &mut LParser) -> bool {
+    match lparser_current_token(parser) {
         LToken::Ret | LToken::Br | LToken::Local(_) | LToken::Store | LToken::Call => true,
         _ => false,
     }
@@ -5300,7 +5304,7 @@ fn parser_lAst_insert_function(parser: &mut LParser, name: &String, function: LF
     let LParser::Parser(_, ast, _, _): &mut LParser = parser;
     let functions: &mut StringMap<LFunction> = lAst_functions_mut(ast);
     if not(stringMap_insert_or_update::<LFunction>(functions, name, function)) {
-        parser_error(parser, &string("duplicate LLVM function definition"));
+        lparser_error(parser, &string("duplicate LLVM function definition"));
     }
 }
 
@@ -5356,7 +5360,7 @@ fn lType_bitwidth(ty: &LType) -> usize {
 
 /// Return the size of an LLVM type in bytes.
 fn lType_size(ty: &LType) -> usize {
-    max(1, lType_bitwidth(ty) / 8)
+    lType_bitwidth(ty) / 8
 }
 
 fn lType_is_integer(ty: &LType) -> bool {
@@ -5377,6 +5381,15 @@ fn lType_is_void(ty: &LType) -> bool {
     match ty {
         LType::Void => true,
         _ => false,
+    }
+}
+
+/// Normalize a value so it wraps around according to the given type.
+fn ltype_overflow_value(value: usize, ty: &LType) -> usize {
+    match ty {
+        LType::I1 => value % 2,
+        LType::I8 => value % 256,
+        _ => value,
     }
 }
 
@@ -5460,12 +5473,12 @@ enum CastOp {
 
 fn assignOp_get_type(operation: &AssignOp) -> LType {
     match operation {
-        AssignOp::Binary(_, ty, _, _) => llvmType_clone(ty),
+        AssignOp::Binary(_, ty, _, _) => lType_clone(ty),
         AssignOp::Icmp(_, _, _, _) => LType::I1,
-        AssignOp::Call(Call::Call(ty, _, _)) => llvmType_clone(ty),
-        AssignOp::Cast(ty, _) => llvmType_clone(ty),
+        AssignOp::Call(Call::Call(ty, _, _)) => lType_clone(ty),
+        AssignOp::Cast(ty, _) => lType_clone(ty),
         AssignOp::Alloca(_, _) => LType::Ptr,
-        AssignOp::Load(ty, _) => llvmType_clone(ty),
+        AssignOp::Load(ty, _) => lType_clone(ty),
     }
 }
 
@@ -5486,92 +5499,93 @@ enum LTypedValue {
 }
 
 fn lparse_language(parser: &mut LParser) {
-    while not(parser_current_token_eq(parser, &LToken::Eof)) {
-        match parser_current_token(parser) {
+    while not(lparser_current_token_eq(parser, &LToken::Eof)) {
+        match lparser_current_token(parser) {
             LToken::Global(_) => lparse_string(parser),
             LToken::Define => lparse_function(parser),
             LToken::Declare => lparse_declare(parser),
             _ => {
-                let message: String = parser_expected_message(parser, &string("LLVM top-level item"));
-                parser_error(parser, &message)
+                let message: String = lparser_expected_message(parser, &string("LLVM top-level item"));
+                lparser_error(parser, &message)
             },
         }
     }
 }
 
 fn lparse_string(parser: &mut LParser) {
-    let name: String = parser_expect_identifier(parser, false);
-    parser_expect_token(parser, &LToken::Assign);
-    parser_expect_token(parser, &LToken::Constant);
+    let name: String = lparser_expect_identifier(parser, false);
+    lparser_expect_token(parser, &LToken::Assign);
+    lparser_expect_token(parser, &LToken::Constant);
 
-    parser_expect_token(parser, &LToken::LBracket);
+    lparser_expect_token(parser, &LToken::LBracket);
     let len: usize = lparse_integer(parser);
-    parser_expect_token(parser, &LToken::X);
-    parser_expect_token(parser, &LToken::I8);
-    parser_expect_token(parser, &LToken::RBracket);
+    lparser_expect_token(parser, &LToken::X);
+    lparser_expect_token(parser, &LToken::I8);
+    lparser_expect_token(parser, &LToken::RBracket);
 
-    match parser_current_token(parser) {
+    match lparser_current_token(parser) {
         LToken::CString(value) => {
             let string_value: String = string_clone(value);
             if string_len(&string_value) != len {
-                parser_error(
+                lparser_error(
                     parser,
                     &string("c-string length does not match with declared length"),
                 )
             }
-            parser_next_token(parser);
+            lparser_next_token(parser);
             if not(lAst_insert_global(
                 lparser_ast_mut(parser),
                 string_clone(&name),
                 CString::String(name, string_value),
             )) {
-                parser_error(parser, &string("duplicate LLVM global string"));
+                lparser_error(parser, &string("duplicate LLVM global string"));
             }
         },
         _ => {
-            let message: String = parser_expected_message(parser, &string("LLVM c-string literal"));
-            parser_error(parser, &message)
+            let message: String = lparser_expected_message(parser, &string("LLVM c-string literal"));
+            lparser_error(parser, &message)
         },
     }
 }
 
 fn lparse_function(parser: &mut LParser) {
-    parser_expect_token(parser, &LToken::Define);
+    lparser_expect_token(parser, &LToken::Define);
     let return_type: LType = lparse_type(parser); // TODO: check type of ret using this
-    let function_name: String = parser_expect_identifier(parser, false);
+    let function_name: String = lparser_expect_identifier(parser, false);
 
-    parser_symtable_reset(parser);
+    lparser_symtable_reset(parser);
     let params: Vec<LParameter> = lparse_parameters(parser, true);
-    parser_set_register_count(parser, vec_len::<LParameter>(&params));
+    lparser_set_register_count(parser, vec_len::<LParameter>(&params));
 
-    parser_expect_token(parser, &LToken::LBrace);
+    lparser_expect_token(parser, &LToken::LBrace);
     let mut blocks: StringMap<Vec<Instruction>> = stringMap_new::<Vec<Instruction>>();
-    let first_label: String = parser_expect_identifier(parser, true);
+    let first_label: String = lparser_expect_identifier(parser, true);
     let block: Vec<Instruction> = lparse_instructions(parser);
     stringMap_insert_or_update::<Vec<Instruction>>(&mut blocks, &first_label, block);
-    while not(parser_current_token_eq(parser, &LToken::RBrace)) {
-        let label: String = parser_expect_identifier(parser, true);
+    while not(lparser_current_token_eq(parser, &LToken::RBrace)) {
+        let label: String = lparser_expect_identifier(parser, true);
         let block: Vec<Instruction> = lparse_instructions(parser);
         if not(stringMap_insert_or_update::<Vec<Instruction>>(
             &mut blocks,
             &label,
             block,
         )) {
-            parser_error(parser, &string("Duplicate basic block labels detected"));
+            lparser_error(parser, &string("Duplicate basic block labels detected"));
         }
     }
-    parser_expect_token(parser, &LToken::RBrace);
+    lparser_expect_token(parser, &LToken::RBrace);
 
-    let function: LFunction = LFunction::Function(params, first_label, blocks, parser_register_count(parser));
+    let function: LFunction =
+        LFunction::Function(params, first_label, blocks, lparser_register_count(parser));
     parser_lAst_insert_function(parser, &function_name, function);
 }
 
 fn lparse_declare(parser: &mut LParser) {
-    parser_expect_token(parser, &LToken::Declare);
+    lparser_expect_token(parser, &LToken::Declare);
     let return_type: LType = lparse_type(parser);
-    let name: String = parser_expect_identifier(parser, false);
+    let name: String = lparser_expect_identifier(parser, false);
 
-    parser_symtable_reset(parser);
+    lparser_symtable_reset(parser);
     let parameters: Vec<LParameter> = lparse_parameters(parser, false);
 
     let mut is_incorrect: bool = false;
@@ -5631,13 +5645,13 @@ fn lparse_declare(parser: &mut LParser) {
             BuiltIn::Write
         }
     } else {
-        parser_error(parser, &string("unknown declared function"));
+        lparser_error(parser, &string("unknown declared function"));
     };
     if is_incorrect {
         let mut msg: String = string("signature of ");
         string_push_string(&mut msg, &name);
         string_push_str(&mut msg, " is incorrect");
-        parser_error(parser, &msg);
+        lparser_error(parser, &msg);
     }
 
     let function: LFunction = LFunction::BuiltIn(builtin);
@@ -5651,44 +5665,44 @@ fn lparse_declare(parser: &mut LParser) {
 fn lparse_parameters(parser: &mut LParser, named: bool) -> Vec<LParameter> {
     let mut parameters: Vec<LParameter> = vec_new::<LParameter>();
 
-    parser_expect_token(parser, &LToken::LParen);
+    lparser_expect_token(parser, &LToken::LParen);
 
-    if not(parser_current_token_eq(parser, &LToken::RParen)) {
+    if not(lparser_current_token_eq(parser, &LToken::RParen)) {
         let parameter_type: LType = lparse_type(parser);
         let param_name: String = lparse_parameter_name(parser, 0);
-        parser_symtable_insert(parser, &param_name, llvmType_clone(&parameter_type));
+        lparser_symtable_insert(parser, &param_name, lType_clone(&parameter_type));
 
         let parameter: LParameter = LParameter::Parameter(param_name, parameter_type);
         vec_push::<LParameter>(&mut parameters, parameter);
 
-        while parser_current_token_eq(parser, &LToken::Comma) {
-            parser_next_token(parser);
+        while lparser_current_token_eq(parser, &LToken::Comma) {
+            lparser_next_token(parser);
 
             let parameter_type: LType = lparse_type(parser);
             let param_name: String = lparse_parameter_name(parser, vec_len::<LParameter>(&parameters));
 
             if and(
                 named,
-                not(parser_symtable_insert(
+                not(lparser_symtable_insert(
                     parser,
                     &param_name,
-                    llvmType_clone(&parameter_type),
+                    lType_clone(&parameter_type),
                 )),
             ) {
-                parser_error(parser, &string("duplicate parameters in LLVM function"));
+                lparser_error(parser, &string("duplicate parameters in LLVM function"));
             }
 
             let parameter: LParameter = LParameter::Parameter(param_name, parameter_type);
             vec_push::<LParameter>(&mut parameters, parameter);
         }
     }
-    parser_expect_token(parser, &LToken::RParen);
+    lparser_expect_token(parser, &LToken::RParen);
     parameters
 }
 
 fn lparse_parameter_name(parser: &mut LParser, index: usize) -> String {
-    match parser_current_token(parser) {
-        LToken::Local(_) => parser_expect_identifier(parser, true),
+    match lparser_current_token(parser) {
+        LToken::Local(_) => lparser_expect_identifier(parser, true),
         _ => {
             let mut name: String = string("arg");
             string_push_string(&mut name, &integer_to_string(index));
@@ -5699,7 +5713,7 @@ fn lparse_parameter_name(parser: &mut LParser, index: usize) -> String {
 
 fn lparse_instructions(parser: &mut LParser) -> Vec<Instruction> {
     let mut block: Vec<Instruction> = vec_new::<Instruction>();
-    while parser_is_instruction_start(parser) {
+    while lparser_is_instruction_start(parser) {
         let instruction: Instruction = lparse_instruction(parser);
         vec_push::<Instruction>(&mut block, instruction);
     }
@@ -5707,26 +5721,26 @@ fn lparse_instructions(parser: &mut LParser) -> Vec<Instruction> {
 }
 
 fn lparse_instruction(parser: &mut LParser) -> Instruction {
-    match parser_current_token(parser) {
+    match lparser_current_token(parser) {
         LToken::Ret => lparse_return(parser),
         LToken::Br => lparse_branch(parser),
         LToken::Local(_) => Instruction::Assignment(lparse_assignment(parser)),
         LToken::Store => lparse_store(parser),
         LToken::Call => {
-            parser_next_token(parser);
+            lparser_next_token(parser);
             Instruction::Call(lparse_call(parser))
         },
         _ => {
-            let message: String = parser_expected_message(parser, &string("LLVM instruction"));
-            parser_error(parser, &message)
+            let message: String = lparser_expected_message(parser, &string("LLVM instruction"));
+            lparser_error(parser, &message)
         },
     }
 }
 
 fn lparse_return(parser: &mut LParser) -> Instruction {
-    parser_expect_token(parser, &LToken::Ret);
+    lparser_expect_token(parser, &LToken::Ret);
     let returned_type: LType = lparse_type(parser);
-    let return_value: Option<LValue> = if llvmType_eq(&returned_type, &LType::Void) {
+    let return_value: Option<LValue> = if lType_eq(&returned_type, &LType::Void) {
         Option::<LValue>::None
     } else {
         Option::<LValue>::Some(lparse_value(parser))
@@ -5735,21 +5749,21 @@ fn lparse_return(parser: &mut LParser) -> Instruction {
 }
 
 fn lparse_branch(parser: &mut LParser) -> Instruction {
-    parser_expect_token(parser, &LToken::Br);
-    let branch: Branch = if parser_try_consume(parser, &LToken::Label) {
-        let target_label: String = parser_expect_identifier(parser, true);
+    lparser_expect_token(parser, &LToken::Br);
+    let branch: Branch = if lparser_try_consume(parser, &LToken::Label) {
+        let target_label: String = lparser_expect_identifier(parser, true);
         Branch::Unconditional(target_label)
     } else {
-        parser_expect_token(parser, &LToken::I1);
+        lparser_expect_token(parser, &LToken::I1);
         let condition: LValue = lparse_value(parser);
-        parser_expect_token(parser, &LToken::Comma);
+        lparser_expect_token(parser, &LToken::Comma);
 
-        parser_expect_token(parser, &LToken::Label);
-        let then_label: String = parser_expect_identifier(parser, true);
-        parser_expect_token(parser, &LToken::Comma);
+        lparser_expect_token(parser, &LToken::Label);
+        let then_label: String = lparser_expect_identifier(parser, true);
+        lparser_expect_token(parser, &LToken::Comma);
 
-        parser_expect_token(parser, &LToken::Label);
-        let else_label: String = parser_expect_identifier(parser, true);
+        lparser_expect_token(parser, &LToken::Label);
+        let else_label: String = lparser_expect_identifier(parser, true);
 
         Branch::Conditional(condition, then_label, else_label)
     };
@@ -5757,10 +5771,10 @@ fn lparse_branch(parser: &mut LParser) -> Instruction {
 }
 
 fn lparse_assignment(parser: &mut LParser) -> AssignInstruction {
-    let target_register: String = parser_expect_identifier(parser, true);
+    let target_register: String = lparser_expect_identifier(parser, true);
 
-    parser_expect_token(parser, &LToken::Assign);
-    let operation: AssignOp = match parser_consume_current_token(parser) {
+    lparser_expect_token(parser, &LToken::Assign);
+    let operation: AssignOp = match lparser_consume_current_token(parser) {
         LToken::Add => lparse_binary_assign(parser, BinaryOp::Add),
         LToken::Sub => lparse_binary_assign(parser, BinaryOp::Sub),
         LToken::Mul => lparse_binary_assign(parser, BinaryOp::Mul),
@@ -5775,37 +5789,37 @@ fn lparse_assignment(parser: &mut LParser) -> AssignInstruction {
         LToken::Load => lparse_load_assign(parser),
         LToken::Call => lparse_call_assign(parser),
         _ => {
-            let message: String = parser_expected_message(parser, &string("LLVM assignment operation"));
-            parser_error(parser, &message)
+            let message: String = lparser_expected_message(parser, &string("LLVM assignment operation"));
+            lparser_error(parser, &message)
         },
     };
 
-    if not(parser_symtable_insert(
+    if not(lparser_symtable_insert(
         parser,
         &target_register,
         assignOp_get_type(&operation),
     )) {
-        parser_warning(parser, &string("SSA: duplicate register assignment"));
+        lparser_warning(parser, &string("SSA: duplicate register assignment"));
     }
 
-    parser_increment_register_count(parser);
+    lparser_increment_register_count(parser);
     AssignInstruction::Assign(target_register, operation)
 }
 
 fn lparse_binary_assign(parser: &mut LParser, operator: BinaryOp) -> AssignOp {
     let ty: LType = lparse_type(parser);
     let left: LValue = lparse_value(parser);
-    parser_expect_value_type(parser, &left, &ty);
+    lparser_expect_value_type(parser, &left, &ty);
 
-    parser_expect_token(parser, &LToken::Comma);
+    lparser_expect_token(parser, &LToken::Comma);
     let right: LValue = lparse_value(parser);
-    parser_expect_value_type(parser, &right, &ty);
+    lparser_expect_value_type(parser, &right, &ty);
 
     AssignOp::Binary(operator, ty, left, right)
 }
 
 fn lparse_icmp_assign(parser: &mut LParser) -> AssignOp {
-    let predicate: IcmpOp = match parser_consume_current_token(parser) {
+    let predicate: IcmpOp = match lparser_consume_current_token(parser) {
         LToken::Eq => IcmpOp::Eq,
         LToken::Ne => IcmpOp::Ne,
         LToken::Ugt => IcmpOp::Ugt,
@@ -5813,18 +5827,18 @@ fn lparse_icmp_assign(parser: &mut LParser) -> AssignOp {
         LToken::Ult => IcmpOp::Ult,
         LToken::Ule => IcmpOp::Ule,
         _ => {
-            let message: String = parser_expected_message(parser, &string("LLVM icmp operator"));
-            parser_error(parser, &message)
+            let message: String = lparser_expected_message(parser, &string("LLVM icmp operator"));
+            lparser_error(parser, &message)
         },
     };
 
     let ty: LType = lparse_type(parser);
     let left: LValue = lparse_value(parser);
-    parser_expect_value_type(parser, &left, &ty);
+    lparser_expect_value_type(parser, &left, &ty);
 
-    parser_expect_token(parser, &LToken::Comma);
+    lparser_expect_token(parser, &LToken::Comma);
     let right: LValue = lparse_value(parser);
-    parser_expect_value_type(parser, &right, &ty);
+    lparser_expect_value_type(parser, &right, &ty);
 
     AssignOp::Icmp(predicate, ty, left, right)
 }
@@ -5833,8 +5847,8 @@ fn lparse_call_assign(parser: &mut LParser) -> AssignOp {
     let call: Call = lparse_call(parser);
 
     let Call::Call(return_type, _, _): &Call = &call;
-    if llvmType_eq(return_type, &LType::Void) {
-        parser_error(parser, &string("cannot assign void to a register"));
+    if lType_eq(return_type, &LType::Void) {
+        lparser_error(parser, &string("cannot assign void to a register"));
     }
 
     AssignOp::Call(call)
@@ -5844,9 +5858,9 @@ fn lparse_cast_assign(parser: &mut LParser, operator: CastOp) -> AssignOp {
     let from_type: LType = lparse_type(parser);
 
     let value: LValue = lparse_value(parser);
-    parser_expect_value_type(parser, &value, &from_type);
+    lparser_expect_value_type(parser, &value, &from_type);
 
-    parser_expect_token(parser, &LToken::To);
+    lparser_expect_token(parser, &LToken::To);
     let to_type: LType = lparse_type(parser);
 
     match operator {
@@ -5854,31 +5868,23 @@ fn lparse_cast_assign(parser: &mut LParser, operator: CastOp) -> AssignOp {
             let from_bits: usize = lType_bitwidth(&from_type);
             let to_bits: usize = lType_bitwidth(&to_type);
             if not(from_bits < to_bits) {
-                parser_warning(parser, &string("zext: source is not smaller than target"));
+                lparser_warning(parser, &string("zext: source is not smaller than target"));
             }
         },
         CastOp::Trunc => {
             let from_bits: usize = lType_bitwidth(&from_type);
             let to_bits: usize = lType_bitwidth(&to_type);
             if not(from_bits > to_bits) {
-                parser_warning(parser, &string("zext: source is not larger than target"));
+                lparser_warning(parser, &string("zext: source is not larger than target"));
             }
         },
         CastOp::IntToPtr => {
-            if not(llvmType_eq(&from_type, &LType::I64)) {
-                parser_warning(parser, &string("inttoptr: source type must be i64"));
-            }
-            if not(llvmType_eq(&to_type, &LType::Ptr)) {
-                parser_warning(parser, &string("inttoptr: target type must be ptr"));
-            }
+            lparser_expect_type(parser, &from_type, &LType::I64);
+            lparser_expect_type(parser, &to_type, &LType::Ptr);
         },
         CastOp::PtrToInt => {
-            if not(llvmType_eq(&from_type, &LType::Ptr)) {
-                parser_warning(parser, &string("ptrtoint: source type must be ptr"));
-            }
-            if not(llvmType_eq(&to_type, &LType::I64)) {
-                parser_warning(parser, &string("ptrtoint: target type must be i64"));
-            }
+            lparser_expect_type(parser, &from_type, &LType::Ptr);
+            lparser_expect_type(parser, &to_type, &LType::I64);
         },
     }
     AssignOp::Cast(to_type, value)
@@ -5886,99 +5892,99 @@ fn lparse_cast_assign(parser: &mut LParser, operator: CastOp) -> AssignOp {
 
 fn lparse_alloca_assign(parser: &mut LParser) -> AssignOp {
     let allocated_type: LType = lparse_type(parser);
-    parser_expect_token(parser, &LToken::Comma);
-    parser_expect_token(parser, &LToken::I64);
-    match parser_consume_current_token(parser) {
+    lparser_expect_token(parser, &LToken::Comma);
+    lparser_expect_token(parser, &LToken::I64);
+    match lparser_consume_current_token(parser) {
         LToken::Integer(count) => AssignOp::Alloca(allocated_type, count),
-        _ => parser_error(parser, &string("expected integer after , in alloca ")),
+        _ => lparser_error(parser, &string("expected integer after , in alloca ")),
     }
 }
 
 fn lparse_load_assign(parser: &mut LParser) -> AssignOp {
     let loaded_type: LType = lparse_type(parser);
-    parser_expect_token(parser, &LToken::Comma);
+    lparser_expect_token(parser, &LToken::Comma);
 
-    parser_expect_token(parser, &LToken::Ptr);
+    lparser_expect_token(parser, &LToken::Ptr);
     let address: LValue = lparse_value(parser);
-    parser_expect_value_type(parser, &address, &LType::Ptr);
+    lparser_expect_value_type(parser, &address, &LType::Ptr);
 
     AssignOp::Load(loaded_type, address)
 }
 
 fn lparse_store(parser: &mut LParser) -> Instruction {
-    parser_expect_token(parser, &LToken::Store);
+    lparser_expect_token(parser, &LToken::Store);
 
     let store_type: LType = lparse_type(parser);
     let value: LValue = lparse_value(parser);
-    parser_expect_value_type(parser, &value, &store_type);
+    lparser_expect_value_type(parser, &value, &store_type);
 
-    parser_expect_token(parser, &LToken::Comma);
-    parser_expect_token(parser, &LToken::Ptr);
+    lparser_expect_token(parser, &LToken::Comma);
+    lparser_expect_token(parser, &LToken::Ptr);
 
     let address: LValue = lparse_value(parser);
-    parser_expect_value_type(parser, &address, &LType::Ptr);
+    lparser_expect_value_type(parser, &address, &LType::Ptr);
 
     Instruction::Store(store_type, value, address)
 }
 
 fn lparse_call(parser: &mut LParser) -> Call {
     let return_type: LType = lparse_type(parser);
-    let callee: String = parser_expect_identifier(parser, false);
+    let callee: String = lparser_expect_identifier(parser, false);
 
-    parser_expect_token(parser, &LToken::LParen);
+    lparser_expect_token(parser, &LToken::LParen);
     let mut arguments: Vec<LTypedValue> = vec_new::<LTypedValue>();
-    if not(parser_current_token_eq(parser, &LToken::RParen)) {
+    if not(lparser_current_token_eq(parser, &LToken::RParen)) {
         let arg_type: LType = lparse_type(parser);
         let arg_value: LValue = lparse_value(parser);
-        parser_expect_value_type(parser, &arg_value, &arg_type);
+        lparser_expect_value_type(parser, &arg_value, &arg_type);
         vec_push::<LTypedValue>(&mut arguments, LTypedValue::Pair(arg_type, arg_value));
 
-        while parser_current_token_eq(parser, &LToken::Comma) {
-            parser_next_token(parser);
+        while lparser_current_token_eq(parser, &LToken::Comma) {
+            lparser_next_token(parser);
 
             let arg_type: LType = lparse_type(parser);
             let arg_value: LValue = lparse_value(parser);
-            parser_expect_value_type(parser, &arg_value, &arg_type);
+            lparser_expect_value_type(parser, &arg_value, &arg_type);
             vec_push::<LTypedValue>(&mut arguments, LTypedValue::Pair(arg_type, arg_value));
         }
     }
-    parser_expect_token(parser, &LToken::RParen);
+    lparser_expect_token(parser, &LToken::RParen);
 
     Call::Call(return_type, callee, arguments)
 }
 
 fn lparse_type(parser: &mut LParser) -> LType {
-    match parser_consume_current_token(parser) {
+    match lparser_consume_current_token(parser) {
         LToken::I1 => LType::I1,
         LToken::I8 => LType::I8,
         LToken::I64 => LType::I64,
         LToken::Void => LType::Void,
         LToken::Ptr => LType::Ptr,
         _ => {
-            let message: String = parser_expected_message(parser, &string("LLVM type"));
-            parser_error(parser, &message)
+            let message: String = lparser_expected_message(parser, &string("LLVM type"));
+            lparser_error(parser, &message)
         },
     }
 }
 
 fn lparse_value(parser: &mut LParser) -> LValue {
-    match parser_consume_current_token(parser) {
+    match lparser_consume_current_token(parser) {
         LToken::Global(ident) => LValue::Global(ident),
         LToken::Local(ident) => LValue::Register(ident),
         LToken::Integer(value) => LValue::Literal(value),
         _ => {
-            let message: String = parser_expected_message(parser, &string("LLVM value"));
-            parser_error(parser, &message)
+            let message: String = lparser_expected_message(parser, &string("LLVM value"));
+            lparser_error(parser, &message)
         },
     }
 }
 
 fn lparse_integer(parser: &mut LParser) -> usize {
-    match parser_consume_current_token(parser) {
+    match lparser_consume_current_token(parser) {
         LToken::Integer(value) => value,
         _ => {
-            let message: String = parser_expected_message(parser, &string("LLVM integer literal"));
-            parser_error(parser, &message)
+            let message: String = lparser_expected_message(parser, &string("LLVM integer literal"));
+            lparser_error(parser, &message)
         },
     }
 }
@@ -6471,8 +6477,8 @@ fn emu_execute_instructions<'a>(
             Instruction::Ret(return_type, return_value) => {
                 return ExecFlow::Return(match return_value {
                     Option::Some(value) => {
-                        let value: usize = llvm_eval_value(emulator, locals, value);
-                        llvm_overflow_value(value, return_type)
+                        let value: usize = emu_eval_value(emulator, locals, value);
+                        ltype_overflow_value(value, return_type)
                     },
                     Option::None => 0,
                 });
@@ -6481,7 +6487,7 @@ fn emu_execute_instructions<'a>(
                 return match branch {
                     Branch::Unconditional(target_label) => ExecFlow::Jump(target_label),
                     Branch::Conditional(condition, then_label, else_label) => {
-                        let condition_value: usize = llvm_eval_value(emulator, locals, condition);
+                        let condition_value: usize = emu_eval_value(emulator, locals, condition);
 
                         if condition_value == 1 {
                             ExecFlow::Jump(then_label)
@@ -6518,8 +6524,8 @@ fn emu_execute_assignment(
 fn emu_evaluate_assign_op(emulator: &mut Emu, ast: &LAst, locals: &StringMap<usize>, op: &AssignOp) -> usize {
     match op {
         AssignOp::Binary(operator, result_type, left, right) => {
-            let lhs: usize = llvm_overflow_value(llvm_eval_value(emulator, locals, left), result_type);
-            let rhs: usize = llvm_overflow_value(llvm_eval_value(emulator, locals, right), result_type);
+            let lhs: usize = ltype_overflow_value(emu_eval_value(emulator, locals, left), result_type);
+            let rhs: usize = ltype_overflow_value(emu_eval_value(emulator, locals, right), result_type);
             match operator {
                 BinaryOp::Add => lhs + rhs,
                 BinaryOp::Sub => lhs - rhs,
@@ -6529,8 +6535,8 @@ fn emu_evaluate_assign_op(emulator: &mut Emu, ast: &LAst, locals: &StringMap<usi
             }
         },
         AssignOp::Icmp(predicate, operand_type, left, right) => {
-            let lhs: usize = llvm_overflow_value(llvm_eval_value(emulator, locals, left), operand_type);
-            let rhs: usize = llvm_overflow_value(llvm_eval_value(emulator, locals, right), operand_type);
+            let lhs: usize = ltype_overflow_value(emu_eval_value(emulator, locals, left), operand_type);
+            let rhs: usize = ltype_overflow_value(emu_eval_value(emulator, locals, right), operand_type);
             (match predicate {
                 IcmpOp::Eq => lhs == rhs,
                 IcmpOp::Ne => lhs != rhs,
@@ -6544,8 +6550,8 @@ fn emu_evaluate_assign_op(emulator: &mut Emu, ast: &LAst, locals: &StringMap<usi
             // inttoptr/ptrtoint are reinterpretation (no-op)
             // zext is extending with zeros (assign larger type)
             // trunc is truncating most significant bits, achieved here by computing modulo
-            let evaluated_value: usize = llvm_eval_value(emulator, locals, value);
-            llvm_overflow_value(evaluated_value, to_type)
+            let evaluated_value: usize = emu_eval_value(emulator, locals, value);
+            ltype_overflow_value(evaluated_value, to_type)
         },
         AssignOp::Alloca(allocated_type, count) => {
             let space: usize = *count * lType_size(allocated_type);
@@ -6555,9 +6561,9 @@ fn emu_evaluate_assign_op(emulator: &mut Emu, ast: &LAst, locals: &StringMap<usi
             }
         },
         AssignOp::Load(loaded_type, address_value) => {
-            let address: usize = llvm_eval_value(emulator, locals, address_value);
+            let address: usize = emu_eval_value(emulator, locals, address_value);
             let value: usize = emu_load_bytes(emulator, address, lType_size(loaded_type));
-            llvm_overflow_value(value, loaded_type)
+            ltype_overflow_value(value, loaded_type)
         },
         AssignOp::Call(Call::Call(call_type, callee, arguments)) => {
             emu_execute_call(emulator, ast, locals, call_type, callee, arguments)
@@ -6578,23 +6584,14 @@ fn emu_execute_call(
     let mut i: usize = 0;
     while i < vec_len::<LTypedValue>(arguments) {
         let LTypedValue::Pair(ty, argument_value): &LTypedValue = vec_at::<LTypedValue>(arguments, i);
-        let value: usize = llvm_eval_value(emulator, locals, argument_value);
-        vec_push::<usize>(&mut arg_values, llvm_overflow_value(value, ty));
+        let value: usize = emu_eval_value(emulator, locals, argument_value);
+        vec_push::<usize>(&mut arg_values, ltype_overflow_value(value, ty));
         i = i + 1;
     }
 
     let value: usize = emu_execute_function(emulator, ast, callee, &arg_values);
     drop_vec::<usize>(arg_values);
-    llvm_overflow_value(value, call_type)
-}
-
-/// Normalize a value so it wraps around according to the given type.
-fn llvm_overflow_value(value: usize, ty: &LType) -> usize {
-    match ty {
-        LType::I1 => value % 2,
-        LType::I8 => value % 256,
-        _ => value,
-    }
+    ltype_overflow_value(value, call_type)
 }
 
 /// Execute the given store instruction.
@@ -6605,8 +6602,8 @@ fn emu_execute_store(
     value: &LValue,
     address: &LValue,
 ) {
-    let value: usize = llvm_overflow_value(llvm_eval_value(emulator, locals, value), store_type);
-    let target_address: usize = llvm_eval_value(emulator, locals, address);
+    let value: usize = ltype_overflow_value(emu_eval_value(emulator, locals, value), store_type);
+    let target_address: usize = emu_eval_value(emulator, locals, address);
     let byte_count: usize = lType_size(store_type);
 
     if not(emu_store_bytes(emulator, target_address, value, byte_count)) {
@@ -6615,7 +6612,7 @@ fn emu_execute_store(
 }
 
 /// Evaluate the value of a virtual register, global name or literal.
-fn llvm_eval_value(emulator: &Emu, locals: &StringMap<usize>, value: &LValue) -> usize {
+fn emu_eval_value(emulator: &Emu, locals: &StringMap<usize>, value: &LValue) -> usize {
     match value {
         LValue::Literal(number) => *number,
         LValue::Register(name) => match stringMap_get::<usize>(locals, name) {
@@ -6843,21 +6840,21 @@ fn lLexer_error(lexer: &LLexer, message: &String) -> ! {
 }
 
 /// Emit an LLVM parser error and panic.
-fn parser_error(parser: &LParser, message: &String) -> ! {
+fn lparser_error(parser: &LParser, message: &String) -> ! {
     let file: &SourceFile = lLexer_sourcefile(lparser_lexer(parser));
     report_error(file, message)
 }
 
 /// Emit an LLVM parser warning and continue.
-fn parser_warning(parser: &LParser, message: &String) {
+fn lparser_warning(parser: &LParser, message: &String) {
     let file: &SourceFile = lLexer_sourcefile(lparser_lexer(parser));
     report_warning(file, message)
 }
 
-fn parser_expected_message(parser: &LParser, expected: &String) -> String {
+fn lparser_expected_message(parser: &LParser, expected: &String) -> String {
     let mut message: String = string("expected ");
     string_push_string(&mut message, expected);
-    let token: &LToken = parser_current_token(parser);
+    let token: &LToken = lparser_current_token(parser);
     string_push_str(&mut message, ", but got: ");
     string_push_string(&mut message, &lToken_to_string(token));
     message
@@ -7338,7 +7335,7 @@ fn stringMapStack_get<'a, T>(stack: &'a StringMapStack<T>, name: &String) -> Opt
 
 // --------------------------- Eq ---------------------------------
 
-fn llvmType_eq(left: &LType, right: &LType) -> bool {
+fn lType_eq(left: &LType, right: &LType) -> bool {
     match left {
         LType::I1 => match right {
             LType::I1 => true,
@@ -8034,7 +8031,7 @@ fn lToken_clone(token: &LToken) -> LToken {
 }
 
 /// Clone an LLVM type.
-fn llvmType_clone(ty: &LType) -> LType {
+fn lType_clone(ty: &LType) -> LType {
     match ty {
         LType::I1 => LType::I1,
         LType::I8 => LType::I8,
@@ -8425,6 +8422,16 @@ fn lToken_to_string(token: &LToken) -> String {
         },
         LToken::Integer(value) => integer_to_string(*value),
         LToken::Eof => string("<eof>"),
+    }
+}
+
+fn lType_to_str(ty: &LType) -> &'static str {
+    match ty {
+        LType::I1 => "i1",
+        LType::I8 => "i8",
+        LType::I64 => "i64",
+        LType::Ptr => "ptr",
+        LType::Void => "void",
     }
 }
 
