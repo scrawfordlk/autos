@@ -6,6 +6,7 @@ fn test() -> usize {
     unsafe {
         *p2 = *p2 + 1;
     }
+    let reference: &usize = &mut x as &usize;
     x
 }
 
