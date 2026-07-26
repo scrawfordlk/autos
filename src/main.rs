@@ -5422,8 +5422,8 @@ enum AssignOp {
     Binary(BinaryOp, LType, LValue, LValue),
     /// operation, operand type, left operand, right operand
     Icmp(IcmpOp, LType, LValue, LValue),
-    /// operation, target type, value
-    Cast(CastOp, LType, LValue),
+    /// target type, value
+    Cast(LType, LValue),
     /// allocated type, count
     Alloca(LType, usize),
     /// loaded type, address
@@ -5463,7 +5463,7 @@ fn assignOp_get_type(operation: &AssignOp) -> LType {
         AssignOp::Binary(_, ty, _, _) => llvmType_clone(ty),
         AssignOp::Icmp(_, _, _, _) => LType::I1,
         AssignOp::Call(Call::Call(ty, _, _)) => llvmType_clone(ty),
-        AssignOp::Cast(_, ty, _) => llvmType_clone(ty),
+        AssignOp::Cast(ty, _) => llvmType_clone(ty),
         AssignOp::Alloca(_, _) => LType::Ptr,
         AssignOp::Load(ty, _) => llvmType_clone(ty),
     }
@@ -5849,7 +5849,7 @@ fn lparse_cast_assign(parser: &mut LParser, operator: CastOp) -> AssignOp {
     parser_expect_token(parser, &LToken::To);
     let to_type: LType = lparse_type(parser);
 
-    match &operator {
+    match operator {
         CastOp::Zext => {
             let from_bits: usize = lType_bitwidth(&from_type);
             let to_bits: usize = lType_bitwidth(&to_type);
@@ -5881,8 +5881,7 @@ fn lparse_cast_assign(parser: &mut LParser, operator: CastOp) -> AssignOp {
             }
         },
     }
-
-    AssignOp::Cast(operator, to_type, value)
+    AssignOp::Cast(to_type, value)
 }
 
 fn lparse_alloca_assign(parser: &mut LParser) -> AssignOp {
@@ -6541,7 +6540,10 @@ fn emu_evaluate_assign_op(emulator: &mut Emu, ast: &LAst, locals: &StringMap<usi
                 IcmpOp::Ule => lhs <= rhs,
             }) as usize
         },
-        AssignOp::Cast(cast_op, to_type, value) => {
+        AssignOp::Cast(to_type, value) => {
+            // inttoptr/ptrtoint are reinterpretation (no-op)
+            // zext is extending with zeros (assign larger type)
+            // trunc is truncating most significant bits, achieved here by computing modulo
             let evaluated_value: usize = llvm_eval_value(emulator, locals, value);
             llvm_overflow_value(evaluated_value, to_type)
         },
