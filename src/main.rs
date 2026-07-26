@@ -5360,7 +5360,7 @@ fn lType_bitwidth(ty: &LType) -> usize {
 
 /// Return the size of an LLVM type in bytes.
 fn lType_size(ty: &LType) -> usize {
-    lType_bitwidth(ty) / 8
+    max(1, lType_bitwidth(ty) / 8)
 }
 
 fn lType_is_integer(ty: &LType) -> bool {
