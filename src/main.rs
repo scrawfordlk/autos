@@ -1928,6 +1928,10 @@ fn insert_builtin_functions(table: &mut StringMap<Item>) {
     stringMap_insert::<Item>(table, sizeof, item);
 }
 
+// -----------------------------------------------------------------
+// --------------------- Semantic Analysis -------------------------
+// -----------------------------------------------------------------
+
 /// Semantic analysis state.
 enum Semantic {
     /// local symbol table, current return type, unsafe context depth, current function is generic
@@ -2174,10 +2178,6 @@ fn castOperation_select_operation(left_type: &RType, right_type: &RType) -> Cast
         _ => CastOperation::Invalid,
     }
 }
-
-// -----------------------------------------------------------------
-// --------------------- Semantic Analysis -------------------------
-// -----------------------------------------------------------------
 
 /// Run semantic analysis on the full AST.
 // TODO: check duplicate functions/enums
