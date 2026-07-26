@@ -8616,13 +8616,20 @@ unsafe fn io_write_stdout(buffer: *mut u8, len: usize) -> IOResult {
 /// The caller must ensure that memory ranging from `dest[0]` to `dest[n - 1]`
 /// can be written safely and from `src[0]` to `src[n - 1]` can be read safely.
 unsafe fn memcopy<T>(dest: *mut T, src: *mut T, n: usize) {
-    let byte_count: usize = n * size_of::<T>();
-    let dest_u8: *mut u8 = dest as *mut u8;
-    let src_u8: *mut u8 = src as *mut u8;
-    let mut i: usize = 0;
-    while i < byte_count {
-        unsafe { *ptr_add::<u8>(dest_u8, i) = *ptr_add::<u8>(src_u8, i) };
-        i = i + 1;
+    let mut byte_count: usize = n * size_of::<T>();
+    if byte_count % 8 == 0 {
+        byte_count = byte_count / 8;
+        let mut i: usize = 0;
+        while i < byte_count {
+            unsafe { *ptr_add::<usize>(dest as *mut usize, i) = *ptr_add::<usize>(src as *mut usize, i) };
+            i = i + 1;
+        }
+    } else {
+        let mut i: usize = 0;
+        while i < byte_count {
+            unsafe { *ptr_add::<u8>(dest as *mut u8, i) = *ptr_add::<u8>(src as *mut u8, i) };
+            i = i + 1;
+        }
     }
 }
 
