@@ -3183,11 +3183,11 @@ fn codegen_extern_block(codegen: &mut Codegen, icg: &ICodegen, functions: &Vec<R
 fn codegen_function(codegen: &mut Codegen, icg: &ICodegen, function: &RAstFunction) {
     let RAstFunction::Fn(is_generic, _, name, parameters, return_type, body): &RAstFunction = function;
 
-    codegen_set_current_function(codegen, string_clone(name)); // TODO: potential bug?
     if and(*is_generic, not(codegen_is_instantiated(codegen, name))) {
         return; // do not generate generic functions unless type parameter is instantiated
     }
 
+    codegen_set_current_function(codegen, string_clone(name));
     codegen_emit_fn_signature(codegen, icg, name, return_type, parameters);
 
     codegen_push_scope(codegen);
