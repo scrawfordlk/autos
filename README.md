@@ -2,83 +2,73 @@
 
 Autos is a self-contained 64-bit software system that consists of:
 
-- A self-compiling compiler that compiles RawRust,
+- A self-compiling compiler that compiles Rawrust,
   a tiny subset of the Rust programming language
 - A self-emulating emulator that emulates LLLVM,
   a tiny subset of LLVM Intermediate Representation
 
-This project serves as my bachelor thesis, which is inspired by
+This project serves as my bachelor project, which is inspired by
 the [Selfie project](https://github.com/cksystemsteaching/selfie/).
 
 ## Demo
 
-To run the system, you need `cargo` (build tool) and `rustc` (bootstrapping compiler).
-You can then manually invoke:
+To run the system, you need a rust compiler (typically `rustc`).
+You can then bootstrap the system using `rustc` by invoking:
 
 ```bash
-cargo build --release && cp target/release/autos .
+rustc src/main.rs -o autos -O
 ```
 
-Or use `make`:
+Alternatively, you can use `make`:
 
 ```bash
 make
 ```
 
-Once the system is bootstrapped, you can start compiling RawRust programs, such
-as Autos, i.e. we can attempt self-compilation:
+Once the system is bootstrapped, you can start compiling Rawrust programs, such
+as Autos itself, i.e. we can attempt self-compilation:
 
 ```bash
 ./autos -c src/main.rs -o autos.ll
 ```
 
-You can then execute the generated LLLVM
-using the standard LLVM-tools (`clang`, `lli`, $\dots$)
+You can then process/execute the generated LLLVM
+using any LLVM-tool (`clang`, `lli`, `opt`, $\dots$)
 or you can emulate it using Autos:
 
 ```bash
-./autos -e autos.ll -c src/main.rs -o autos2.ll
+./autos -e autos.ll 100 -c src/main.rs -o autos2.ll
 ```
 
-Alternatively, instead of the previous two commands, you can also just do:
+The 100 here specifies how much memory (in MB)
+the emulator may use, as it manages its own memory.
+
+You can also compose these command line arguments into one invocation:
 
 ```bash
-./autos -c src/main.rs -o autos.ll -e -c src/main.rs -o autos2.ll
+./autos -c src/main.rs -o autos.ll -e 100 -c src/main.rs -o autos2.ll
 ```
 
-Which will self-compile autos, then emulate the resulting LLLVM
-and self-compile itself again.
+This self-compiles autos, then emulates the resulting LLLVM
+and self-compiles itself again.
+
+This self-referential cycle can be repeated arbitrarily many times,
+but layering multiple emulations on top of each other naturally slows
+down execution by a lot.
+For instance, emulating self-compilation under emulation of
+the self-compiled system takes many hours to complete:
+
+```bash
+./autos -c src/main.rs \
+ -e 200 -c src/main.rs \
+ -e 100 -c src/main.rs -o autos3.ll
+```
 
 While questionable, Autos also allows you to skip the
 semantic analysis phase of the compiler, which leads to
-faster compile times, but can silently generate semantically incorrect
-or invalid LLLVM, if the given source program is not a semantically correct RawRust program:
+faster compile times, but can silently generate semantically incorrect LLLVM,
+if the given source program is not a semantically correct Rawrust program:
 
 ```bash
 ./autos -c src/main.rs --unsafe
 ```
-
-## Components
-
-### Compiler
-
-Autos is a compiler that is written in and compiles
-a tiny subset of Rust, called RawRust.
-
-To summarise, RawRust features:
-
-- Rust's type-safety, memory-safety and thread-safety
-- Generic programming using generic functions/enums
-- Rust-like features such as enums and pattern matching
-
-### LLLVM
-
-Autos is also an emulator that can emulate a tiny
-subset of [LLVM-IR](https://llvm.org/), called Little LLVM (LLLVM).
-
-To summarise, LLLVM features:
-
-- Organisation of code using functions and basic blocks
-- A minimal subset of RISC-like instructions
-- Static string literals
-- Type-safety

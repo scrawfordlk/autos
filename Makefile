@@ -1,8 +1,10 @@
+default: autos
+
 autos: src/main.rs
-	cargo build --release && cp target/release/autos .
+	rustc src/main.rs -o autos -O
 
 debug: clean
-	cargo build && cp target/debug/autos .
+	rustc src/main.rs -o autos -g
 
 self: clean autos
 	./autos -c src/main.rs -o autos.ll
@@ -17,5 +19,4 @@ test-self-self:
 	cd tests && cargo test -- --ignored
 
 clean:
-	cargo clean
-	rm -f autos autos.ll
+	rm -f autos autos.ll && cd tests/ && cargo clean
