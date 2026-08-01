@@ -25,6 +25,8 @@ Alternatively, you can use `make`:
 make
 ```
 
+(In general `make` will have a few useful "shortcuts" for common invocations).
+
 Once the system is bootstrapped, you can start compiling Rawrust programs, such
 as Autos itself, i.e. we can attempt self-compilation:
 
@@ -71,4 +73,42 @@ if the given source program is not a semantically correct Rawrust program:
 
 ```bash
 ./autos -c src/main.rs --unsafe
+```
+
+## Running tests
+
+Testing requires installation of the following tools:
+
+- `rustc`, `cargo` to run the tests
+- `clang`, `lli` (often part of an `llvm` package)
+- `diff` to check fix-points
+
+Invoking the tests can be done by entering the `tests/` directory and invoking `cargo`:
+
+```bash
+cd tests && cargo test
+```
+
+Or by using `make:`
+
+```bash
+make test
+```
+
+This runs the tests for Rawrust, LLLVM and a self-compilation test, which
+checks for the fix-point when self-compiling under emulation.
+
+There is an additional test, which is by default disabled,
+due to it taking close to a minute to complete.
+It tests whether the fix-point is retained
+when emulating self-compilation under emulation:
+
+```bash
+cd tests && cargo test -- --ignored
+```
+
+Or simply:
+
+```bash
+make test-self-self
 ```
