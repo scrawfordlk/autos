@@ -990,6 +990,14 @@ fn rType_is_pointer(ty: &RType) -> bool {
     }
 }
 
+/// Rawrust allows comparison of integers, characters and booleans.
+fn rType_is_comparable(ty: &RType) -> bool {
+    match ty {
+        RType::Usize | RType::U8 | RType::Char | RType::Bool => true,
+        _ => false,
+    }
+}
+
 /// Least Upper Bound coerce two types into one type.
 /// If `left` cannot be coerced into `right`, `left` is returned.
 fn rType_lub_coerce(left: RType, right: RType) -> RType {
@@ -2060,6 +2068,14 @@ fn semantic_expect_bool_type(ty: &RType) {
     }
 }
 
+fn semantic_expect_comparable_type(ty: &RType) {
+    if not(rType_is_comparable(ty)) {
+        let mut message: String = string("type mismatch: expected a comparable type, but got ");
+        string_push_string(&mut message, &rType_to_string(ty));
+        semantic_error(&message);
+    }
+}
+
 /// Enter a new local scope.
 fn semantic_enter_scope(semantic: &mut Semantic) {
     stringMapStack_push_empty::<Variable>(semantic_locals_mut(semantic));
@@ -2488,7 +2504,10 @@ fn semantic_check_binary_op(
             semantic_expect_numeric_type(&left_type);
             left_type
         },
-        RAstBinaryOp::Comparison(_) => RType::Bool,
+        RAstBinaryOp::Comparison(_) => {
+            semantic_expect_comparable_type(&left_type);
+            RType::Bool
+        },
     }
 }
 
@@ -7548,7 +7567,7 @@ fn rToken_eq(a: &RToken, b: &RToken) -> bool {
 fn rLiteral_eq(left: &RLiteral, right: &RLiteral) -> bool {
     match left {
         RLiteral::Int(left_value) => match right {
-            RLiteral::Int(right_value) => left_value == right_value,
+            RLiteral::Int(right_value) => *left_value == *right_value,
             _ => false,
         },
         RLiteral::String(left_value) => match right {
@@ -7556,11 +7575,11 @@ fn rLiteral_eq(left: &RLiteral, right: &RLiteral) -> bool {
             _ => false,
         },
         RLiteral::Char(left_value) => match right {
-            RLiteral::Char(right_value) => left_value == right_value,
+            RLiteral::Char(right_value) => *left_value == *right_value,
             _ => false,
         },
         RLiteral::Bool(left_value) => match right {
-            RLiteral::Bool(right_value) => left_value == right_value,
+            RLiteral::Bool(right_value) => *left_value == *right_value,
             _ => false,
         },
     }
