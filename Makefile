@@ -19,4 +19,4 @@ test-self-self:
 	cd tests && cargo test -- --ignored
 
 clean:
-	rm -f autos autos.ll && cd tests/ && cargo clean
+	rm -f autos autos.ll && cargo clean && cd tests/ && cargo clean
