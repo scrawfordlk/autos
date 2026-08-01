@@ -26,7 +26,7 @@ block     -> "{" { ( binding | expression [ ";" ] ) } "}"
 ```
 expression -> [ "return" [ expression ] ] | assignment
 
-assignment -> comparison [ "=" comparison ] | comparison [ "*" "=" comparison ]
+assignment -> comparison [ "=" assignment ]
 
 comparison -> arithmetic [ ( "==" | "!=" | "<" | ">" | "<=" | ">=" ) arithmetic ]
 
