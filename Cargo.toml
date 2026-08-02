@@ -3,5 +3,10 @@ name = "autos"
 edition = "2024"
 version = "1.0.0"
 
+# Rust distinguishes between debug and release mode
+# when defining the semantics of overflows/underflows.
+# In Rawrust, they always wrap-around, hence we turn off
+# the checks in the debug build (release already matches
+# Rawrust semantics).
 [profile.dev]
 overflow-checks = false
