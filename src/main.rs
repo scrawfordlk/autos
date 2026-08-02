@@ -998,9 +998,9 @@ fn rType_is_comparable(ty: &RType) -> bool {
     }
 }
 
-/// Least Upper Bound coerce two types into one type.
-/// If `left` cannot be coerced into `right`, `left` is returned.
-fn rType_lub_coerce(left: RType, right: RType) -> RType {
+/// Coalesces two types into one type. This is a simplified version of Rust's Least Upper Bound
+/// Coercion.  If `left` cannot be coerced to `right`, `left` is returned, else returns `right`.
+fn rType_coalesce(left: RType, right: RType) -> RType {
     if rType_coerced_match(&left, &right) {
         right
     } else {
@@ -1010,11 +1010,12 @@ fn rType_lub_coerce(left: RType, right: RType) -> RType {
 
 /// Return true if the given types, coerced from `left` to `right`, match.
 /// Coercions:
-///   - &mut T -> &T
-///   - !      -> T (any type)
+///   - T      ~> T
+///   - &mut T ~> &T
+///   - !      ~> T (any type)
 ///
-/// That is, two types a, b can match after coercion, if
-/// a == b || a == ! || a == &mut T && b == &T
+/// That is, two types `a`, `b` match, if
+/// `a == b || a == ! || a == &mut T && b == &T
 fn rType_coerced_match(left: &RType, right: &RType) -> bool {
     or(
         or(rType_eq(left, right), rType_eq(left, &RType::Never)),
@@ -1022,7 +1023,7 @@ fn rType_coerced_match(left: &RType, right: &RType) -> bool {
             RType::Reference(inner_left, mutable_a) => match right {
                 RType::Reference(inner_right, mutable_b) => and(
                     rType_eq(box_deref::<RType>(inner_left), box_deref::<RType>(inner_right)),
-                    // left can coerce to right iff `b => a`, where `a`, `b` := 1 if mutable else 0
+                    // mut_l ~> mut_r iff mut_r => mut_l (i.e. not coercable if right is mutable, but left is not)
                     or(not(*mutable_b), *mutable_a),
                 ),
                 _ => false,
@@ -2046,7 +2047,7 @@ fn semantic_expect_coerced_type_match(semantic: &Semantic, actual: &RType, expec
 }
 
 /// Check if the given types, using Least Upper Bound Coercion, match.
-fn semantic_expect_lub_coerced_type_match(semantic: &Semantic, left: &RType, right: &RType) {
+fn semantic_expect_coalescing_type_match(semantic: &Semantic, left: &RType, right: &RType) {
     if not(rType_coerced_match(left, right)) {
         semantic_expect_coerced_type_match(semantic, right, left);
     }
@@ -2743,8 +2744,8 @@ fn semantic_check_if(semantic: &mut Semantic, if_expression: &RAstIf, globals: &
                 },
                 RAstElse::Block(block) => semantic_check_block(semantic, block, false, globals),
             };
-            semantic_expect_lub_coerced_type_match(semantic, &then_type, &else_type);
-            rType_lub_coerce(then_type, else_type)
+            semantic_expect_coalescing_type_match(semantic, &then_type, &else_type);
+            rType_coalesce(then_type, else_type)
         },
         Option::None => {
             let return_type: RType = RType::Unit;
@@ -2818,8 +2819,8 @@ fn semantic_check_match(
         }
 
         let arm_type: RType = semantic_check_expression(semantic, expression, globals);
-        semantic_expect_lub_coerced_type_match(semantic, &return_type, &arm_type);
-        return_type = rType_lub_coerce(return_type, arm_type);
+        semantic_expect_coalescing_type_match(semantic, &return_type, &arm_type);
+        return_type = rType_coalesce(return_type, arm_type);
         semantic_leave_scope(semantic);
         i = i + 1;
     }
@@ -3691,7 +3692,7 @@ fn codegen_if(codegen: &mut Codegen, icg: &ICodegen, if_expression: &RAstIf) -> 
             } else if rType_has_value(&else_type) {
                 codegen_emit_store(codegen, icg, &else_type, &else_value, &result);
             }
-            if_type = rType_lub_coerce(if_type, else_type);
+            if_type = rType_coalesce(if_type, else_type);
         },
         _ => if_type = RType::Unit, // else is implicitly unit, so type of if must be unit
     }
@@ -3756,7 +3757,7 @@ fn codegen_match(codegen: &mut Codegen, icg: &ICodegen, scrutinee: &RAstExpr, ar
     // SSA: Allocate memory for potential result value, though size is still unknown.
     let result: String = codegen_emit_alloca(codegen, icg, &RType::Unit, 1);
     let alloca_idx: usize = codegen_code_last_index(codegen);
-    let mut return_type: RType = RType::Never; // still unknown, lub-coercing arm types yields correct type
+    let mut return_type: RType = RType::Never; // start with bottom type and coalesce arm types for correct type
     let end_label: String = codegen_next_label(codegen, "match.end");
 
     let mut i: usize = 0;
@@ -3777,7 +3778,7 @@ fn codegen_match(codegen: &mut Codegen, icg: &ICodegen, scrutinee: &RAstExpr, ar
         );
         codegen_pop_scope(codegen);
 
-        return_type = rType_lub_coerce(return_type, arm_type);
+        return_type = rType_coalesce(return_type, arm_type);
         i = i + 1;
     }
     codegen_emit_label(codegen, &end_label); // start of merge block
