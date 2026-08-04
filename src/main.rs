@@ -2338,37 +2338,36 @@ fn semantic_check_block(
     }
     semantic_enter_scope(semantic);
 
-    let mut statement_flow_type: RType = RType::Unit;
+    let mut diverges: bool = false;
     let mut i: usize = 0;
     let len: usize = vec_len::<RAstStatement>(statements);
     while i < len {
         let statement: &RAstStatement = vec_at::<RAstStatement>(statements, i);
         match statement {
             RAstStatement::Let(variable, value) => {
-                semantic_check_binding(semantic, variable, box_deref::<RAstExpr>(value), globals);
+                let never: bool =
+                    semantic_check_binding(semantic, variable, box_deref::<RAstExpr>(value), globals);
+                diverges = or(diverges, never);
             },
             RAstStatement::Expression(expression) => {
-                let ty: RType =
+                let expr_type: RType =
                     semantic_check_expression(semantic, box_deref::<RAstExpr>(expression), globals);
-                if rType_eq(&ty, &RType::Never) {
-                    statement_flow_type = RType::Never;
-                }
+                diverges = or(diverges, rType_eq(&expr_type, &RType::Never));
             },
         };
         i = i + 1;
     }
 
-    let mut block_type: RType = match tail {
-        Option::Some(expression) => {
-            semantic_check_expression(semantic, box_deref::<RAstExpr>(expression), globals)
-        },
-        Option::None => RType::Unit,
+    let block_type: RType = if diverges {
+        RType::Never
+    } else {
+        match tail {
+            Option::Some(expression) => {
+                semantic_check_expression(semantic, box_deref::<RAstExpr>(expression), globals)
+            },
+            Option::None => RType::Unit,
+        }
     };
-
-    if rType_eq(&statement_flow_type, &RType::Never) {
-        block_type = RType::Never;
-    }
-
     if is_unsafe {
         semantic_pop_unsafe_context(semantic);
     }
@@ -2377,16 +2376,18 @@ fn semantic_check_block(
 }
 
 /// Analyze one let-binding statement.
+/// Return true if the right-hand side is a diverging expression
 fn semantic_check_binding(
     semantic: &mut Semantic,
     variable: &RAstVariable,
     value: &RAstExpr,
     globals: &StringMap<Item>,
-) {
+) -> bool {
     let RAstVariable::Variable(pattern, binding_type): &RAstVariable = variable;
     let actual_type: RType = semantic_check_expression(semantic, value, globals);
     semantic_expect_coerced_type_match(semantic, &actual_type, binding_type);
     semantic_check_pattern(semantic, pattern, binding_type, false, globals);
+    rType_eq(&actual_type, &RType::Never)
 }
 
 fn semantic_check_expression(
@@ -3232,23 +3233,19 @@ fn codegen_block(codegen: &mut Codegen, icg: &ICodegen, block: &RAstBlock) -> ST
     codegen_push_scope(codegen);
 
     let mut i: usize = 0;
-    let mut block_type: RType = RType::Unit;
+    let mut diverges: bool = false;
     while i < vec_len::<RAstStatement>(statements) {
         let statement: &RAstStatement = vec_at::<RAstStatement>(statements, i);
         match statement {
             RAstStatement::Let(variable, value) => {
-                codegen_binding(codegen, icg, variable, box_deref::<RAstExpr>(value));
+                let diverging: bool = codegen_binding(codegen, icg, variable, box_deref::<RAstExpr>(value));
+                diverges = or(diverges, diverging);
             },
-
             RAstStatement::Expression(expression) => {
-                // expression is only used for its side-effects, so we can discard the result
-                let STPair::ST(_, ty): STPair =
+                // expression is only used for its side-effects, so discard the result
+                let STPair::ST(_, expr_type): STPair =
                     codegen_expression(codegen, icg, box_deref::<RAstExpr>(expression));
-
-                if rType_eq(&ty, &RType::Never) {
-                    // the rest of the block becomes unreachable, so the block type becomes Never
-                    block_type = RType::Never;
-                }
+                diverges = or(diverges, rType_eq(&expr_type, &RType::Never));
             },
         };
         i = i + 1;
@@ -3258,21 +3255,22 @@ fn codegen_block(codegen: &mut Codegen, icg: &ICodegen, block: &RAstBlock) -> ST
         Option::Some(expression) => codegen_expression(codegen, icg, box_deref::<RAstExpr>(expression)),
         Option::None => STPair::ST(string_new(), RType::Unit),
     };
-
-    if rType_eq(&block_type, &RType::Never) {
-        // set type of block to Never to indicate that it doesn't return normally
-        ty = RType::Never;
+    if diverges {
+        ty = RType::Never; // block is diverging
     }
-
     codegen_pop_scope(codegen);
     STPair::ST(name, ty)
 }
 
 /// Emit LLVM-IR for one let binding.
-fn codegen_binding(codegen: &mut Codegen, icg: &ICodegen, variable: &RAstVariable, value: &RAstExpr) {
+/// Returns true if it diverges.
+fn codegen_binding(codegen: &mut Codegen, icg: &ICodegen, variable: &RAstVariable, value: &RAstExpr) -> bool {
     let RAstVariable::Variable(pattern, binding_type): &RAstVariable = variable;
-    let STPair::ST(rvalue_name, _): STPair = codegen_expression(codegen, icg, value);
-    codegen_bind_or_destructure(codegen, icg, pattern, &rvalue_name, binding_type);
+    let STPair::ST(rvalue_name, expr_type): STPair = codegen_expression(codegen, icg, value);
+    if rType_has_value(&expr_type) {
+        codegen_bind_or_destructure(codegen, icg, pattern, &rvalue_name, binding_type);
+    }
+    rType_eq(&expr_type, &RType::Never)
 }
 
 /// Emit LLVM-IR for one expression and return the resulting value/type pair.
