@@ -1398,11 +1398,9 @@ fn parse_block(lexer: &mut RLexer) -> RAstBlock {
 
             if rLexer_current_token_eq(lexer, &RToken::RBrace) {
                 // end of block with expression as return value
-                rLexer_next_token(lexer);
                 tail = Option::<Box<RAstExpr>>::Some(box_new::<RAstExpr>(expression));
-                return RAstBlock::Block(statements, tail);
             } else {
-                rLexer_try_consume(lexer, &RToken::SemiColon); // optional semi-colon
+                rLexer_try_consume(lexer, &RToken::SemiColon); // optional for if/while/match
                 let statement: RAstStatement = RAstStatement::Expression(box_new::<RAstExpr>(expression));
                 vec_push::<RAstStatement>(&mut statements, statement);
             }
