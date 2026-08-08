@@ -1,11 +1,12 @@
-# Grammar of LLVM-IR
+# Grammar of LLLVM
 
 ## Global
 
-```
+```text
 llvm     -> { string | function }
 
-string   -> global "=" "constant" "[" number "x" "i8" "]" "c"" { printable_character } """
+string   -> global "=" "constant"
+            "[" number "x" "i8" "]" "c"" { printable_character } """
 
 function -> "define" type global
             "(" [ type local { "," type local } ] ")"
@@ -20,7 +21,7 @@ block    -> label { instruction }
 
 ## Instructions
 
-```
+```text
 instruction -> return | branch | assignment | store | call
 
 return      -> "ret" ( "void" | type value )
@@ -41,7 +42,9 @@ store       -> "store" type value "," "ptr" value
 
 binary      -> ( "add" | "sub" | "mul" | "udiv" | "urem" ) type value "," value
 
-icmp        -> "icmp" ( "eq" | "ne" | "ugt" | "ult" | "uge" | "ule" ) type value "," value
+icmp        -> "icmp" comparison type value "," value
+
+comparison  -> "eq" | "ne" | "ugt" | "ult" | "uge" | "ule"
 
 cast        -> ( "zext" | "trunc" | ptrtoint | inttoptr ) type value "to" type
 
@@ -54,7 +57,7 @@ load        -> "load" type "," "ptr" value
 
 ## Types, Literals & Identifiers
 
-```
+```text
 local      -> "%" identifier
 
 type       -> integer | "void" | "ptr"
@@ -65,9 +68,9 @@ value      -> local | number | global
 
 number     -> digit { digit }
 
-identifier -> ( letter | "_" | "." ) { letter | digit | "_" | "." }
+identifier -> identchar { identchar }
 
-letter     -> "a" | ... | "z" | "A" | ... | "Z"
+identchar  -> "a" | ... | "z" | "A" | ... | "Z" | digit | "_" | "." | "$"
 
 digit      -> "0" | ... | "9"
 ```
