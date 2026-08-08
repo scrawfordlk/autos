@@ -2205,7 +2205,7 @@ fn semantic_check_language(semantic: &mut Semantic, ast: &RAst, globals: &String
         match item {
             RAstItem::Function(function) => semantic_check_function(semantic, function, globals),
             RAstItem::Enum(e) => semantic_check_enum_def(semantic, e, globals),
-            RAstItem::ExternBlock(declarations) => semantic_check_extern(semantic, declarations),
+            RAstItem::ExternBlock(_) => {}, // Rawrust does not enforce what the extern functions are
         };
         i = i + 1;
     }
@@ -2292,12 +2292,6 @@ fn semantic_check_variant_field(
         RType::Unit | RType::Never => semantic_error(&string("cannot use value-less type as enum field")),
         _ => {},
     }
-}
-
-fn semantic_check_extern(semantic: &mut Semantic, declarations: &Vec<RAstExternFn>) {
-    // TODO: Check:
-    //  - only: exit, open, read, write, malloc
-    //  - (somewhat) correct signature (exit returns !, open has 3 parameters...)
 }
 
 /// Analyze one function and validate body against its signature.
