@@ -2,7 +2,7 @@
 
 ## Global
 
-```
+```text
 language  -> { function | extern | enum }
 
 function  -> signature block
@@ -23,12 +23,13 @@ block     -> "{" { ( binding | expression [ ";" ] ) } "}"
 
 ## Expression
 
-```
+```text
 expression -> [ "return" [ expression ] ] | assignment
 
 assignment -> comparison [ "=" assignment ]
 
-comparison -> arithmetic [ ( "==" | "!=" | "<" | ">" | "<=" | ">=" ) arithmetic ]
+comparison -> arithmetic
+              [ ( "==" | "!=" | "<" | ">" | "<=" | ">=" ) arithmetic ]
 
 arithmetic -> term { ( "+" | "-" ) term }
 
@@ -50,7 +51,7 @@ factor     -> ( literal
 
 ## Control Flow
 
-```
+```text
 if    -> "if" expression block [ "else" [ if | block ] ]
 
 while -> "while" expression block
@@ -65,20 +66,21 @@ path  -> identifier [ "::" "<" type ">" ] [ "::" identifier ]
 
 ## Pattern
 
-```
+```text
 binding  -> "let" variable "=" expression ";"
 
 variable -> pattern ":" type
 
 pattern  -> literal
           | [ "mut" ] identifier
-          | identifier "::" identifier [ "(" pattern { "," pattern } [ "," ] ")" ] )
+          | identifier "::" identifier
+            [ "(" pattern { "," pattern } [ "," ] ")" ] )
           | "_"
 ```
 
 ## Types & Literals
 
-```
+```text
 type       -> "u8"
             | "usize"
             | "bool"
