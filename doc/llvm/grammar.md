@@ -3,20 +3,18 @@
 ## Global
 
 ```text
-llvm     -> { string | function }
+language    -> { string | definition | declaration }
 
-string   -> global "=" "constant"
-            "[" number "x" "i8" "]" "c"" { printable_character } """
+string      -> global "=" "constant"
+               "[" number "x" "i8" "]" "c"" { printable_character } """
 
-function -> "define" type global
-            "(" [ type local { "," type local } ] ")"
-            "{" { block } "}"
+definition  -> "define" type global
+               "(" [ type local { "," type local } ] ")"
+               "{" { block } "}"
 
-global   -> "@" identifier
+declaration -> "declare" type global "(" [ type { "," type } ] ")"
 
-label    -> identifier ":"
-
-block    -> label { instruction }
+block       -> label { instruction }
 ```
 
 ## Instructions
@@ -58,7 +56,11 @@ load        -> "load" type "," "ptr" value
 ## Types, Literals & Identifiers
 
 ```text
+global      -> "@" identifier
+
 local      -> "%" identifier
+
+label       -> identifier ":"
 
 type       -> integer | "void" | "ptr"
 
