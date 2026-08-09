@@ -6134,40 +6134,6 @@ fn emu_mem_block_set_next(emulator: &mut Emu, block: usize, next: usize) {
     emu_store_bytes(emulator, block + size_of::<usize>(), next, size_of::<usize>());
 }
 
-/// Returns address of free memory block using best-fit, if it exists, else NULL.
-fn emu_reuse_free_block_best_fit(emulator: &mut Emu, size: usize) -> usize {
-    let mut best_fit: usize = 0;
-    let mut best_fit_size: usize = 18446744073709551615; // usize::MAX
-    let mut best_fit_predecessor: usize = 0;
-
-    let mut block: usize = emu_get_freelist_head(emulator);
-    let mut block_size: usize = 0;
-    let mut block_predecessor: usize = 0;
-
-    while block != 0 {
-        block_size = emu_mem_block_size(emulator, block);
-        if and(size <= block_size, block_size < best_fit_size) {
-            best_fit = block;
-            best_fit_size = block_size;
-            best_fit_predecessor = block_predecessor;
-        }
-
-        block_predecessor = block;
-        block = emu_mem_block_next(emulator, block);
-    }
-
-    if best_fit != 0 {
-        let next: usize = emu_mem_block_next(emulator, best_fit);
-
-        if best_fit_predecessor != 0 {
-            emu_mem_block_set_next(emulator, best_fit_predecessor, next);
-        } else {
-            emu_set_freelist_head(emulator, next);
-        }
-    }
-    best_fit
-}
-
 /// Returns address of free memory block using first-fit, if it exists, else NULL.
 fn emu_reuse_free_block_first_fit(emulator: &mut Emu, size: usize) -> usize {
     let mut block: usize = emu_get_freelist_head(emulator);
