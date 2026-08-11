@@ -5351,8 +5351,8 @@ fn lType_is_void(ty: &LType) -> bool {
     }
 }
 
-/// Normalize a value so it wraps around according to the given type.
-fn ltype_overflow_value(value: usize, ty: &LType) -> usize {
+/// If the value overflowed apply wrap-around.
+fn ltype_wrap_value(value: usize, ty: &LType) -> usize {
     match ty {
         LType::I1 => value % 2,
         LType::I8 => value % 256,
@@ -6433,7 +6433,7 @@ fn emu_execute_instructions<'a>(
                 return ExecFlow::Return(match return_value {
                     Option::Some(value) => {
                         let value: usize = emu_eval_value(emulator, locals, value);
-                        ltype_overflow_value(value, return_type)
+                        ltype_wrap_value(value, return_type)
                     },
                     Option::None => 0,
                 });
@@ -6478,20 +6478,21 @@ fn emu_execute_assignment(
 /// Evaluate the value of the assignment operation.
 fn emu_evaluate_assign_op(emulator: &mut Emu, ast: &LAst, locals: &StringMap<usize>, op: &AssignOp) -> usize {
     match op {
-        AssignOp::Binary(operator, result_type, left, right) => {
-            let lhs: usize = ltype_overflow_value(emu_eval_value(emulator, locals, left), result_type);
-            let rhs: usize = ltype_overflow_value(emu_eval_value(emulator, locals, right), result_type);
-            match operator {
+        AssignOp::Binary(operator, ty, left, right) => {
+            let lhs: usize = ltype_wrap_value(emu_eval_value(emulator, locals, left), ty);
+            let rhs: usize = ltype_wrap_value(emu_eval_value(emulator, locals, right), ty);
+            let result: usize = match operator {
                 BinaryOp::Add => lhs + rhs,
                 BinaryOp::Sub => lhs - rhs,
                 BinaryOp::Mul => lhs * rhs,
                 BinaryOp::Udiv => lhs / rhs,
                 BinaryOp::Urem => lhs % rhs,
-            }
+            };
+            ltype_wrap_value(result, ty)
         },
         AssignOp::Icmp(predicate, operand_type, left, right) => {
-            let lhs: usize = ltype_overflow_value(emu_eval_value(emulator, locals, left), operand_type);
-            let rhs: usize = ltype_overflow_value(emu_eval_value(emulator, locals, right), operand_type);
+            let lhs: usize = ltype_wrap_value(emu_eval_value(emulator, locals, left), operand_type);
+            let rhs: usize = ltype_wrap_value(emu_eval_value(emulator, locals, right), operand_type);
             (match predicate {
                 IcmpOp::Eq => lhs == rhs,
                 IcmpOp::Ne => lhs != rhs,
@@ -6502,11 +6503,9 @@ fn emu_evaluate_assign_op(emulator: &mut Emu, ast: &LAst, locals: &StringMap<usi
             }) as usize
         },
         AssignOp::Cast(to_type, value) => {
-            // inttoptr/ptrtoint are reinterpretation (no-op)
-            // zext is extending with zeros (assign larger type)
-            // trunc is truncating most significant bits, achieved here by computing modulo
-            let evaluated_value: usize = emu_eval_value(emulator, locals, value);
-            ltype_overflow_value(evaluated_value, to_type)
+            // inttoptr/ptrtoint are no-ops, trunc sets high-bits to 0, zext sets high-bits to 0
+            // so computing mod 2^n where n is the bit width of new type is sufficient
+            ltype_wrap_value(emu_eval_value(emulator, locals, value), to_type)
         },
         AssignOp::Alloca(allocated_type, count) => {
             let space: usize = *count * lType_size(allocated_type);
@@ -6518,7 +6517,7 @@ fn emu_evaluate_assign_op(emulator: &mut Emu, ast: &LAst, locals: &StringMap<usi
         AssignOp::Load(loaded_type, address_value) => {
             let address: usize = emu_eval_value(emulator, locals, address_value);
             let value: usize = emu_load_bytes(emulator, address, lType_size(loaded_type));
-            ltype_overflow_value(value, loaded_type)
+            ltype_wrap_value(value, loaded_type)
         },
         AssignOp::Call(Call::Call(call_type, callee, arguments)) => {
             emu_execute_call(emulator, ast, locals, call_type, callee, arguments)
@@ -6540,13 +6539,13 @@ fn emu_execute_call(
     while i < vec_len::<LTypedValue>(arguments) {
         let LTypedValue::Pair(ty, argument_value): &LTypedValue = vec_at::<LTypedValue>(arguments, i);
         let value: usize = emu_eval_value(emulator, locals, argument_value);
-        vec_push::<usize>(&mut arg_values, ltype_overflow_value(value, ty));
+        vec_push::<usize>(&mut arg_values, ltype_wrap_value(value, ty));
         i = i + 1;
     }
 
     let value: usize = emu_execute_function(emulator, ast, callee, &arg_values);
     drop_vec::<usize>(arg_values);
-    ltype_overflow_value(value, call_type)
+    ltype_wrap_value(value, call_type)
 }
 
 /// Execute the given store instruction.
@@ -6557,7 +6556,7 @@ fn emu_execute_store(
     value: &LValue,
     address: &LValue,
 ) {
-    let value: usize = ltype_overflow_value(emu_eval_value(emulator, locals, value), store_type);
+    let value: usize = ltype_wrap_value(emu_eval_value(emulator, locals, value), store_type);
     let target_address: usize = emu_eval_value(emulator, locals, address);
     let byte_count: usize = lType_size(store_type);
 
