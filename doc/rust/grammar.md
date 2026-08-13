@@ -46,6 +46,13 @@ factor     -> ( literal
             | if
             | while
             | match )
+
+path       -> identifier [ args | "::" pathsuffix ]
+
+pathsuffix -> identifier [ args ]
+            | "<" type ">" ( args | "::" identifier [ args ] )
+
+args       -> "(" [ expression { "," expression } [ "," ] ] ")"
 ```
 
 ## Control Flow
@@ -58,9 +65,6 @@ while -> "while" expression block
 match -> "match" expression "{" { arm } "}"
 
 arm   -> pattern { "|" pattern } "=>" expression ","
-
-path  -> identifier [ "::" "<" type ">" ] [ "::" identifier ]
-         [ "(" [ expression { "," expression } [ "," ] ] ")" ]
 ```
 
 ## Pattern
