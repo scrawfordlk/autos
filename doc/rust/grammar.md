@@ -3,16 +3,20 @@
 ## Global
 
 ```text
-language  -> { function | extern | enum }
+language  -> { item }
+
+item      -> enum
+           | function
+           | "unsafe" ( extern | function )
 
 function  -> signature block
 
-signature -> [ "unsafe" ] "fn" identifier [ generic ]
+signature -> "fn" identifier [ generic ]
              "(" [ variable { "," variable } [ "," ] ] ")" [ "->" type ]
 
 generic   -> "<" ( "T" | "'" identifier [ "," "T" ] ) ">"
 
-extern    -> "unsafe" "extern" ""C"" "{" { signature ";" } "}"
+extern    -> "extern" ""C"" "{" { signature ";" } "}"
 
 enum      -> "enum" identifier [ generic ] "{" variant "," { variant "," } "}"
 
