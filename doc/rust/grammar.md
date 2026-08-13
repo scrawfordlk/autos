@@ -71,9 +71,9 @@ binding  -> "let" variable "=" expression ";"
 variable -> pattern ":" type
 
 pattern  -> literal
-          | [ "mut" ] identifier
-          | identifier "::" identifier
-            [ "(" pattern { "," pattern } [ "," ] ")" ] )
+          | "mut" identifier
+          | identifier [ "::" identifier
+              [ "(" pattern { "," pattern } [ "," ] ")" ] ]
           | "_"
 ```
 
