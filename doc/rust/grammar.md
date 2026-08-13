@@ -40,7 +40,6 @@ cast       -> unary { "as" type }
 unary      -> [ "*" | ( "&" [ "mut" ] ) ] unary | factor
 
 factor     -> ( literal
-            | identifier
             | path
             | "(" expression ")"
             | [ "unsafe" ] block
