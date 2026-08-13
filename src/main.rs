@@ -1206,41 +1206,31 @@ fn parse_generic(lexer: &mut RLexer) -> bool {
 
 fn parse_language(lexer: &mut RLexer) -> RAst {
     let mut items: Vec<RAstItem> = vec_new::<RAstItem>();
-
     while not(rLexer_current_token_eq(lexer, &RToken::Eof)) {
-        match rLexer_current_token(lexer) {
-            RToken::Unsafe => match rLexer_next_token(lexer) {
-                RToken::Extern => {
-                    let extern_block: RAstItem = RAstItem::ExternBlock(parse_extern_block(lexer));
-                    vec_push::<RAstItem>(&mut items, extern_block);
-                },
-                RToken::Fn => {
-                    let function: RAstItem = RAstItem::Function(parse_function(lexer, true));
-                    vec_push::<RAstItem>(&mut items, function);
-                },
-                token => {
-                    let mut message: String = string("expected fn or extern, but got: ");
-                    string_push_string(&mut message, &rToken_to_string(&token));
-                    parse_error(lexer, &message);
-                },
-            },
-            RToken::Fn => {
-                let function: RAstItem = RAstItem::Function(parse_function(lexer, false));
-                vec_push::<RAstItem>(&mut items, function);
-            },
-            RToken::Enum => {
-                let enumeration: RAstItem = RAstItem::Enum(parse_enum(lexer));
-                vec_push::<RAstItem>(&mut items, enumeration);
-            },
+        vec_push::<RAstItem>(&mut items, parse_item(lexer));
+    }
+    RAst::Language(items)
+}
+
+fn parse_item(lexer: &mut RLexer) -> RAstItem {
+    match rLexer_current_token(lexer) {
+        RToken::Unsafe => match rLexer_next_token(lexer) {
+            RToken::Extern => RAstItem::ExternBlock(parse_extern_block(lexer)),
+            RToken::Fn => RAstItem::Function(parse_function(lexer, true)),
             token => {
-                let mut message: String = string("expected function, enum, or extern block, but got: ");
-                string_push_string(&mut message, &rToken_to_string(token));
+                let mut message: String = string("expected fn or extern, but got: ");
+                string_push_string(&mut message, &rToken_to_string(&token));
                 parse_error(lexer, &message);
             },
-        }
+        },
+        RToken::Fn => RAstItem::Function(parse_function(lexer, false)),
+        RToken::Enum => RAstItem::Enum(parse_enum(lexer)),
+        token => {
+            let mut message: String = string("expected function, enum, or extern block, but got: ");
+            string_push_string(&mut message, &rToken_to_string(token));
+            parse_error(lexer, &message);
+        },
     }
-
-    RAst::Language(items)
 }
 
 fn parse_extern_block(lexer: &mut RLexer) -> Vec<RAstExternFn> {
