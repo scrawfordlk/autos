@@ -37,7 +37,7 @@ term       -> cast { ( "*" | "/" | "%" ) cast }
 
 cast       -> unary { "as" type }
 
-unary      -> [ "*" | ( "&" [ "mut" ] ) ] unary | factor
+unary      -> ( "*" | ( "&" [ "mut" ] ) ) unary | factor
 
 factor     -> ( literal
             | path
