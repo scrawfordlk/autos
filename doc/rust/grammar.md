@@ -22,7 +22,7 @@ enum      -> "enum" identifier [ generic ] "{" variant "," { variant "," } "}"
 
 variant   -> identifier [ "(" type { "," type } ")" ]
 
-block     -> "{" { ( binding | expression [ ";" ] ) } "}"
+block     -> "{" { binding | expression ";" } [ expression ] "}"
 ```
 
 ## Expression
