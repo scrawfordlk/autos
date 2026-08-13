@@ -1157,7 +1157,7 @@ fn scrutinee_is_reference(scrutinee: &Scrutinee) -> bool {
 }
 
 /// Require and consume the given token.
-fn expect_token(lexer: &mut RLexer, token: &RToken) {
+fn rLexer_expect_token(lexer: &mut RLexer, token: &RToken) {
     if not(rLexer_try_consume(lexer, token)) {
         let bad_token: &RToken = rLexer_current_token(lexer);
         let mut message: String = string("expected ");
@@ -1169,7 +1169,7 @@ fn expect_token(lexer: &mut RLexer, token: &RToken) {
 }
 
 /// Read and consume the current identifier token.
-fn expect_identifier(lexer: &mut RLexer) -> String {
+fn rLexer_expect_identifier(lexer: &mut RLexer) -> String {
     match rLexer_current_token(lexer) {
         RToken::Identifier(name) => {
             let name: String = string_clone(name);
@@ -1194,13 +1194,13 @@ fn parse_generic(lexer: &mut RLexer) -> bool {
         if rLexer_try_consume(lexer, &RToken::RAngle) {
             return false;
         }
-        expect_token(lexer, &RToken::Comma);
+        rLexer_expect_token(lexer, &RToken::Comma);
     }
-    let type_param: String = expect_identifier(lexer);
+    let type_param: String = rLexer_expect_identifier(lexer);
     if not(str_eq(&type_param, "T")) {
         parse_error(lexer, &string("generic type parameter must be \"T\""));
     }
-    expect_token(lexer, &RToken::RAngle);
+    rLexer_expect_token(lexer, &RToken::RAngle);
     true
 }
 
@@ -1244,7 +1244,7 @@ fn parse_language(lexer: &mut RLexer) -> RAst {
 }
 
 fn parse_extern_block(lexer: &mut RLexer) -> Vec<RAstExternFn> {
-    expect_token(lexer, &RToken::Extern);
+    rLexer_expect_token(lexer, &RToken::Extern);
 
     match rLexer_current_token(lexer) {
         RToken::Literal(literal) => match literal {
@@ -1269,22 +1269,22 @@ fn parse_extern_block(lexer: &mut RLexer) -> Vec<RAstExternFn> {
         },
     };
 
-    expect_token(lexer, &RToken::LBrace);
+    rLexer_expect_token(lexer, &RToken::LBrace);
 
     let mut functions: Vec<RAstExternFn> = vec_new::<RAstExternFn>();
     while not(rLexer_current_token_eq(lexer, &RToken::RBrace)) {
         let function: RAstExternFn = parse_function_declaration(lexer);
         vec_push::<RAstExternFn>(&mut functions, function);
     }
-    expect_token(lexer, &RToken::RBrace);
+    rLexer_expect_token(lexer, &RToken::RBrace);
 
     functions
 }
 
 fn parse_function_declaration(lexer: &mut RLexer) -> RAstExternFn {
-    expect_token(lexer, &RToken::Fn);
-    let name: String = expect_identifier(lexer);
-    expect_token(lexer, &RToken::LParen);
+    rLexer_expect_token(lexer, &RToken::Fn);
+    let name: String = rLexer_expect_identifier(lexer);
+    rLexer_expect_token(lexer, &RToken::LParen);
 
     let mut parameters: Vec<RAstVariable> = vec_new::<RAstVariable>();
     if not(rLexer_current_token_eq(lexer, &RToken::RParen)) {
@@ -1299,7 +1299,7 @@ fn parse_function_declaration(lexer: &mut RLexer) -> RAstExternFn {
             vec_push::<RAstVariable>(&mut parameters, variable);
         }
     }
-    expect_token(lexer, &RToken::RParen);
+    rLexer_expect_token(lexer, &RToken::RParen);
 
     let return_type: RType = if rLexer_try_consume(lexer, &RToken::Arrow) {
         parse_type(lexer)
@@ -1307,15 +1307,15 @@ fn parse_function_declaration(lexer: &mut RLexer) -> RAstExternFn {
         RType::Unit
     };
 
-    expect_token(lexer, &RToken::SemiColon);
+    rLexer_expect_token(lexer, &RToken::SemiColon);
     RAstExternFn::Fn(name, parameters, return_type)
 }
 
 fn parse_function(lexer: &mut RLexer, is_unsafe: bool) -> RAstFunction {
-    expect_token(lexer, &RToken::Fn);
-    let name: String = expect_identifier(lexer);
+    rLexer_expect_token(lexer, &RToken::Fn);
+    let name: String = rLexer_expect_identifier(lexer);
     let is_generic: bool = parse_generic(lexer);
-    expect_token(lexer, &RToken::LParen);
+    rLexer_expect_token(lexer, &RToken::LParen);
 
     let mut parameters: Vec<RAstVariable> = vec_new::<RAstVariable>();
     if not(rLexer_current_token_eq(lexer, &RToken::RParen)) {
@@ -1330,7 +1330,7 @@ fn parse_function(lexer: &mut RLexer, is_unsafe: bool) -> RAstFunction {
             vec_push::<RAstVariable>(&mut parameters, variable);
         }
     }
-    expect_token(lexer, &RToken::RParen);
+    rLexer_expect_token(lexer, &RToken::RParen);
 
     let return_type: RType = if rLexer_try_consume(lexer, &RToken::Arrow) {
         parse_type(lexer)
@@ -1344,28 +1344,28 @@ fn parse_function(lexer: &mut RLexer, is_unsafe: bool) -> RAstFunction {
 }
 
 fn parse_enum(lexer: &mut RLexer) -> RAstEnum {
-    expect_token(lexer, &RToken::Enum);
-    let name: String = expect_identifier(lexer);
+    rLexer_expect_token(lexer, &RToken::Enum);
+    let name: String = rLexer_expect_identifier(lexer);
     let is_generic: bool = parse_generic(lexer);
-    expect_token(lexer, &RToken::LBrace);
+    rLexer_expect_token(lexer, &RToken::LBrace);
 
     let mut variants: Vec<RAstVariant> = vec_new::<RAstVariant>();
     let first_variant: RAstVariant = parse_variant(lexer);
     vec_push::<RAstVariant>(&mut variants, first_variant);
-    expect_token(lexer, &RToken::Comma);
+    rLexer_expect_token(lexer, &RToken::Comma);
 
     while not(rLexer_current_token_eq(lexer, &RToken::RBrace)) {
         let variant: RAstVariant = parse_variant(lexer);
         vec_push::<RAstVariant>(&mut variants, variant);
-        expect_token(lexer, &RToken::Comma);
+        rLexer_expect_token(lexer, &RToken::Comma);
     }
-    expect_token(lexer, &RToken::RBrace);
+    rLexer_expect_token(lexer, &RToken::RBrace);
 
     RAstEnum::Enum(name, variants, is_generic)
 }
 
 fn parse_variant(lexer: &mut RLexer) -> RAstVariant {
-    let name: String = expect_identifier(lexer);
+    let name: String = rLexer_expect_identifier(lexer);
 
     let mut field_types: Vec<RType> = vec_new::<RType>();
     if rLexer_try_consume(lexer, &RToken::LParen) {
@@ -1377,14 +1377,14 @@ fn parse_variant(lexer: &mut RLexer) -> RAstVariant {
         ) {
             vec_push::<RType>(&mut field_types, parse_type(lexer));
         }
-        expect_token(lexer, &RToken::RParen);
+        rLexer_expect_token(lexer, &RToken::RParen);
     }
 
     RAstVariant::Variant(name, field_types)
 }
 
 fn parse_block(lexer: &mut RLexer) -> RAstBlock {
-    expect_token(lexer, &RToken::LBrace);
+    rLexer_expect_token(lexer, &RToken::LBrace);
     let mut statements: Vec<RAstStatement> = vec_new::<RAstStatement>();
     let mut tail: Option<Box<RAstExpr>> = Option::<Box<RAstExpr>>::None;
 
@@ -1392,7 +1392,7 @@ fn parse_block(lexer: &mut RLexer) -> RAstBlock {
         if rLexer_current_token_eq(lexer, &RToken::Let) {
             let let_binding: RAstStatement = parse_binding(lexer);
             vec_push::<RAstStatement>(&mut statements, let_binding);
-            expect_token(lexer, &RToken::SemiColon);
+            rLexer_expect_token(lexer, &RToken::SemiColon);
         } else {
             let expression: RAstExpr = parse_expression(lexer);
 
@@ -1406,22 +1406,22 @@ fn parse_block(lexer: &mut RLexer) -> RAstBlock {
             }
         }
     }
-    expect_token(lexer, &RToken::RBrace);
+    rLexer_expect_token(lexer, &RToken::RBrace);
 
     RAstBlock::Block(statements, tail)
 }
 
 fn parse_binding(lexer: &mut RLexer) -> RAstStatement {
-    expect_token(lexer, &RToken::Let);
+    rLexer_expect_token(lexer, &RToken::Let);
     let variable: RAstVariable = parse_variable(lexer);
-    expect_token(lexer, &RToken::Assign);
+    rLexer_expect_token(lexer, &RToken::Assign);
     let value: RAstExpr = parse_expression(lexer);
     RAstStatement::Let(variable, box_new::<RAstExpr>(value))
 }
 
 fn parse_variable(lexer: &mut RLexer) -> RAstVariable {
     let pattern: RAstPattern = parse_pattern(lexer);
-    expect_token(lexer, &RToken::Colon);
+    rLexer_expect_token(lexer, &RToken::Colon);
     let ty: RType = parse_type(lexer);
     RAstVariable::Variable(pattern, ty)
 }
@@ -1446,7 +1446,7 @@ fn parse_type(lexer: &mut RLexer) -> RType {
         },
         RToken::LParen => {
             rLexer_next_token(lexer);
-            expect_token(lexer, &RToken::RParen);
+            rLexer_expect_token(lexer, &RToken::RParen);
             RType::Unit
         },
         RToken::Bang => {
@@ -1471,21 +1471,21 @@ fn parse_type(lexer: &mut RLexer) -> RType {
         },
         RToken::Star => {
             rLexer_next_token(lexer);
-            expect_token(lexer, &RToken::Mut);
+            rLexer_expect_token(lexer, &RToken::Mut);
             let inner: RType = parse_type(lexer);
             RType::RawPointerMut(box_new::<RType>(inner))
         },
         RToken::Identifier(_) => {
-            let name: String = expect_identifier(lexer);
+            let name: String = rLexer_expect_identifier(lexer);
             if str_eq(&name, "T") {
                 RType::Generic // T is always a generic parameter
             } else if rLexer_try_consume(lexer, &RToken::LAngle) {
                 if rLexer_try_consume(lexer, &RToken::Lifetime) {
-                    expect_token(lexer, &RToken::RAngle);
+                    rLexer_expect_token(lexer, &RToken::RAngle);
                     return RType::Enum(name, Option::<Box<RType>>::None);
                 }
                 let instance: RType = parse_type(lexer);
-                expect_token(lexer, &RToken::RAngle);
+                rLexer_expect_token(lexer, &RToken::RAngle);
                 RType::Enum(name, Option::<Box<RType>>::Some(box_new::<RType>(instance)))
             } else {
                 RType::Enum(name, Option::<Box<RType>>::None)
@@ -1650,11 +1650,11 @@ fn parse_factor(lexer: &mut RLexer) -> RAstExpr {
             rLexer_next_token(lexer);
             RAstExpr::Literal(literal)
         },
-        RToken::Identifier(_) => parse_identifier_expression(lexer),
+        RToken::Identifier(_) => parse_path(lexer),
         RToken::LParen => {
             rLexer_next_token(lexer);
             let expression: RAstExpr = parse_expression(lexer);
-            expect_token(lexer, &RToken::RParen);
+            rLexer_expect_token(lexer, &RToken::RParen);
             expression
         },
         RToken::Unsafe => {
@@ -1674,38 +1674,60 @@ fn parse_factor(lexer: &mut RLexer) -> RAstExpr {
 }
 
 /// Parses either a variable, a function call or an instantiation of an enum.
-fn parse_identifier_expression(lexer: &mut RLexer) -> RAstExpr {
-    let first_identifier: String = expect_identifier(lexer);
+fn parse_path(lexer: &mut RLexer) -> RAstExpr {
+    let first_identifier: String = rLexer_expect_identifier(lexer);
     let mut generic: Option<RType> = Option::<RType>::None;
 
     if rLexer_try_consume(lexer, &RToken::DoubleColon) {
         if rLexer_try_consume(lexer, &RToken::LAngle) {
             let ty: RType = parse_type(lexer);
-            expect_token(lexer, &RToken::RAngle);
+            rLexer_expect_token(lexer, &RToken::RAngle);
             generic = Option::<RType>::Some(ty);
         }
-        let mut segments: Vec<String> = vec_new::<String>();
-        vec_push::<String>(&mut segments, first_identifier);
+        let mut path: Vec<String> = vec_new::<String>();
+        vec_push::<String>(&mut path, first_identifier);
         match rLexer_current_token(lexer) {
-            RToken::Identifier(_) => vec_push::<String>(&mut segments, expect_identifier(lexer)),
+            RToken::Identifier(_) => vec_push::<String>(&mut path, rLexer_expect_identifier(lexer)),
             RToken::DoubleColon => {
                 rLexer_next_token(lexer);
-                vec_push::<String>(&mut segments, expect_identifier(lexer));
+                vec_push::<String>(&mut path, rLexer_expect_identifier(lexer));
             },
             _ => {},
         };
-        parse_path_values(lexer, segments, generic)
+        RAstExpr::Path(path, parse_args(lexer), generic)
     } else if rLexer_current_token_eq(lexer, &RToken::LParen) {
-        let mut segments: Vec<String> = vec_new::<String>();
-        vec_push::<String>(&mut segments, first_identifier);
-        parse_path_values(lexer, segments, generic)
+        let mut path: Vec<String> = vec_new::<String>();
+        vec_push::<String>(&mut path, first_identifier);
+        RAstExpr::Path(path, parse_args(lexer), generic)
     } else {
         RAstExpr::Variable(first_identifier)
     }
 }
 
+fn parse_args(lexer: &mut RLexer) -> Vec<RAstExpr> {
+    if not(rLexer_try_consume(lexer, &RToken::LParen)) {
+        return vec_new::<RAstExpr>(); // enum without fields
+    }
+
+    let mut values: Vec<RAstExpr> = vec_new::<RAstExpr>();
+    if not(rLexer_current_token_eq(lexer, &RToken::RParen)) {
+        let first_value: RAstExpr = parse_expression(lexer);
+        vec_push::<RAstExpr>(&mut values, first_value);
+
+        while and(
+            rLexer_try_consume(lexer, &RToken::Comma),
+            not(rLexer_current_token_eq(lexer, &RToken::RParen)),
+        ) {
+            let value: RAstExpr = parse_expression(lexer);
+            vec_push::<RAstExpr>(&mut values, value);
+        }
+    }
+    rLexer_expect_token(lexer, &RToken::RParen);
+    values
+}
+
 fn parse_if(lexer: &mut RLexer) -> RAstIf {
-    expect_token(lexer, &RToken::If);
+    rLexer_expect_token(lexer, &RToken::If);
     let condition: RAstExpr = parse_expression(lexer);
     let then_block: RAstBlock = parse_block(lexer);
 
@@ -1725,23 +1747,23 @@ fn parse_if(lexer: &mut RLexer) -> RAstIf {
 }
 
 fn parse_while(lexer: &mut RLexer) -> RAstExpr {
-    expect_token(lexer, &RToken::While);
+    rLexer_expect_token(lexer, &RToken::While);
     let condition: RAstExpr = parse_expression(lexer);
     let body: RAstBlock = parse_block(lexer);
     RAstExpr::While(box_new::<RAstExpr>(condition), body)
 }
 
 fn parse_match(lexer: &mut RLexer) -> RAstExpr {
-    expect_token(lexer, &RToken::Match);
+    rLexer_expect_token(lexer, &RToken::Match);
     let value: RAstExpr = parse_expression(lexer);
-    expect_token(lexer, &RToken::LBrace);
+    rLexer_expect_token(lexer, &RToken::LBrace);
 
     let mut arms: Vec<RAstArm> = vec_new::<RAstArm>();
     while not(rLexer_current_token_eq(lexer, &RToken::RBrace)) {
         let arm: RAstArm = parse_arm(lexer);
         vec_push::<RAstArm>(&mut arms, arm);
     }
-    expect_token(lexer, &RToken::RBrace);
+    rLexer_expect_token(lexer, &RToken::RBrace);
 
     RAstExpr::Match(box_new::<RAstExpr>(value), arms)
 }
@@ -1756,10 +1778,10 @@ fn parse_arm(lexer: &mut RLexer) -> RAstArm {
         vec_push::<RAstPattern>(&mut patterns, pattern);
     }
 
-    expect_token(lexer, &RToken::FatArrow);
+    rLexer_expect_token(lexer, &RToken::FatArrow);
 
     let expression: RAstExpr = parse_expression(lexer);
-    expect_token(lexer, &RToken::Comma);
+    rLexer_expect_token(lexer, &RToken::Comma);
     RAstArm::Arm(patterns, expression)
 }
 
@@ -1779,16 +1801,16 @@ fn parse_pattern(lexer: &mut RLexer) -> RAstPattern {
         },
         RToken::Mut => {
             rLexer_next_token(lexer);
-            let identifier: String = expect_identifier(lexer);
+            let identifier: String = rLexer_expect_identifier(lexer);
             RAstPattern::Identifier(true, identifier)
         },
         RToken::Identifier(_) => {
-            let identifier: String = expect_identifier(lexer);
+            let identifier: String = rLexer_expect_identifier(lexer);
 
             if str_eq(&identifier, "_") {
                 RAstPattern::Wildcard
             } else if rLexer_try_consume(lexer, &RToken::DoubleColon) {
-                let variant_name: String = expect_identifier(lexer);
+                let variant_name: String = rLexer_expect_identifier(lexer);
 
                 let mut fields: Vec<RAstPattern> = vec_new::<RAstPattern>();
                 if rLexer_try_consume(lexer, &RToken::LParen) {
@@ -1804,7 +1826,7 @@ fn parse_pattern(lexer: &mut RLexer) -> RAstPattern {
                             vec_push::<RAstPattern>(&mut fields, pattern);
                         }
                     }
-                    expect_token(lexer, &RToken::RParen);
+                    rLexer_expect_token(lexer, &RToken::RParen);
                 }
 
                 RAstPattern::EnumVariant(identifier, variant_name, fields)
@@ -1818,29 +1840,6 @@ fn parse_pattern(lexer: &mut RLexer) -> RAstPattern {
             parse_error(lexer, &message);
         },
     }
-}
-
-fn parse_path_values(lexer: &mut RLexer, path: Vec<String>, generic: Option<RType>) -> RAstExpr {
-    if not(rLexer_try_consume(lexer, &RToken::LParen)) {
-        return RAstExpr::Path(path, vec_new::<RAstExpr>(), generic); // enum without fields
-    }
-
-    let mut values: Vec<RAstExpr> = vec_new::<RAstExpr>();
-    if not(rLexer_current_token_eq(lexer, &RToken::RParen)) {
-        let first_value: RAstExpr = parse_expression(lexer);
-        vec_push::<RAstExpr>(&mut values, first_value);
-
-        while and(
-            rLexer_try_consume(lexer, &RToken::Comma),
-            not(rLexer_current_token_eq(lexer, &RToken::RParen)),
-        ) {
-            let value: RAstExpr = parse_expression(lexer);
-            vec_push::<RAstExpr>(&mut values, value);
-        }
-    }
-    expect_token(lexer, &RToken::RParen);
-
-    RAstExpr::Path(path, values, generic)
 }
 
 /// Collect all global items (functions and enums) into a map and return it.

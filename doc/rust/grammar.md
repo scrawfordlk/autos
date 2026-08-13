@@ -24,7 +24,7 @@ block     -> "{" { ( binding | expression [ ";" ] ) } "}"
 ## Expression
 
 ```text
-expression -> [ "return" [ expression ] ] | assignment
+expression -> "return" [ expression ] | assignment
 
 assignment -> comparison [ "=" assignment ]
 
