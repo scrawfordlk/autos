@@ -10,7 +10,7 @@ function  -> signature block
 signature -> [ "unsafe" ] "fn" identifier [ generic ]
              "(" [ variable { "," variable } [ "," ] ] ")" [ "->" type ]
 
-generic   -> "<" ( T | "'" identifier [ "," "T" ] ) ">"
+generic   -> "<" ( "T" | "'" identifier [ "," "T" ] ) ">"
 
 extern    -> "unsafe" "extern" ""C"" "{" { signature ";" } "}"
 
