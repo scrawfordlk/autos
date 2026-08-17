@@ -3090,7 +3090,7 @@ fn codegen_is_instantiated(Codegen::Gen(_, _, _, _, generic, _): &Codegen, name:
 fn codegen_next_register(codegen: &mut Codegen) -> String {
     let id: usize = codegen_ssa_counter(codegen);
     codegen_increment_ssa_counter(codegen);
-    let mut name: String = string("%t");
+    let mut name: String = string("%r");
     string_push_string(&mut name, &integer_to_string(id));
     name
 }
