@@ -41,15 +41,15 @@ term       -> cast { ( "*" | "/" | "%" ) cast }
 
 cast       -> unary { "as" type }
 
-unary      -> ( "*" | ( "&" [ "mut" ] ) ) unary | factor
+unary      -> ( "*" | "&" [ "mut" ] ) unary | factor
 
-factor     -> ( literal
+factor     -> literal
             | path
             | "(" expression ")"
             | [ "unsafe" ] block
             | if
             | while
-            | match )
+            | match
 
 path       -> identifier [ args | "::" pathsuffix ]
 
