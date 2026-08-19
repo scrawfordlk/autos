@@ -96,6 +96,7 @@ type       -> "usize"
             | "char"
             | "bool"
             | ( "&" [ "mut" ] | "*" "mut" ) type
+            | "&str"
             | identifier [ "<" type ">" ]
 
 literal    -> integer | string | character | boolean
