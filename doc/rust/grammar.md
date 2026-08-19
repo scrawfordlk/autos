@@ -11,10 +11,11 @@ item      -> enum
 
 function  -> signature block
 
-signature -> "fn" identifier [ generic ]
-             "(" [ variable { "," variable } [ "," ] ] ")" [ "->" type ]
+signature -> "fn" identifier [ generic ] params [ "->" type ]
 
-generic   -> "<" ( "T" | "'" identifier [ "," "T" ] ) ">"
+params    -> "(" [ variable { "," variable } [ "," ] ] ")"
+
+generic   -> "<" "T" ">"
 
 extern    -> "extern" ""C"" "{" { signature ";" } "}"
 
@@ -71,7 +72,7 @@ match -> "match" expression "{" { arm } "}"
 arm   -> pattern { "|" pattern } "=>" expression ","
 ```
 
-## Pattern
+## Pattern Matching
 
 ```text
 binding  -> "let" variable "=" expression ";"
@@ -79,10 +80,12 @@ binding  -> "let" variable "=" expression ";"
 variable -> pattern ":" type
 
 pattern  -> literal
+          | enumpat
           | "mut" identifier
-          | identifier [ "::" identifier
-              [ "(" pattern { "," pattern } [ "," ] ")" ] ]
           | "_"
+
+enumpat -> identifier [ "::" identifier
+              [ "(" pattern { "," pattern } [ "," ] ")" ] ]
 ```
 
 ## Types & Literals
