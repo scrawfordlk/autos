@@ -96,7 +96,7 @@ type       -> "u8"
             | "bool"
             | "char"
             | identifier [ "<" type ">" ]
-            | ( "&" [ "'" identifier ] [ "mut" ] | "*" "mut" ) type
+            | ( "&" [ "mut" ] | "*" "mut" ) type
 
 literal    -> integer | string | character | boolean
 
