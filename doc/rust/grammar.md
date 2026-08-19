@@ -91,12 +91,12 @@ enumpat -> identifier [ "::" identifier
 ## Types & Literals
 
 ```text
-type       -> "u8"
-            | "usize"
-            | "bool"
+type       -> "usize"
+            | "u8"
             | "char"
-            | identifier [ "<" type ">" ]
+            | "bool"
             | ( "&" [ "mut" ] | "*" "mut" ) type
+            | identifier [ "<" type ">" ]
 
 literal    -> integer | string | character | boolean
 
