@@ -63,7 +63,7 @@ args       -> "(" [ expression { "," expression } [ "," ] ] ")"
 ## Control Flow
 
 ```text
-if    -> "if" expression block [ "else" [ if | block ] ]
+if    -> "if" expression block [ "else" ( if | block ) ]
 
 while -> "while" expression block
 
