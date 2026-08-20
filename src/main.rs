@@ -5607,7 +5607,9 @@ fn lparse_declare(parser: &mut LParser) {
             BuiltIn::Write
         }
     } else {
-        lparser_error(parser, &string("unknown declared function"));
+        let mut message: String = string("unknown declared function: ");
+        string_push_string(&mut message, &name);
+        lparser_error(parser, &message);
     };
     if is_incorrect {
         let mut msg: String = string("signature of ");
