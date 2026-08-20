@@ -5607,6 +5607,15 @@ fn lparse_declare(parser: &mut LParser) {
             BuiltIn::Write
         }
     } else {
+        let mut i: usize = 0;
+        let mut sum: usize = 0;
+        while i < string_len(&name) {
+            sum = sum + string_at(&name, i) as usize;
+            i = i + 1;
+        }
+        print_str("Sum: ");
+        print_string(&integer_to_string(sum));
+        println();
         let mut message: String = string("unknown declared function: ");
         string_push_string(&mut message, &name);
         lparser_error(parser, &message);
