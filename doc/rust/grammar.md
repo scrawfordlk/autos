@@ -23,7 +23,7 @@ enum      -> "enum" identifier [ generic ] "{" variant "," { variant "," } "}"
 
 variant   -> identifier [ "(" type { "," type } ")" ]
 
-block     -> "{" { binding | expression ";" } [ expression ] "}"
+block     -> "{" { ( binding | expression ) ";" } [ expression ] "}"
 ```
 
 ## Expression
@@ -75,7 +75,7 @@ arm   -> pattern { "|" pattern } "=>" expression ","
 ## Pattern Matching
 
 ```text
-binding  -> "let" variable "=" expression ";"
+binding  -> "let" variable "=" expression
 
 variable -> pattern ":" type
 
