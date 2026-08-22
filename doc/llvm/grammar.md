@@ -44,7 +44,7 @@ icmp        -> "icmp" comparison type value "," value
 
 comparison  -> "eq" | "ne" | "ugt" | "ult" | "uge" | "ule"
 
-cast        -> ( "zext" | "trunc" | ptrtoint | inttoptr ) type value "to" type
+cast        -> ( "zext" | "trunc" | "ptrtoint" | "inttoptr" ) type value "to" type
 
 call        -> "call" type global "(" [ type value { "," type value } ] ")"
 
