@@ -6,7 +6,7 @@
 language    -> { string | definition | declaration }
 
 string      -> global "=" "constant"
-               "[" number "x" "i8" "]" "c"" { printable_character } """
+               "[" constant "x" "i8" "]" "c"" { printable } """
 
 definition  -> "define" type global
                "(" [ type local { "," type local } ] ")"
@@ -20,7 +20,9 @@ block       -> label { instruction }
 ## Instructions
 
 ```text
-instruction -> return | branch | assignment | store | call
+instruction -> terminator | assignment | store | call
+
+terminator  -> return | branch
 
 return      -> "ret" ( "void" | type value )
 
@@ -32,9 +34,9 @@ assignment  -> local "=" operation
 operation   -> binary
              | icmp
              | cast
-             | call
              | alloca
              | load
+             | call
 
 store       -> "store" type value "," "ptr" value
 
@@ -48,7 +50,7 @@ cast        -> ( "zext" | "trunc" | "ptrtoint" | "inttoptr" ) type value "to" ty
 
 call        -> "call" type global "(" [ type value { "," type value } ] ")"
 
-alloca      -> "alloca" type "," "i64" number
+alloca      -> "alloca" type "," "i64" constant
 
 load        -> "load" type "," "ptr" value
 ```
@@ -56,23 +58,25 @@ load        -> "load" type "," "ptr" value
 ## Types, Literals & Identifiers
 
 ```text
-global      -> "@" identifier
+global     -> "@" identifier
 
 local      -> "%" identifier
 
-label       -> identifier ":"
+label      -> identifier ":"
 
 type       -> integer | "void" | "ptr"
 
 integer    -> "i64" | "i8" | "i1"
 
-value      -> local | number | global
+value      -> constant | global | local
 
-number     -> digit { digit }
+constant   -> digit { digit }
 
 identifier -> identchar { identchar }
 
-identchar  -> "a" | ... | "z" | "A" | ... | "Z" | digit | "_" | "." | "$"
+identchar  -> letter | digit | "_" | "." | "$"
+
+letter     -> "a" | ... | "z" | "A" | ... | "Z"
 
 digit      -> "0" | ... | "9"
 ```
