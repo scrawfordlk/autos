@@ -66,7 +66,7 @@ label      -> identifier ":"
 
 type       -> integer | "void" | "ptr"
 
-integer    -> "i64" | "i8" | "i1"
+integer    -> "i1" | "i8" | "i64"
 
 value      -> constant | global | local
 
