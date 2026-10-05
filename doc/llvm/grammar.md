@@ -14,7 +14,7 @@ definition  -> "define" type global
 
 declaration -> "declare" type global "(" [ type { "," type } ] ")"
 
-block       -> label { instruction }
+block       -> label instruction { instruction }
 ```
 
 ## Instructions
