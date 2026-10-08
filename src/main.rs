@@ -776,9 +776,9 @@ enum RAstComparisonOp {
 enum RAstUnaryOp {
     Dereference,
     /// `&` / `&mut`
-    Reference(bool),
+    Borrow(bool),
     /// `&*` / `&mut *`
-    DereferenceReference(bool),
+    BorrowRaw(bool),
 }
 
 /// An if expression.
@@ -1617,9 +1617,9 @@ fn parse_unary(lexer: &mut RLexer) -> RAstExpr {
             let mutable: bool = rLexer_try_consume(lexer, &RToken::Mut);
             let op: RAstUnaryOp = if rLexer_current_token_eq(lexer, &RToken::Star) {
                 rLexer_next_token(lexer);
-                RAstUnaryOp::DereferenceReference(mutable)
+                RAstUnaryOp::BorrowRaw(mutable)
             } else {
-                RAstUnaryOp::Reference(mutable)
+                RAstUnaryOp::Borrow(mutable)
             };
             let inner: RAstExpr = parse_unary(lexer);
             RAstExpr::Unary(op, box_new::<RAstExpr>(inner))
@@ -2514,7 +2514,7 @@ fn semantic_check_unary_op(
     globals: &StringMap<Item>,
 ) -> RType {
     match operator {
-        RAstUnaryOp::Reference(mutable_ref) => match value {
+        RAstUnaryOp::Borrow(mutable_ref) => match value {
             RAstExpr::Variable(name) => RType::Reference(
                 box_new::<RType>(semantic_check_variable_use(semantic, *mutable_ref, name)),
                 *mutable_ref,
@@ -2524,7 +2524,7 @@ fn semantic_check_unary_op(
                 RType::Reference(box_new::<RType>(ty), *mutable_ref)
             },
         },
-        RAstUnaryOp::Dereference | RAstUnaryOp::DereferenceReference(_) => {
+        RAstUnaryOp::Dereference | RAstUnaryOp::BorrowRaw(_) => {
             let expr_type: RType = semantic_check_expression(semantic, value, globals);
             let result_type: RType = match expr_type {
                 RType::Reference(pointee, _) => rType_clone(box_deref::<RType>(&pointee)),
@@ -2542,9 +2542,7 @@ fn semantic_check_unary_op(
             };
             match operator {
                 RAstUnaryOp::Dereference => result_type,
-                RAstUnaryOp::DereferenceReference(mutable) => {
-                    RType::Reference(box_new::<RType>(result_type), *mutable)
-                },
+                RAstUnaryOp::BorrowRaw(mutable) => RType::Reference(box_new::<RType>(result_type), *mutable),
                 _ => unreachable(),
             }
         },
@@ -3379,7 +3377,7 @@ fn codegen_unary_op(
     value: &RAstExpr,
 ) -> STPair {
     match operator {
-        RAstUnaryOp::Reference(mutable_ref) => match value {
+        RAstUnaryOp::Borrow(mutable_ref) => match value {
             RAstExpr::Variable(name) => {
                 let STPair::ST(pointer_name, ty): STPair = codegen_scope_lookup(codegen, name);
                 STPair::ST(pointer_name, RType::Reference(box_new::<RType>(ty), *mutable_ref))
@@ -3397,7 +3395,7 @@ fn codegen_unary_op(
                 }
             },
         },
-        RAstUnaryOp::Dereference | RAstUnaryOp::DereferenceReference(_) => {
+        RAstUnaryOp::Dereference | RAstUnaryOp::BorrowRaw(_) => {
             let STPair::ST(mut name, ty): STPair = codegen_expression(codegen, icg, value);
             let inner_type: RType = match ty {
                 RType::Reference(pointee, _) => rType_clone(box_deref::<RType>(&pointee)),
@@ -3411,7 +3409,7 @@ fn codegen_unary_op(
                     }
                     STPair::ST(name, inner_type)
                 },
-                RAstUnaryOp::DereferenceReference(mutable) => {
+                RAstUnaryOp::BorrowRaw(mutable) => {
                     STPair::ST(name, RType::Reference(box_new::<RType>(inner_type), *mutable))
                 },
                 _ => unreachable(),
