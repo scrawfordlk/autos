@@ -3700,30 +3700,30 @@ fn codegen_if(codegen: &mut Codegen, icg: &ICodegen, if_expression: &RAstIf) -> 
 
 /// Emit LLVM-IR for a while expression.
 fn codegen_while(codegen: &mut Codegen, icg: &ICodegen, condition: &RAstExpr, body: &RAstBlock) -> STPair {
-    let entry_label: String = codegen_next_label(codegen, "while.entry");
+    let header_label: String = codegen_next_label(codegen, "while.header");
     let body_label: String = codegen_next_label(codegen, "while.body");
-    let end_label: String = codegen_next_label(codegen, "while.end");
+    let exit_label: String = codegen_next_label(codegen, "while.exit");
 
     // jump from current block to while-entry block
-    codegen_emit_br(codegen, &entry_label);
-    // start entry block
-    codegen_emit_label(codegen, &entry_label);
+    codegen_emit_br(codegen, &header_label);
+    // start header block
+    codegen_emit_label(codegen, &header_label);
 
-    let STPair::ST(condition_name, _): STPair = codegen_expression(codegen, icg, condition);
+    let STPair::ST(condition_value, _): STPair = codegen_expression(codegen, icg, condition);
 
     // conditionally execute body or skip body
-    codegen_emit_br_conditional(codegen, &condition_name, &body_label, &end_label);
+    codegen_emit_br_conditional(codegen, &condition_value, &body_label, &exit_label);
 
     // start body block
     codegen_emit_label(codegen, &body_label);
 
     codegen_block(codegen, icg, body);
 
-    // jump back to entry to reevaluate condition
-    codegen_emit_br(codegen, &entry_label);
+    // jump back to header to reevaluate condition
+    codegen_emit_br(codegen, &header_label);
 
     // start block of rest of instructions
-    codegen_emit_label(codegen, &end_label);
+    codegen_emit_label(codegen, &exit_label);
 
     STPair::ST(string_new(), RType::Unit) // while always returns unit
 }
