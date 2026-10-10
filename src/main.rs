@@ -3630,7 +3630,7 @@ fn codegen_if(codegen: &mut Codegen, icg: &ICodegen, if_expression: &RAstIf) -> 
 
     let then_label: String = codegen_next_label(codegen, "if.then");
     let else_label: String = codegen_next_label(codegen, "if.else");
-    let end_label: String = codegen_next_label(codegen, "if.end");
+    let exit_label: String = codegen_next_label(codegen, "if.exit");
 
     let STPair::ST(cond, _): STPair = codegen_expression(codegen, icg, box_deref::<RAstExpr>(condition));
 
@@ -3653,7 +3653,7 @@ fn codegen_if(codegen: &mut Codegen, icg: &ICodegen, if_expression: &RAstIf) -> 
     }
 
     // end of then block, so jump to the end
-    codegen_emit_br(codegen, &end_label);
+    codegen_emit_br(codegen, &exit_label);
 
     // start of the else block
     codegen_emit_label(codegen, &else_label);
@@ -3675,10 +3675,10 @@ fn codegen_if(codegen: &mut Codegen, icg: &ICodegen, if_expression: &RAstIf) -> 
     }
 
     // end of else block, so jump to the end
-    codegen_emit_br(codegen, &end_label);
+    codegen_emit_br(codegen, &exit_label);
 
     // start of the merge block
-    codegen_emit_label(codegen, &end_label);
+    codegen_emit_label(codegen, &exit_label);
 
     // load and return the value if there is one
     let result: String = if rType_has_value(&if_type) {
