@@ -898,7 +898,7 @@ fn rAstEnum_size(codegen: &mut Codegen, icg: &ICodegen, e: &RAstEnum, generic: &
         let RAstVariant::Variant(_, field_types): &RAstVariant = vec_at::<RAstVariant>(variants, i);
 
         let mut j: usize = 0;
-        let mut size: usize = 0;
+        let mut size: usize = 8; // 8 bytes for discriminant
         while j < vec_len::<RType>(field_types) {
             let ty: &RType = vec_at::<RType>(field_types, j);
             let field: RType = rType_instantiate_generic(ty, generic, iCodegen_globals(icg));
@@ -912,7 +912,7 @@ fn rAstEnum_size(codegen: &mut Codegen, icg: &ICodegen, e: &RAstEnum, generic: &
     // The size is aligned to 8, because the current implementation uses i64 (8 byte wide) elements.
     // If the size were not aligned to 8, there would be a size mismatch between size_of::<T>() (which is
     // the size returned here) and the actual size of the allocated memory (which is always a multiple of 8).
-    round_to_next_multiple(8 + max_size, 8) // + 8 bytes for the discriminant
+    round_to_next_multiple(max_size, 8)
 }
 
 /// Get the types of the given enum variant's fields.
