@@ -10,3 +10,6 @@ version = "1.0.0"
 # Rawrust semantics).
 [profile.dev]
 overflow-checks = false
+
+[dependencies]
+walkdir = "2"
