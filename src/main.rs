@@ -3652,7 +3652,7 @@ fn codegen_if(codegen: &mut Codegen, icg: &ICodegen, if_expression: &RAstIf) -> 
         codegen_emit_store(codegen, &if_type, &then_value, &result);
     }
 
-    // end of then block, so jump to the end
+    // end of then block, so jump to the exit block
     codegen_emit_br(codegen, &exit_label);
 
     // start of the else block
@@ -3674,7 +3674,7 @@ fn codegen_if(codegen: &mut Codegen, icg: &ICodegen, if_expression: &RAstIf) -> 
         _ => if_type = RType::Unit, // else is implicitly unit, so type of if must be unit
     }
 
-    // end of else block, so jump to the end
+    // end of else block, so jump to the exit block
     codegen_emit_br(codegen, &exit_label);
 
     // start of the merge block
@@ -3735,7 +3735,7 @@ fn codegen_match(codegen: &mut Codegen, icg: &ICodegen, scrutinee: &RAstExpr, ar
     let result: String = codegen_emit_alloca(codegen, icg, &RType::Unit, 1);
     let alloca_idx: usize = codegen_code_last_index(codegen);
     let mut return_type: RType = RType::Never; // start with bottom type and coalesce arm types for correct type
-    let end_label: String = codegen_next_label(codegen, "match.end");
+    let exit_label: String = codegen_next_label(codegen, "match.exit");
 
     let mut i: usize = 0;
     while i < vec_len::<RAstArm>(arms) {
@@ -3751,14 +3751,14 @@ fn codegen_match(codegen: &mut Codegen, icg: &ICodegen, scrutinee: &RAstExpr, ar
             &expr_name,
             &expr_type,
             &result,
-            &end_label,
+            &exit_label,
         );
         codegen_pop_scope(codegen);
 
         return_type = rType_coalesce(return_type, arm_type);
         i = i + 1;
     }
-    codegen_emit_label(codegen, &end_label); // start of merge block
+    codegen_emit_label(codegen, &exit_label); // start of exit block
 
     let result: String = if rType_has_value(&return_type) {
         // now we know the type and thus the size to allocate on the stack
@@ -3785,7 +3785,7 @@ fn codegen_arm(
     expr_name: &String,
     expr_type: &RType,
     result: &String,
-    end_label: &String,
+    exit_label: &String,
 ) -> RType {
     let arm_label: String = codegen_next_label(codegen, "match.arm");
     let else_label: String = codegen_next_label(codegen, "match.else");
@@ -3826,7 +3826,7 @@ fn codegen_arm(
         codegen_emit_store(codegen, &arm_type, &arm_value, result);
     }
 
-    codegen_emit_br(codegen, end_label); // arm evaluated, so jump to end
+    codegen_emit_br(codegen, exit_label); // arm evaluated, so jump to exit block
     if not(is_last_arm) {
         codegen_emit_label(codegen, &else_label); // start label for next arm condition
     }
