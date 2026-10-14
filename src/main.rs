@@ -6803,17 +6803,17 @@ fn lparser_expected_message(parser: &LParser, expected: &String) -> String {
 
 // -------------------------- bool ---------------------------------
 
-/// Logical AND of two booleans. Not lazy due to parameters being pass by value.
+/// Non-lazy logical AND of two boolean values.
 fn and(a: bool, b: bool) -> bool {
     a as usize + b as usize == 2
 }
 
-/// Logical OR of two booleans. Not lazy due to parameters being pass by value.
+/// Non-lazy logical OR of two booleans values.
 fn or(a: bool, b: bool) -> bool {
     a as usize + b as usize > 0
 }
 
-/// Logical NOT of one boolean.
+/// Logical NOT of a boolean value.
 fn not(a: bool) -> bool {
     a as usize == 0
 }
