@@ -3790,31 +3790,30 @@ fn codegen_arm(
     let arm_label: String = codegen_next_label(codegen, "match.arm");
     let else_label: String = codegen_next_label(codegen, "match.else");
 
-    let mut i: usize = 0;
-    while i < vec_len::<RAstPattern>(patterns) {
-        let pattern: &RAstPattern = vec_at::<RAstPattern>(patterns, i);
-        let is_last_pattern: bool = i == vec_len::<RAstPattern>(patterns) - 1;
-        let fail_label: &String = if is_last_pattern {
-            &else_label // next arm
-        } else {
-            &codegen_next_label(codegen, "match.check") // next pattern
-        };
+    if is_last_arm {
+        codegen_emit_br(codegen, &arm_label); // always matches due to exhaustiveness
+    } else {
+        let mut i: usize = 0;
+        while i < vec_len::<RAstPattern>(patterns) {
+            let pattern: &RAstPattern = vec_at::<RAstPattern>(patterns, i);
+            let is_last_pattern: bool = i == vec_len::<RAstPattern>(patterns) - 1;
+            let fail_label: &String = if is_last_pattern {
+                &else_label // next arm
+            } else {
+                &codegen_next_label(codegen, "match.check") // next pattern
+            };
 
-        if not(is_last_arm) {
             codegen_arm_match(
                 codegen, icg, pattern, expr_name, expr_type, &arm_label, fail_label,
             );
+
             if not(is_last_pattern) {
                 codegen_emit_label(codegen, fail_label); // next pattern of arm
             }
-        } // otherwise arm is executed unconditionally
-
-        i = i + 1;
+            i = i + 1;
+        }
     }
-
-    if not(is_last_arm) {
-        codegen_emit_label(codegen, &arm_label); // start of arm body
-    }
+    codegen_emit_label(codegen, &arm_label); // start of arm body
     // destructure only the first pattern, assuming there is only one (enforced by semantic analysis)
     let pattern: &RAstPattern = vec_at::<RAstPattern>(patterns, 0);
     codegen_bind_or_destructure(codegen, icg, pattern, expr_name, expr_type);
