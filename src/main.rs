@@ -3866,7 +3866,10 @@ fn codegen_arm_match(
             let cond: String = codegen_emit_icmp(codegen, &eq, &RType::Usize, &tag, &expr_tag);
             codegen_emit_br_conditional(codegen, &cond, arm_label, fail_label);
         },
-        _ => {}, // catch-all patterns do not branch conditionally
+        _ => {
+            // Otherwise always matches. Jump is emitted to ensure that the basic block is not empty.
+            codegen_emit_br(codegen, arm_label);
+        },
     }
 }
 
