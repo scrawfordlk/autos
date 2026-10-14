@@ -276,6 +276,7 @@ mod tests {
     fn run_rustc(path: &Path, output_path: &Path) {
         let status = Command::new("rustc")
             .current_dir("..")
+            .arg("-Awarnings")
             .arg("--edition")
             .arg("2024")
             .arg(path)
