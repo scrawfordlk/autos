@@ -801,11 +801,6 @@ enum RAstArm {
     Arm(Vec<RAstPattern>, RAstExpr),
 }
 
-/// Return true if the given function is generic.
-fn rAstFunction_name(RAstFunction::Fn(_, _, name, _, _, _): &RAstFunction) -> &String {
-    name
-}
-
 /// Convert a parsed AST path to a single string.
 fn rAstPath_to_string(segments: &Vec<String>) -> String {
     let mut result: String = string_new();
@@ -862,7 +857,7 @@ fn rType_size(codegen: &mut Codegen, icg: &ICodegen, ty: &RType) -> usize {
             match iCodegen_search_global(icg, name) {
                 Option::Some(item) => match item {
                     Item::Enum(rast_enum) => {
-                        match codegen_check_enum_size(codegen, rast_enum) {
+                        match codegen_check_enum_size(codegen, rast_enum, &generic) {
                             Option::Some(size) => size, // return memoised size
                             Option::None => {
                                 let size: usize = rAstEnum_size(codegen, icg, rast_enum, &generic);
@@ -3037,9 +3032,24 @@ fn codegen_set_ssa_counter(codegen: &mut Codegen, value: usize) {
     *counter = value;
 }
 
-fn codegen_check_enum_size(codegen: &mut Codegen, RAstEnum::Enum(name, _, _): &RAstEnum) -> Option<usize> {
+fn codegen_check_enum_size(
+    codegen: &mut Codegen,
+    RAstEnum::Enum(name, _, _): &RAstEnum,
+    generic: &Option<RType>,
+) -> Option<usize> {
     let Codegen::Gen(_, _, _, _, _, cached_sizes): &mut Codegen = codegen;
-    match stringMap_get::<usize>(cached_sizes, name) {
+
+    let mut mangled_name: String = string_clone(name);
+    match generic {
+        Option::Some(ty) => {
+            string_push(&mut mangled_name, '.');
+            let type_name: String = rType_to_string(ty);
+            string_push_string(&mut mangled_name, &type_name);
+        },
+        _ => {},
+    }
+
+    match stringMap_get::<usize>(cached_sizes, &mangled_name) {
         Option::Some(size) => Option::<usize>::Some(*size),
         Option::None => Option::<usize>::None,
     }
@@ -3594,7 +3604,7 @@ fn codegen_call(
                 while i < vec_len::<RAstItem>(items) {
                     match vec_at::<RAstItem>(items, i) {
                         RAstItem::Function(function) => {
-                            let other: &String = rAstFunction_name(function);
+                            let RAstFunction::Fn(_, _, other, _, _, _): &RAstFunction = function;
                             if string_eq(name, other) {
                                 // save the current function code generation index and SSA counter value
                                 let caller: String = string_clone(codegen_current_function(codegen));
