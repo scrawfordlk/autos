@@ -6370,7 +6370,7 @@ fn emu_execute_builtin(emulator: &mut Emu, builtin: &BuiltIn, arguments: &Vec<us
             let flags: usize = *vec_at::<usize>(arguments, 1);
             let mode: usize = *vec_at::<usize>(arguments, 2);
             match emu_get_memory_pointer(emulator, path) {
-                Option::Some(ptr) => unsafe { open(ptr, flags, mode) },
+                Option::Some(path) => unsafe { open(path, flags, mode) },
                 _ => panic("trying to pass an out-of-bounds address to open()"),
             }
         },
