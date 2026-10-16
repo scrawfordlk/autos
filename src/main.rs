@@ -51,7 +51,7 @@ fn main(argc: usize, argv: *mut *mut u8) {
             i = i + 2;
         }
 
-        let output_code: String = compile(source, do_semantic_analysis);
+        let output_code: String = starustc(source, do_semantic_analysis);
         let output_name: String = match output_file {
             Option::Some(name) => name,
             _ => path_to_file_with_ending(input_name, "ll"),
@@ -59,7 +59,7 @@ fn main(argc: usize, argv: *mut *mut u8) {
         write_file(output_name, &output_code);
         if do_emulate {
             let args_rest: Args = args_subargs(&args, i);
-            let exit_code: usize = emulate(output_code, emulator_memory_size, &args_rest);
+            let exit_code: usize = llli(output_code, emulator_memory_size, &args_rest);
             exit_process(exit_code);
         }
         exit_process(0);
@@ -72,7 +72,7 @@ fn main(argc: usize, argv: *mut *mut u8) {
         let input_name: &String = args_at(&args, 3);
         let llvm: String = read_file(string_clone(input_name));
         let args_rest: Args = args_subargs(&args, 4);
-        let exit_code: usize = emulate(llvm, memory_size, &args_rest);
+        let exit_code: usize = llli(llvm, memory_size, &args_rest);
         exit_process(exit_code);
     }
     print_help_exit()
@@ -101,12 +101,12 @@ fn parse_memory_size_mb(value: &String) -> usize {
 
 // -----------------------------------------------------------------
 // -----------------------------------------------------------------
-// --------------------- RawRust Compiler --------------------------
+// ------------------ *Rust Compiler - starustc --------------------
 // -----------------------------------------------------------------
 // -----------------------------------------------------------------
 
-/// Compile source code into LLVM-IR.
-fn compile(source: String, do_semantic_analysis: bool) -> String {
+/// Compile *Rust source program to LLLVM.
+fn starustc(source: String, do_semantic_analysis: bool) -> String {
     print_str("[Starting Compilation]");
     println();
     let mut lexer: RLexer = rLexer_new(source);
@@ -187,7 +187,7 @@ enum RLiteral {
     Bool(bool),
 }
 
-/// The lexer state of the scanned Rust program.
+/// The lexer state of the scanned *Rust program.
 enum RLexer {
     /// source file, current token
     Lexer(SourceFile, RToken),
@@ -609,7 +609,7 @@ fn rLexer_skip_line_comment(lexer: &mut RLexer) {
     }
 }
 
-/// Skips attributes which are useful in Rust, but unsupported.
+/// Skips attributes which are useful in Rust, but unsupported in *Rust.
 fn rLexer_skip_whitespace_and_attributes(lexer: &mut RLexer) {
     rLexer_skip_whitespace(lexer);
     while true {
@@ -644,7 +644,7 @@ fn rLexer_skip_whitespace_and_attributes(lexer: &mut RLexer) {
 // -------------------------- Parser -------------------------------
 // -----------------------------------------------------------------
 
-/// Abstract Syntax Tree of a parsed Rust source.
+/// Abstract Syntax Tree of a parsed *Rust source.
 enum RAst {
     Language(Vec<RAstItem>),
 }
@@ -713,7 +713,7 @@ enum RAstPatternLiteral {
     Bool(bool),
 }
 
-/// Types from the Rust subset.
+/// Types from *Rust.
 enum RType {
     U8,
     Usize,
@@ -729,7 +729,7 @@ enum RType {
     Generic,
 }
 
-/// A Rust expression.
+/// A *Rust expression.
 enum RAstExpr {
     Return(Option<Box<RAstExpr>>),
     Assign(Box<RAstExpr>, Box<RAstExpr>),
@@ -937,7 +937,7 @@ fn variants_get_discriminator(variants: &Vec<RAstVariant>, variant: &String) -> 
     0
 }
 
-/// Convert a Rust type into a LLVM-IR type name.
+/// Convert a *Rust type into a LLLVM type name.
 fn rType_to_llvm_name(codegen: &mut Codegen, ty: &RType) -> String {
     match ty {
         RType::U8 | RType::Char => string("i8"),
@@ -947,7 +947,7 @@ fn rType_to_llvm_name(codegen: &mut Codegen, ty: &RType) -> String {
         RType::Reference(_, _) | RType::RawPointerMut(_) => string("ptr"),
         RType::Generic => match codegen_generic_instance(codegen, codegen_current_function(codegen)) {
             Option::Some(instance) => rType_to_llvm_name(codegen, &instance),
-            _ => panic("can't determine a LLVM type for an uninstantiated generic type"),
+            _ => panic("can't determine a LLLVM type for an uninstantiated generic type"),
         },
         RType::Enum(_, _) => string("ptr"),
     }
@@ -985,7 +985,7 @@ fn rType_is_pointer(ty: &RType) -> bool {
     }
 }
 
-/// Rawrust allows comparison of integers, characters and booleans.
+/// *Rust allows comparison of integers, characters and booleans.
 fn rType_is_comparable(ty: &RType) -> bool {
     match ty {
         RType::Usize | RType::U8 | RType::Char | RType::Bool => true,
@@ -1109,7 +1109,7 @@ enum Scrutinee {
     Reference(RType, bool),
 }
 
-/// Construct Scrutinee from a given Rust type.
+/// Construct Scrutinee from a given *Rust type.
 fn scrutinee_from_type(ty: &RType) -> Scrutinee {
     match ty {
         RType::Reference(inner, mutable) => {
@@ -2102,7 +2102,7 @@ enum Item {
 ///
 /// ZeroExtend: A type with smaller bitwidth is zero-extended to a larger bitwidth.
 /// Truncate: A type with larger bitwidth is truncated to a smaller bitwidth.
-/// None: Do not perform a cast (cast would be a no-op which would be illegal in LLVM-IR).
+/// None: Do not perform a cast (cast would be a no-op which would be illegal in LLLVM).
 /// Invalid: The cast is illegal.
 enum CastOperation {
     /// A type with smaller bitwidth is zero-extended to a larger bitwidth.
@@ -2119,7 +2119,7 @@ enum CastOperation {
     Invalid,
 }
 
-/// Return the CastOperation that is applicable from `left_type` to `right_type` for Rust AST types.
+/// Return the CastOperation that is applicable from `left_type` to `right_type` for *Rust AST types.
 /// See documentation of CastOperation for more details.
 fn castOperation_select_operation(left_type: &RType, right_type: &RType) -> CastOperation {
     if rType_eq(left_type, right_type) {
@@ -2189,7 +2189,7 @@ fn semantic_check_language(semantic: &mut Semantic, ast: &RAst, globals: &String
         match item {
             RAstItem::Function(function) => semantic_check_function(semantic, function, globals),
             RAstItem::Enum(e) => semantic_check_enum_def(semantic, e, globals),
-            RAstItem::ExternBlock(_) => {}, // Rawrust does not enforce what the extern functions are
+            RAstItem::ExternBlock(_) => {}, // *Rust does not enforce what the extern functions are
         };
         i = i + 1;
     }
@@ -2895,7 +2895,7 @@ fn semantic_check_pattern(
 // ---------------------- Code Generation --------------------------
 // -----------------------------------------------------------------
 
-/// Type that encapsulates the mutable state during LLVM-IR code generation from an AST.
+/// Type that encapsulates the mutable state during LLLVM code generation from an AST.
 enum Codegen {
     /// llvm code, current function, SSA counter, local symbol tables, generic, cached enum sizes
     Gen(
@@ -3115,12 +3115,12 @@ fn codegen_next_label(codegen: &mut Codegen, suffix: &str) -> String {
     label
 }
 
-/// Pair that contains a String and a Rust Type
+/// Pair that contains a String and a *Rust Type
 enum STPair {
     ST(String, RType),
 }
 
-/// Emit LLVM-IR for a full Rust AST.
+/// Emit LLLVM for a full *Rust AST.
 fn codegen_language(codegen: &mut Codegen, icg: &ICodegen) {
     let items: &Vec<RAstItem> = iCodegen_ast_items(icg);
     let mut i: usize = 0;
@@ -3152,7 +3152,7 @@ entry:
     codegen_emit_line(codegen, string(as_ptr));
 }
 
-/// Emit LLVM-IR for one extern block.
+/// Emit LLLVM for one extern block.
 fn codegen_extern_block(codegen: &mut Codegen, functions: &Vec<RAstExternFn>) {
     let mut i: usize = 0;
     while i < vec_len::<RAstExternFn>(functions) {
@@ -3163,7 +3163,7 @@ fn codegen_extern_block(codegen: &mut Codegen, functions: &Vec<RAstExternFn>) {
     }
 }
 
-/// Emit LLVM-IR for one function definition.
+/// Emit LLLVM for one function definition.
 fn codegen_function(codegen: &mut Codegen, icg: &ICodegen, function: &RAstFunction) {
     let RAstFunction::Fn(is_generic, _, name, parameters, return_type, body): &RAstFunction = function;
 
@@ -3218,7 +3218,7 @@ fn codegen_function(codegen: &mut Codegen, icg: &ICodegen, function: &RAstFuncti
     codegen_emit_function_end(codegen);
 }
 
-/// Emit LLVM-IR for one block expression.
+/// Emit LLLVM for one block expression.
 fn codegen_block(codegen: &mut Codegen, icg: &ICodegen, block: &RAstBlock) -> STPair {
     let RAstBlock::Block(statements, tail): &RAstBlock = block;
     codegen_push_scope(codegen);
@@ -3253,7 +3253,7 @@ fn codegen_block(codegen: &mut Codegen, icg: &ICodegen, block: &RAstBlock) -> ST
     STPair::ST(name, ty)
 }
 
-/// Emit LLVM-IR for one let binding.
+/// Emit LLLVM for one let binding.
 /// Returns true if it diverges.
 fn codegen_binding(codegen: &mut Codegen, icg: &ICodegen, variable: &RAstVariable, value: &RAstExpr) -> bool {
     let RAstVariable::Variable(pattern, binding_type): &RAstVariable = variable;
@@ -3264,7 +3264,7 @@ fn codegen_binding(codegen: &mut Codegen, icg: &ICodegen, variable: &RAstVariabl
     rType_eq(&expr_type, &RType::Never)
 }
 
-/// Emit LLVM-IR for one expression and return the resulting value/type pair.
+/// Emit LLLVM for one expression and return the resulting value/type pair.
 fn codegen_expression(codegen: &mut Codegen, icg: &ICodegen, expression: &RAstExpr) -> STPair {
     match expression {
         RAstExpr::Return(returned) => codegen_return(codegen, icg, returned),
@@ -3297,7 +3297,7 @@ fn codegen_expression(codegen: &mut Codegen, icg: &ICodegen, expression: &RAstEx
     }
 }
 
-/// Emit LLVM-IR for a return expression.
+/// Emit LLLVM for a return expression.
 /// `return` always evaluates to type Never.
 fn codegen_return(codegen: &mut Codegen, icg: &ICodegen, returned: &Option<Box<RAstExpr>>) -> STPair {
     match returned {
@@ -3318,7 +3318,7 @@ fn codegen_return(codegen: &mut Codegen, icg: &ICodegen, returned: &Option<Box<R
     STPair::ST(string_new(), RType::Never)
 }
 
-/// Emit LLVM-IR for an assignment expression.
+/// Emit LLLVM for an assignment expression.
 fn codegen_assignment(codegen: &mut Codegen, icg: &ICodegen, left: &RAstExpr, right: &RAstExpr) -> STPair {
     let STPair::ST(right_name, _): STPair = codegen_expression(codegen, icg, right);
     let STPair::ST(pointer_name, left_type): STPair = match left {
@@ -3347,7 +3347,7 @@ fn codegen_assignment(codegen: &mut Codegen, icg: &ICodegen, left: &RAstExpr, ri
     STPair::ST(string_new(), RType::Unit)
 }
 
-/// Emit LLVM-IR for a binary expression.
+/// Emit LLLVM for a binary expression.
 fn codegen_binary_op(
     codegen: &mut Codegen,
     icg: &ICodegen,
@@ -3370,7 +3370,7 @@ fn codegen_binary_op(
     }
 }
 
-/// Emit LLVM-IR for a cast expression.
+/// Emit LLLVM for a cast expression.
 fn codegen_cast(codegen: &mut Codegen, icg: &ICodegen, value: &RAstExpr, to_type: &RType) -> STPair {
     let STPair::ST(from_name, from_type): STPair = codegen_expression(codegen, icg, value);
     let to_type: RType = rType_clone(to_type);
@@ -3379,7 +3379,7 @@ fn codegen_cast(codegen: &mut Codegen, icg: &ICodegen, value: &RAstExpr, to_type
     STPair::ST(name, to_type)
 }
 
-/// Emit LLVM-IR for a unary expression.
+/// Emit LLLVM for a unary expression.
 fn codegen_unary_op(
     codegen: &mut Codegen,
     icg: &ICodegen,
@@ -3428,7 +3428,7 @@ fn codegen_unary_op(
     }
 }
 
-/// Emit LLVM-IR for a literal expression.
+/// Emit LLLVM for a literal expression.
 fn codegen_literal(codegen: &mut Codegen, icg: &ICodegen, literal: &RLiteral) -> STPair {
     match literal {
         RLiteral::Int(value) => STPair::ST(integer_to_string(*value), RType::Usize),
@@ -3448,7 +3448,7 @@ fn codegen_literal(codegen: &mut Codegen, icg: &ICodegen, literal: &RLiteral) ->
     }
 }
 
-/// Emit LLVM-IR for a variable-use expression.
+/// Emit LLLVM for a variable-use expression.
 fn codegen_variable_use(codegen: &mut Codegen, variable_name: &String) -> STPair {
     let STPair::ST(pointer_name, ty): STPair = codegen_scope_lookup(codegen, variable_name);
     if not(rType_is_enum(codegen, &ty)) {
@@ -3459,7 +3459,7 @@ fn codegen_variable_use(codegen: &mut Codegen, variable_name: &String) -> STPair
     }
 }
 
-/// Emit LLVM-IR for a path expression (either function call or enum instantiation).
+/// Emit LLLVM for a path expression (either function call or enum instantiation).
 fn codegen_path(
     codegen: &mut Codegen,
     icg: &ICodegen,
@@ -3634,7 +3634,7 @@ fn codegen_call(
     STPair::ST(result_name, return_type)
 }
 
-/// Emit LLVM-IR for an if expression.
+/// Emit LLLVM for an if expression.
 fn codegen_if(codegen: &mut Codegen, icg: &ICodegen, if_expression: &RAstIf) -> STPair {
     let RAstIf::If(condition, then_block, else_branch): &RAstIf = if_expression;
 
@@ -3708,7 +3708,7 @@ fn codegen_if(codegen: &mut Codegen, icg: &ICodegen, if_expression: &RAstIf) -> 
     STPair::ST(result, if_type)
 }
 
-/// Emit LLVM-IR for a while expression.
+/// Emit LLLVM for a while expression.
 fn codegen_while(codegen: &mut Codegen, icg: &ICodegen, condition: &RAstExpr, body: &RAstBlock) -> STPair {
     let header_label: String = codegen_next_label(codegen, "while.header");
     let body_label: String = codegen_next_label(codegen, "while.body");
@@ -4031,7 +4031,7 @@ fn generic_uninstantiate(Generic::Manager(mappings, _): &mut Generic, name: &Str
 
 // ---------------------------- Code Emission ---------------------------------
 
-/// The emitted LLVM-IR code.
+/// The emitted LLLVM code.
 enum Code {
     Code(Vec<Vec<String>>, Vec<String>, usize),
 }
@@ -4075,7 +4075,7 @@ fn codegen_fixup(codegen: &mut Codegen, i: usize, line: String) {
     vec_set::<String>(code_current_function_mut(codegen_code_mut(codegen)), i, line);
 }
 
-/// Get the emitted LLVM-IR from Codegen.
+/// Get the emitted LLLVM from Codegen.
 fn codegen_into_llvm(Codegen::Gen(Code::Code(functions, strings, _), _, _, _, _, _): Codegen) -> String {
     let mut code: String = string_new();
 
@@ -4106,7 +4106,7 @@ fn codegen_into_llvm(Codegen::Gen(Code::Code(functions, strings, _), _, _, _, _,
     code
 }
 
-/// Emit the given string as a new line of LLVM-IR code.
+/// Emit the given string as a new line of LLLVM code.
 fn codegen_emit_line(codegen: &mut Codegen, line: String) {
     vec_push::<String>(code_current_function_mut(codegen_code_mut(codegen)), line);
 }
@@ -4279,7 +4279,7 @@ fn codegen_emit_cast(code: &mut Codegen, op: &CastOperation, from: &RType, to: &
     name
 }
 
-/// Emit an allocate instruction for a given Rust type.
+/// Emit an allocate instruction for a given *Rust type.
 /// ```llvm
 /// %<name> = alloca <ty>
 /// ```
@@ -4305,7 +4305,7 @@ fn codegen_emit_alloca(codegen: &mut Codegen, icg: &ICodegen, ty: &RType, count:
     }
 }
 
-/// Emit a store instruction for a given Rust type.
+/// Emit a store instruction for a given *Rust type.
 /// ```llvm
 /// store <ty> <value>, ptr <pointer>
 /// ```
@@ -4321,7 +4321,7 @@ fn codegen_emit_store(codegen: &mut Codegen, ty: &RType, value: &String, pointer
     codegen_emit_line(codegen, line);
 }
 
-/// Emit a load instruction for a given Rust type.
+/// Emit a load instruction for a given *Rust type.
 /// ```llvm
 /// %<name> = load <ty>, ptr <pointer>
 /// ```
@@ -4420,7 +4420,7 @@ fn codegen_emit_call_side_effect(
     codegen_emit_line(codegen, line);
 }
 
-/// Mangles a function name by replacing invalid characters with valid LLVM identifier
+/// Mangles a function name by replacing invalid characters with valid LLLVM identifier
 /// characters and appending `.<type>` if the function is generic.
 fn codegen_mangle_name(codegen: &Codegen, callee: &String) -> String {
     let mut name: String = string_clone(callee);
@@ -4540,7 +4540,7 @@ fn codegen_emit_function_end(codegen: &mut Codegen) {
     codegen_set_ssa_counter(codegen, 0);
 }
 
-/// Emit an LLVM `declare` for an extern function.
+/// Emit an LLLVM `declare` for an extern function.
 /// ```llvm
 /// declare <return_type> @<fn_name>(<param_type>, ...)
 /// ```
@@ -4605,7 +4605,7 @@ fn codegen_emit_string(
 
 /// Fixup a previously emitted alloca instruction without changing the destination register.
 /// Always modifies the alloca to only allocate one element.
-// TODO: assumes a lot about the emitted LLVM-IR, make this more robust.
+// TODO: assumes a lot about the emitted LLLVM, make this more robust.
 fn codegen_fixup_alloca_type(codegen: &mut Codegen, icg: &ICodegen, index: usize, new_type: &RType) {
     let lines: &mut Vec<String> = code_current_function_mut(codegen_code_mut(codegen));
 
@@ -4644,7 +4644,7 @@ fn codegen_fixup_alloca_type(codegen: &mut Codegen, icg: &ICodegen, index: usize
 
 // -----------------------------------------------------------------
 // -----------------------------------------------------------------
-// ---------------------- LLLVM-IR Emulator ------------------------
+// -------------------- LLLVM Emulator - llli -----------------------
 // -----------------------------------------------------------------
 // -----------------------------------------------------------------
 
@@ -4652,7 +4652,7 @@ fn codegen_fixup_alloca_type(codegen: &mut Codegen, icg: &ICodegen, index: usize
 // ---------------------- Lexical Analysis -------------------------
 // -----------------------------------------------------------------
 
-/// Tokens produced by the LLVM lexer.
+/// Tokens produced by the LLLVM lexer.
 enum LToken {
     Define,             // "define"
     Declare,            // "declare"
@@ -4703,13 +4703,13 @@ enum LToken {
     Eof,
 }
 
-/// The lexer state of the scanned LLVM-IR code.
+/// The lexer state of the scanned LLLVM code.
 enum LLexer {
-    /// LLVM-IR human-readable source file, current token
+    /// LLLVM human-readable source file, current token
     Lexer(SourceFile, LToken),
 }
 
-/// Create a new LLVM lexer and scan the first token.
+/// Create a new LLLVM lexer and scan the first token.
 fn lLexer_new(source: String) -> LLexer {
     let source_file: SourceFile = SourceFile::SourceFile(source, 0, 1, 0);
     let mut lexer: LLexer = LLexer::Lexer(source_file, LToken::Eof);
@@ -4825,7 +4825,7 @@ fn lLexer_scan_cstring(lexer: &mut LLexer) -> String {
                     string_push(&mut literal, c)
                 }
             },
-            Option::None => panic("unterminated LLVM c-string"),
+            Option::None => panic("unterminated LLLVM c-string"),
         }
     }
     unreachable()
@@ -4849,7 +4849,7 @@ fn lLexer_scan_escape(lexer: &mut LLexer) -> char {
                 hex_digit
             }
         },
-        Option::None => panic("unterminated LLVM c-string"),
+        Option::None => panic("unterminated LLLVM c-string"),
     }
 }
 
@@ -4999,7 +4999,7 @@ fn lLexer_scan_symbol(lexer: &mut LLexer) -> LToken {
         ',' => LToken::Comma,
         '=' => LToken::Assign,
         c => {
-            let mut msg: String = string("unexpected character in LLVM-IR input: ");
+            let mut msg: String = string("unexpected character in LLLVM input: ");
             string_push(&mut msg, c);
             lLexer_error(lexer, &msg);
         },
@@ -5047,7 +5047,7 @@ enum LParser {
     Parser(LLexer, LAst, StringMap<LType>, usize),
 }
 
-/// Create an LLVM parser and prime the first token.
+/// Create an LLLVM parser and prime the first token.
 fn lparser_new(source: String) -> LParser {
     LParser::Parser(lLexer_new(source), lAst_new(), stringMap_new::<LType>(), 0)
 }
@@ -5092,7 +5092,7 @@ fn lparser_set_register_count(LParser::Parser(_, _, _, counter): &mut LParser, v
     *counter = value;
 }
 
-/// Parse LLVM source into LLVM AST.
+/// Parse LLLVM source into LLVM AST.
 fn lparse_to_ast(source: String) -> LAst {
     let mut parser: LParser = lparser_new(source);
     lparse_language(&mut parser);
@@ -5101,12 +5101,12 @@ fn lparse_to_ast(source: String) -> LAst {
     ast
 }
 
-/// Get current LLVM parser token.
+/// Get current LLLVM parser token.
 fn lparser_current_token(parser: &LParser) -> &LToken {
     lLexer_current_token(lparser_lexer(parser))
 }
 
-/// Consume and return the current LLVM parser token.
+/// Consume and return the current LLLVM parser token.
 fn lparser_consume_current_token(parser: &mut LParser) -> LToken {
     let lexer: &LLexer = lparser_lexer(parser);
     let token: LToken = lToken_clone(lLexer_current_token(lexer));
@@ -5114,7 +5114,7 @@ fn lparser_consume_current_token(parser: &mut LParser) -> LToken {
     token
 }
 
-/// Advance and return next LLVM parser token.
+/// Advance and return next LLLVM parser token.
 fn lparser_next_token(LParser::Parser(lexer, _, _, _): &mut LParser) {
     lLexer_next_token(lexer);
 }
@@ -5157,7 +5157,7 @@ fn lparser_expect_identifier(parser: &mut LParser, is_local: bool) -> String {
                 value
             },
             _ => {
-                let message: String = lparser_expected_message(parser, &string("local LLVM identifier"));
+                let message: String = lparser_expected_message(parser, &string("local LLLVM identifier"));
                 lparser_error(parser, &message)
             },
         }
@@ -5169,7 +5169,7 @@ fn lparser_expect_identifier(parser: &mut LParser, is_local: bool) -> String {
                 value
             },
             _ => {
-                let message: String = lparser_expected_message(parser, &string("global LLVM identifier"));
+                let message: String = lparser_expected_message(parser, &string("global LLLVM identifier"));
                 lparser_error(parser, &message)
             },
         }
@@ -5211,18 +5211,18 @@ fn lparser_is_instruction_start(parser: &mut LParser) -> bool {
     }
 }
 
-/// Abstract syntax tree of a LLVM-IR module.
+/// Abstract syntax tree of a LLLVM module.
 enum LAst {
     AST(Vec<CString>, StringMap<LFunction>),
 }
 
-/// Top-level LLVM global data.
+/// Top-level LLLVM global data.
 enum CString {
     /// name, bytes
     String(String, String),
 }
 
-/// Create an empty LLVM AST.
+/// Create an empty LLLVM AST.
 fn lAst_new() -> LAst {
     LAst::AST(vec_new::<CString>(), stringMap_new::<LFunction>())
 }
@@ -5269,7 +5269,7 @@ fn parser_lAst_insert_function(parser: &mut LParser, name: &String, function: LF
     let LParser::Parser(_, ast, _, _): &mut LParser = parser;
     let functions: &mut StringMap<LFunction> = lAst_functions_mut(ast);
     if not(stringMap_insert_or_update::<LFunction>(functions, name, function)) {
-        lparser_error(parser, &string("duplicate LLVM function definition"));
+        lparser_error(parser, &string("duplicate LLLVM function definition"));
     }
 }
 
@@ -5277,11 +5277,11 @@ fn parser_lAst_insert_function(parser: &mut LParser, name: &String, function: LF
 fn lAst_lookup_function<'a>(ast: &'a LAst, name: &String) -> &'a LFunction {
     match stringMap_get::<LFunction>(lAst_functions(ast), name) {
         Option::Some(function) => function,
-        Option::None => panic("unknown LLVM function"),
+        Option::None => panic("unknown LLLVM function"),
     }
 }
 
-/// An executable LLVM-IR function.
+/// An executable LLLVM function.
 enum LFunction {
     /// parameters, first label, basic blocks, instruction count
     Function(Vec<LParameter>, String, StringMap<Vec<Instruction>>, usize),
@@ -5289,7 +5289,7 @@ enum LFunction {
     BuiltIn(BuiltIn),
 }
 
-/// Supported LLLVM-IR declared or intrinsic functions.
+/// Supported LLLVM declared or intrinsic functions.
 enum BuiltIn {
     Exit,
     Malloc,
@@ -5300,13 +5300,13 @@ enum BuiltIn {
     Memcpy, // intrinsic for performance
 }
 
-/// Represents a parameter of an LLVM function.
+/// Represents a parameter of an LLLVM function.
 enum LParameter {
     /// identifier, type
     Parameter(String, LType),
 }
 
-/// Supported LLVM types in the subset.
+/// Supported LLLVM types in the subset.
 enum LType {
     I1,
     I8,
@@ -5324,7 +5324,7 @@ fn lType_bitwidth(ty: &LType) -> usize {
     }
 }
 
-/// Return the size of an LLVM type in bytes.
+/// Return the size of an LLLVM type in bytes.
 fn lType_size(ty: &LType) -> usize {
     max(1, lType_bitwidth(ty) / 8)
 }
@@ -5448,7 +5448,7 @@ fn assignOp_get_type(operation: &AssignOp) -> LType {
     }
 }
 
-/// Represents an LLVM value operand.
+/// Represents an LLLVM value operand.
 enum LValue {
     /// identifier
     Register(String),
@@ -5510,7 +5510,7 @@ fn lparse_string(parser: &mut LParser) {
                 string_clone(&name),
                 CString::String(name, string_value),
             )) {
-                lparser_error(parser, &string("duplicate LLVM global string"));
+                lparser_error(parser, &string("duplicate LLLVM global string"));
             }
         },
         _ => {
@@ -5661,7 +5661,7 @@ fn lparse_parameters(parser: &mut LParser, named: bool) -> Vec<LParameter> {
                     lType_clone(&parameter_type),
                 )),
             ) {
-                lparser_error(parser, &string("duplicate parameters in LLVM function"));
+                lparser_error(parser, &string("duplicate parameters in LLLVM function"));
             }
 
             let parameter: LParameter = LParameter::Parameter(param_name, parameter_type);
@@ -5965,7 +5965,7 @@ fn lparse_integer(parser: &mut LParser) -> usize {
 // ------------------------- Interpreter -----------------------------
 // -------------------------------------------------------------------
 
-/// Execution control flow after one LLVM-IR instruction.
+/// Execution control flow after one LLLVM instruction.
 enum ExecFlow<'a> {
     Continue,
     /// label
@@ -5974,7 +5974,7 @@ enum ExecFlow<'a> {
     Return(usize),
 }
 
-/// Type that encapsulates the state of the LLVM emulator.
+/// Type that encapsulates the state of the LLLVM emulator.
 enum Emu {
     Emu(
         /// map of global names to their addresses
@@ -6207,7 +6207,7 @@ fn emu_push_argv(emulator: &mut Emu, args: &Args) -> usize {
     new_sp // pointer to pointer array
 }
 
-/// Load LLVM-IR C-Strings into the data segment and return the next available address (= start of the
+/// Load LLLVM C-Strings into the data segment and return the next available address (= start of the
 /// heap). Assumes that the data segment starts at address 0 (since the AST serves as the code).
 fn emu_initialise_global_data(emulator: &mut Emu, ast: &LAst) -> usize {
     let mut data_pointer: usize = 0;
@@ -6286,8 +6286,8 @@ fn emu_load_bytes(emulator: &Emu, address: usize, byte_count: usize) -> usize {
     value
 }
 
-/// Parse and emulate LLVM source and return the return value of `@main`.
-fn emulate(source: String, memory_size: usize, args: &Args) -> usize {
+/// Parse and emulate the LLLVM source and return the return value of `@main`.
+fn llli(source: String, memory_size: usize, args: &Args) -> usize {
     let ast: LAst = lparse_to_ast(source);
     let mut emulator: Emu = emu_new(memory_size, &ast);
 
@@ -6327,7 +6327,7 @@ fn emu_execute_function(emulator: &mut Emu, ast: &LAst, name: &String, args: &Ve
                 let instructions: &Vec<Instruction> =
                     match stringMap_get::<Vec<Instruction>>(blocks, current_label) {
                         Option::Some(block) => block,
-                        Option::None => panic("unknown LLVM block label"),
+                        Option::None => panic("unknown LLLVM block label"),
                     };
                 match emu_execute_instructions(emulator, ast, &mut locals, instructions) {
                     ExecFlow::Continue => panic("LLVM block did not terminate"),
@@ -6524,7 +6524,7 @@ fn emu_evaluate_assign_op(emulator: &mut Emu, ast: &LAst, locals: &StringMap<usi
     }
 }
 
-/// Execute an LLVM call and return the raw result value.
+/// Execute an LLLVM call and return the raw result value.
 fn emu_execute_call(
     emulator: &mut Emu,
     ast: &LAst,
@@ -6560,7 +6560,7 @@ fn emu_execute_store(
     let byte_count: usize = lType_size(store_type);
 
     if not(emu_store_bytes(emulator, target_address, value, byte_count)) {
-        panic("invalid LLVM store address");
+        panic("invalid LLLVM store address");
     }
 }
 
@@ -6570,11 +6570,11 @@ fn emu_eval_value(emulator: &Emu, locals: &StringMap<usize>, value: &LValue) -> 
         LValue::Literal(number) => *number,
         LValue::Register(name) => match stringMap_get::<usize>(locals, name) {
             Option::Some(register_value) => *register_value,
-            Option::None => panic("unknown LLVM register"),
+            Option::None => panic("unknown LLLVM register"),
         },
         LValue::Global(name) => match stringMap_get::<usize>(emu_globals(emulator), name) {
             Option::Some(value) => *value,
-            Option::None => panic("unknown LLVM global value"),
+            Option::None => panic("unknown LLLVM global value"),
         },
     }
 }
@@ -6792,13 +6792,13 @@ fn lLexer_error(lexer: &LLexer, message: &String) -> ! {
     report_error(lLexer_sourcefile(lexer), message)
 }
 
-/// Emit an LLVM parser error and panic.
+/// Emit an LLLVM parser error and panic.
 fn lparser_error(parser: &LParser, message: &String) -> ! {
     let file: &SourceFile = lLexer_sourcefile(lparser_lexer(parser));
     report_error(file, message)
 }
 
-/// Emit an LLVM parser warning and continue.
+/// Emit an LLLVM parser warning and continue.
 fn lparser_warning(parser: &LParser, message: &String) {
     let file: &SourceFile = lLexer_sourcefile(lparser_lexer(parser));
     report_warning(file, message)
@@ -6874,7 +6874,7 @@ fn is_alphanumeric(c: char) -> bool {
     or(is_alpha(c), is_digit(c))
 }
 
-/// Check whether the given character can be used in an LLLVM-IR identifier.
+/// Check whether the given character can be used in an LLLVM identifier.
 fn is_llvm_identifier(ch: char) -> bool {
     or(is_alphanumeric(ch), or(ch == '.', ch == '$'))
 }
@@ -7521,7 +7521,7 @@ fn rLiteral_eq(left: &RLiteral, right: &RLiteral) -> bool {
     }
 }
 
-/// Check two Rust AST types for equality.
+/// Check two *Rust AST types for equality.
 fn rType_eq(a: &RType, b: &RType) -> bool {
     match a {
         RType::U8 => match b {
@@ -7586,7 +7586,7 @@ fn rType_eq(a: &RType, b: &RType) -> bool {
     }
 }
 
-/// Check two LLVM tokens for equality.
+/// Check two LLLVM tokens for equality.
 fn lToken_eq(left: &LToken, right: &LToken) -> bool {
     match left {
         LToken::Define => match right {
@@ -7818,7 +7818,7 @@ fn str_eq(s1: &String, s2: &str) -> bool {
 
 // ------------------------- Clone --------------------------------
 
-/// Clone a Rust token.
+/// Clone a *Rust token.
 fn rToken_clone(token: &RToken) -> RToken {
     match token {
         RToken::Unsafe => RToken::Unsafe,
@@ -7879,7 +7879,7 @@ fn rLiteral_clone(literal: &RLiteral) -> RLiteral {
     }
 }
 
-/// Clone a Rust AST type value.
+/// Clone a *Rust AST type value.
 fn rType_clone(t: &RType) -> RType {
     match t {
         RType::U8 => RType::U8,
@@ -7908,7 +7908,7 @@ fn rType_clone(t: &RType) -> RType {
     }
 }
 
-/// Clone a vector of Rust types.
+/// Clone a vector of *Rust types.
 fn types_clone(types: &Vec<RType>) -> Vec<RType> {
     let mut clone: Vec<RType> = vec_with_capacity::<RType>(vec_len::<RType>(types));
     let mut i: usize = 0;
@@ -7930,7 +7930,7 @@ fn stPair_unreachable() -> STPair {
     STPair::ST(string_new(), RType::Unit)
 }
 
-/// Clone an LLVM token.
+/// Clone an LLLVM token.
 fn lToken_clone(token: &LToken) -> LToken {
     match token {
         LToken::Define => LToken::Define,
@@ -7983,7 +7983,7 @@ fn lToken_clone(token: &LToken) -> LToken {
     }
 }
 
-/// Clone an LLVM type.
+/// Clone an LLLVM type.
 fn lType_clone(ty: &LType) -> LType {
     match ty {
         LType::I1 => LType::I1,
@@ -8271,7 +8271,7 @@ fn rToken_to_string(token: &RToken) -> String {
     }
 }
 
-/// Convert a Rust type into a string.
+/// Convert a *Rust type into a string.
 fn rType_to_string(ty: &RType) -> String {
     match ty {
         RType::U8 => string("u8"),
@@ -8307,7 +8307,7 @@ fn rType_to_string(ty: &RType) -> String {
     }
 }
 
-/// Convert an LLVM token into a string.
+/// Convert an LLLVM token into a string.
 fn lToken_to_string(token: &LToken) -> String {
     match token {
         LToken::Define => string("define"),
