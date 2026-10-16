@@ -6057,7 +6057,7 @@ fn emu_set_freelist_head(Emu::Emu(_, _, _, _, _, freelist, _): &mut Emu, address
     *freelist = address;
 }
 
-/// Return true if exit was requested and return the code.
+/// If exit was requested, return the exit code.
 fn emu_exit_code(Emu::Emu(_, _, _, _, _, _, exit_code): &Emu) -> Option<usize> {
     match exit_code {
         Option::Some(code) => Option::<usize>::Some(*code),
@@ -6453,6 +6453,7 @@ fn emu_execute_instructions<'a>(
             },
         }
 
+        // check if @exit() was called
         match emu_exit_code(emulator) {
             Option::Some(code) => return ExecFlow::Return(code),
             Option::None => {},
