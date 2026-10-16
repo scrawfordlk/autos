@@ -6210,26 +6210,24 @@ fn emu_push_argv(emulator: &mut Emu, args: &Args) -> usize {
 /// Load LLLVM C-Strings into the data segment and return the next available address (= start of the
 /// heap). Assumes that the data segment starts at address 0 (since the AST serves as the code).
 fn emu_initialise_global_data(emulator: &mut Emu, ast: &LAst) -> usize {
-    let mut data_pointer: usize = 0;
+    let mut data_top: usize = 0;
     let mut i: usize = 0;
     while i < vec_len::<CString>(lAst_globals(ast)) {
         let CString::String(name, value): &CString = vec_at::<CString>(lAst_globals(ast), i);
-
         let alloc_size: usize = round_to_next_multiple(string_len(value), size_of::<usize>());
-        let address: usize = data_pointer;
 
         let mut j: usize = 0;
         while j < string_len(value) {
             let character: usize = string_at(value, j) as usize;
-            emu_store_bytes(emulator, address + j, character, 1);
+            emu_store_bytes(emulator, data_top + j, character, 1);
             j = j + 1;
         }
 
-        stringMap_insert_or_update::<usize>(emu_globals_mut(emulator), name, address);
-        data_pointer = data_pointer + alloc_size;
+        stringMap_insert_or_update::<usize>(emu_globals_mut(emulator), name, data_top);
+        data_top = data_top + alloc_size;
         i = i + 1;
     }
-    data_pointer
+    data_top
 }
 
 /// Deallocates the top stack frame by resetting the frame size to 0 and moving the stack pointer up
