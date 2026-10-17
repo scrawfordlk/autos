@@ -5967,11 +5967,12 @@ fn lparse_integer(parser: &mut LParser) -> usize {
 
 /// Execution control flow after one LLLVM instruction.
 enum ExecFlow<'a> {
-    Continue,
     /// label
     Jump(&'a String),
     /// return value
     Return(usize),
+    /// end of a basic block
+    End,
 }
 
 /// Type that encapsulates the state of the LLLVM emulator.
@@ -6328,7 +6329,6 @@ fn emu_execute_function(emulator: &mut Emu, ast: &LAst, name: &String, args: &Ve
                         Option::None => panic("unknown LLLVM block label"),
                     };
                 match emu_execute_instructions(emulator, ast, &mut locals, instructions) {
-                    ExecFlow::Continue => panic("LLVM block did not terminate"),
                     ExecFlow::Jump(next_label) => current_label = next_label,
                     ExecFlow::Return(value) => {
                         drop_stringValueMap(locals);
@@ -6336,6 +6336,7 @@ fn emu_execute_function(emulator: &mut Emu, ast: &LAst, name: &String, args: &Ve
                         emu_set_frame_size(emulator, previous_frame_size);
                         return value;
                     },
+                    ExecFlow::End => panic("basic block did not terminate with a terminator"),
                 }
             }
             unreachable()
@@ -6459,7 +6460,7 @@ fn emu_execute_instructions<'a>(
 
         i = i + 1;
     }
-    ExecFlow::Continue
+    ExecFlow::End
 }
 
 /// Execute the given assignment instruction.
