@@ -8587,7 +8587,6 @@ fn ptr_add<T>(ptr: *mut T, n: usize) -> *mut T {
 /// Heap-allocate memory for `count` T and return a pointer to the beginning of the memory block.
 /// The returned pointer is never null, but the memory is not zeroed, i.e. the caller must ensure
 /// that uninitialised memory is never read.
-/// The caller should cast the returned pointer to the desired type.
 unsafe fn alloc<T>(count: usize) -> *mut T {
     unsafe {
         let p: *mut u8 = malloc(size_of::<T>() * count);
