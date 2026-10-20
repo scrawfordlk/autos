@@ -2,7 +2,7 @@
 
 Autos is a self-contained 64-bit software system that consists of:
 
-- A self-compiling compiler that compiles Rawrust,
+- A self-compiling compiler that compiles *Rust,
   a tiny subset of the Rust programming language
 - A self-emulating emulator that emulates LLLVM,
   a tiny subset of LLVM Intermediate Representation
@@ -27,7 +27,7 @@ make
 
 (In general `make` will have a few useful "shortcuts" for common invocations).
 
-Once the system is bootstrapped, you can start compiling Rawrust programs, such
+Once the system is bootstrapped, you can start compiling *Rust programs, such
 as Autos itself, i.e. we can attempt self-compilation:
 
 ```bash
@@ -69,7 +69,7 @@ the self-compiled system takes many hours to complete:
 While questionable, Autos also allows you to skip the
 semantic analysis phase of the compiler, which leads to
 faster compile times, but can silently generate semantically incorrect LLLVM,
-if the given source program is not a semantically correct Rawrust program:
+if the given source program is not a semantically correct *Rust program:
 
 ```bash
 ./autos -c src/main.rs --unsafe
@@ -95,7 +95,7 @@ Or by using `make:`
 make test
 ```
 
-This runs the tests for Rawrust, LLLVM and a self-compilation test, which
+This runs the tests for *Rust, LLLVM and a self-compilation test, which
 checks for the fix-point when self-compiling under emulation.
 
 There is an additional test, which is by default disabled,
