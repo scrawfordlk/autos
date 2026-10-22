@@ -4,7 +4,7 @@ autos: src/main.rs
 	rustc src/main.rs -o autos -O
 
 debug: clean
-	rustc src/main.rs -o autos -g
+	rustc src/main.rs -o autos -g -C overflow-checks=off
 
 self: clean autos
 	./autos -c src/main.rs -o autos.ll
