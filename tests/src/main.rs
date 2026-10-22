@@ -56,7 +56,7 @@ mod tests {
                 "emulator exit code does not match lli emulated exit code for {}",
                 source_path.display()
             );
-            remove_file(&llvm_path).expect("can remove generated LLVM-IR file");
+            remove_file(&llvm_path).expect("can remove generated LLVM IR file");
             remove_file(&rust_source_path).expect("can remove rust source file");
             remove_file(&rustc_exe_path).expect("can remove generated rustc binary");
         }
@@ -114,7 +114,7 @@ mod tests {
             "autos can self-compile using the bootstrapped compiler"
         );
 
-        // lower LLVM-IR into machine code using clang
+        // lower LLVM IR into machine code using clang
         let status = Command::new("clang")
             .current_dir("..")
             .arg(&level1)
@@ -149,15 +149,15 @@ mod tests {
             .arg(&level1)
             .arg(&level2)
             .status()
-            .expect("able diff the LLVM-IR generated outputs of the compiler");
+            .expect("able diff the LLVM IR generated outputs of the compiler");
         assert!(
             status.code().expect("diff exits with an exit code") == 0,
             "self-compilation reaches a fixpoint"
         );
 
-        remove_file(&level1).expect("can remove level 1 generated LLVM-IR code");
+        remove_file(&level1).expect("can remove level 1 generated LLVM IR code");
         remove_file(&l1).expect("can remove clang-compiled level 1 self-compiled autos binary");
-        remove_file(&level2).expect("can remove level 2 generated LLVM-IR code");
+        remove_file(&level2).expect("can remove level 2 generated LLVM IR code");
     }
 
     #[test]
@@ -191,14 +191,14 @@ mod tests {
             .arg(&level1)
             .arg(&level2)
             .status()
-            .expect("able to diff LLVM-IR outputs from emulated self-compilation");
+            .expect("able to diff LLVM IR outputs from emulated self-compilation");
         assert!(
             status.code().expect("diff exits with an exit code") == 0,
             "self-compilation through emulation reaches a fixpoint"
         );
 
-        remove_file(&level1).expect("can remove level 1 generated LLVM-IR code");
-        remove_file(&level2).expect("can remove level 2 generated LLVM-IR code");
+        remove_file(&level1).expect("can remove level 1 generated LLVM IR code");
+        remove_file(&level2).expect("can remove level 2 generated LLVM IR code");
     }
 
     fn unique_path(label: &str, extension: &str) -> PathBuf {
@@ -270,7 +270,7 @@ mod tests {
             .arg("-Wno-override-module") // ignores the missing triple warning
             .status()
             .expect("able to execute clang");
-        assert!(status.success(), "clang accepts generated LLVM-IR output");
+        assert!(status.success(), "clang accepts generated LLVM IR output");
     }
 
     fn run_rustc(path: &Path, output_path: &Path) {

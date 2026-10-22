@@ -5092,7 +5092,7 @@ fn lparser_set_register_count(LParser::Parser(_, _, _, counter): &mut LParser, v
     *counter = value;
 }
 
-/// Parse LLLVM source into LLVM AST.
+/// Parse LLLVM source into LLLVM AST.
 fn lparse_to_ast(source: String) -> LAst {
     let mut parser: LParser = lparser_new(source);
     lparse_language(&mut parser);

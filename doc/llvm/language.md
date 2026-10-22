@@ -2,7 +2,7 @@
 
 ## 1. What a program looks like
 
-An LLLVM-IR file is a sequence of:
+A LLLVM file is a sequence of:
 
 - global string constants
 - function declarations (`declare`)
@@ -203,7 +203,7 @@ ret i64 %r
 
 ## 8. Static Single Assignment (SSA) form
 
-LLVM-IR (and hence LLLVM) is in **Static Single Assignment form (SSA)**:
+LLVM IR (and hence LLLVM) is in **Static Single Assignment form (SSA)**:
 
 1. All virtual registers may only be assigned to once.
 2. All uses of virtual registers may only refer to a single definition.

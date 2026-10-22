@@ -38,7 +38,7 @@ as Autos itself, i.e. we can attempt self-compilation:
 Alternatively, `make self` can be used to bootstrap and self-compile Autos.
 
 You can then process/execute the generated LLLVM
-using any LLVM-tool (`clang`, `lli`, `opt`, $\dots$)
+using any LLVM tool (`clang`, `lli`, `opt`, $\dots$)
 or you can emulate it using Autos itself:
 
 ```bash
