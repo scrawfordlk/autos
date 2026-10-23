@@ -16,7 +16,7 @@
 )] // attributes such as these are ignored by autos
 #![no_main]
 #[unsafe(no_mangle)]
-fn main(argc: usize, argv: *mut *mut u8) {
+fn main(argc: usize, argv: *mut *mut u8) -> usize {
     let args: Args = args_new(argc, argv);
     if arg_eq(&args, 1, "-c") {
         if args_len(&args) <= 2 {
