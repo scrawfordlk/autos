@@ -3647,7 +3647,7 @@ fn codegen_if(codegen: &mut Codegen, icg: &ICodegen, if_expression: &RAstIf) -> 
     // Allocate memory for potential result value, though size is still unknown.
     // In the event that the result type is unit, this instruction will be removed later.
     let result: String = codegen_emit_alloca(codegen, icg, &RType::Unit, 1);
-    let alloca_idx: usize = codegen_code_last_index(codegen);
+    let alloca_idx: usize = codegen_last_alloca_index(codegen);
 
     codegen_emit_br_conditional(codegen, &cond, &then_label, &else_label);
 
@@ -3701,7 +3701,7 @@ fn codegen_if(codegen: &mut Codegen, icg: &ICodegen, if_expression: &RAstIf) -> 
             result
         }
     } else {
-        codegen_fixup(codegen, alloca_idx, string_new()); // alloca was not needed
+        codegen_fixup_alloca(codegen, alloca_idx, string_new()); // alloca was not needed
         string_new() // no value is returned, so some placeholder
     };
 
@@ -3743,7 +3743,7 @@ fn codegen_match(codegen: &mut Codegen, icg: &ICodegen, scrutinee: &RAstExpr, ar
 
     // SSA: Allocate memory for potential result value, though size is still unknown.
     let result: String = codegen_emit_alloca(codegen, icg, &RType::Unit, 1);
-    let alloca_idx: usize = codegen_code_last_index(codegen);
+    let alloca_idx: usize = codegen_last_alloca_index(codegen);
     let mut return_type: RType = RType::Never; // start with bottom type and coalesce arm types for correct type
     let exit_label: String = codegen_next_label(codegen, "match.exit");
 
@@ -3780,7 +3780,7 @@ fn codegen_match(codegen: &mut Codegen, icg: &ICodegen, scrutinee: &RAstExpr, ar
             result
         }
     } else {
-        codegen_fixup(codegen, alloca_idx, string_new()); // alloca was not needed
+        codegen_fixup_alloca(codegen, alloca_idx, string_new()); // alloca was not needed
         string_new() // some placeholder
     };
     STPair::ST(result, return_type)
@@ -4033,26 +4033,35 @@ fn generic_uninstantiate(Generic::Manager(mappings, _): &mut Generic, name: &Str
 
 /// The emitted LLLVM code.
 enum Code {
-    Code(Vec<Vec<String>>, Vec<String>, usize),
+    /// functions,  string literals, function index
+    Code(Vec<FunctionCode>, Vec<String>, usize),
+}
+
+/// Emitted LLLVM code for a single function
+enum FunctionCode {
+    /// allocations, instructions
+    Code(Vec<String>, Vec<String>),
 }
 
 fn code_new() -> Code {
-    Code::Code(vec_new::<Vec<String>>(), vec_new::<String>(), 0)
+    let functions: Vec<FunctionCode> = vec_new::<FunctionCode>();
+    Code::Code(functions, vec_new::<String>(), 0)
 }
 
 /// Get a shared reference to the code generated for the current function.
-fn code_current_function(Code::Code(functions, _, idx): &Code) -> &Vec<String> {
-    vec_at::<Vec<String>>(functions, *idx)
+fn code_current_function(Code::Code(functions, _, idx): &Code) -> &FunctionCode {
+    vec_at::<FunctionCode>(functions, *idx)
 }
 /// Get a mutable reference to the code generated for the current function.
-fn code_current_function_mut(Code::Code(functions, _, idx): &mut Code) -> &mut Vec<String> {
-    vec_at_mut::<Vec<String>>(functions, *idx)
+fn code_current_function_mut(Code::Code(functions, _, idx): &mut Code) -> &mut FunctionCode {
+    vec_at_mut::<FunctionCode>(functions, *idx)
 }
 
 /// Start code generation for a new function.
 fn code_start_new_function(Code::Code(functions, _, idx): &mut Code) {
-    vec_push::<Vec<String>>(functions, vec_new::<String>());
-    *idx = vec_len::<Vec<String>>(functions) - 1;
+    let function: FunctionCode = FunctionCode::Code(vec_new::<String>(), vec_new::<String>());
+    vec_push::<FunctionCode>(functions, function);
+    *idx = vec_len::<FunctionCode>(functions) - 1;
 }
 
 /// Get the currently generated function's index.
@@ -4065,14 +4074,16 @@ fn code_set_current_function_index(Code::Code(_, _, old_idx): &mut Code, idx: us
     *old_idx = idx;
 }
 
-/// Get the line index of the last emitted line.
-fn codegen_code_last_index(codegen: &Codegen) -> usize {
-    vec_len::<String>(code_current_function(codegen_code(codegen))) - 1
+/// Get the line index of the last emitted `alloca`.
+fn codegen_last_alloca_index(codegen: &Codegen) -> usize {
+    let FunctionCode::Code(allocas, _): &FunctionCode = code_current_function(codegen_code(codegen));
+    vec_len::<String>(allocas) - 1
 }
 
-/// Fixup the emitted line at index `i` by replacing it with `line`.
-fn codegen_fixup(codegen: &mut Codegen, i: usize, line: String) {
-    vec_set::<String>(code_current_function_mut(codegen_code_mut(codegen)), i, line);
+/// Fixup the emitted `alloca` at index `i` by replacing it with `line`.
+fn codegen_fixup_alloca(Codegen::Gen(code, _, _, _, _, _): &mut Codegen, i: usize, line: String) {
+    let FunctionCode::Code(allocas, _): &mut FunctionCode = code_current_function_mut(code);
+    vec_set::<String>(allocas, i, line);
 }
 
 /// Get the emitted LLLVM from Codegen.
@@ -4080,11 +4091,24 @@ fn codegen_into_llvm(Codegen::Gen(Code::Code(functions, strings, _), _, _, _, _,
     let mut code: String = string_new();
 
     let mut i: usize = 0;
-    while i < vec_len::<Vec<String>>(&functions) {
-        let function: &Vec<String> = vec_at::<Vec<String>>(&functions, i);
+    while i < vec_len::<FunctionCode>(&functions) {
+        let FunctionCode::Code(allocas, instructions): &FunctionCode = vec_at::<FunctionCode>(&functions, i);
+
+        // first emit function entry (includes signature and label)
+        string_push_string(&mut code, vec_at::<String>(instructions, 0));
+        string_push(&mut code, '\n');
+
+        // then emit all `alloca` instructions
         let mut j: usize = 0;
-        while j < vec_len::<String>(function) {
-            let line: &String = vec_at::<String>(function, j);
+        while j < vec_len::<String>(allocas) {
+            string_push_string(&mut code, vec_at::<String>(allocas, j));
+            string_push(&mut code, '\n');
+            j = j + 1;
+        }
+        j = 1; // skip function entry, as it is already emitted
+        // emit rest of function
+        while j < vec_len::<String>(instructions) {
+            let line: &String = vec_at::<String>(instructions, j);
             if string_len(line) > 0 {
                 string_push_string(&mut code, line);
                 string_push(&mut code, '\n');
@@ -4106,9 +4130,18 @@ fn codegen_into_llvm(Codegen::Gen(Code::Code(functions, strings, _), _, _, _, _,
     code
 }
 
-/// Emit the given string as a new line of LLLVM code.
-fn codegen_emit_line(codegen: &mut Codegen, line: String) {
-    vec_push::<String>(code_current_function_mut(codegen_code_mut(codegen)), line);
+/// Emit the given code as a new line of LLLVM code.
+/// Note: Do not emit `alloca` using this function. Instead use `codegen_emit_allocation`,
+/// to defer the allocation to the start of a function.
+fn codegen_emit_line(Codegen::Gen(code, _, _, _, _, _): &mut Codegen, line: String) {
+    let FunctionCode::Code(_, instructions): &mut FunctionCode = code_current_function_mut(code);
+    vec_push::<String>(instructions, line);
+}
+
+/// Defer the allocation code to insert later at the beginning of a function.
+fn codegen_emit_allocation(Codegen::Gen(code, _, _, _, _, _): &mut Codegen, allocation: String) {
+    let FunctionCode::Code(allocas, _): &mut FunctionCode = code_current_function_mut(code);
+    vec_push::<String>(allocas, allocation);
 }
 
 /// Emit a binary arithmetic instruction.
@@ -4294,7 +4327,7 @@ fn codegen_emit_alloca(codegen: &mut Codegen, icg: &ICodegen, ty: &RType, count:
         string_push_string(&mut line, &rType_to_llvm_name(codegen, ty));
         string_push_str(&mut line, ", i64 ");
         string_push_string(&mut line, &integer_to_string(count));
-        codegen_emit_line(codegen, line);
+        codegen_emit_allocation(codegen, line);
         name
     } else {
         let size: usize = rType_size(codegen, icg, ty) * count;
@@ -4607,9 +4640,10 @@ fn codegen_emit_string(
 /// Always modifies the alloca to only allocate one element.
 // TODO: assumes a lot about the emitted LLLVM, make this more robust.
 fn codegen_fixup_alloca_type(codegen: &mut Codegen, icg: &ICodegen, index: usize, new_type: &RType) {
-    let lines: &mut Vec<String> = code_current_function_mut(codegen_code_mut(codegen));
+    let FunctionCode::Code(allocas, _): &mut FunctionCode =
+        code_current_function_mut(codegen_code_mut(codegen));
 
-    let old_alloca: &String = vec_at::<String>(lines, index);
+    let old_alloca: &String = vec_at::<String>(allocas, index);
     let mut new_alloca: String = string_with_capacity(5);
 
     let mut space_count: usize = 0;
@@ -4639,7 +4673,7 @@ fn codegen_fixup_alloca_type(codegen: &mut Codegen, icg: &ICodegen, index: usize
         string_push_str(&mut new_alloca, ", i64 1");
     }
 
-    codegen_fixup(codegen, index, new_alloca);
+    codegen_fixup_alloca(codegen, index, new_alloca);
 }
 
 // -----------------------------------------------------------------
