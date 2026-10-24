@@ -6038,7 +6038,7 @@ fn emu_new(memory_size: usize, ast: &LAst) -> Emu {
     let mut emulator: Emu = Emu::Emu(globals, memory, stack_pointer, 0, 0, 0, Option::<usize>::None);
     let heap_start: usize = emu_initialise_global_data(&mut emulator, ast);
     let Emu::Emu(_, _, _, _, bump_pointer, _, _): &mut Emu = &mut emulator;
-    *bump_pointer = if heap_start != 0 { heap_start } else { 8 }; // skip address 0 (null pointer) 
+    *bump_pointer = heap_start;
     emulator
 }
 
