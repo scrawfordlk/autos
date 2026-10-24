@@ -4859,7 +4859,7 @@ fn lLexer_scan_cstring(lexer: &mut LLexer) -> String {
                     string_push(&mut literal, c)
                 }
             },
-            Option::None => panic("unterminated LLLVM c-string"),
+            Option::None => panic("unterminated LLLVM string literal"),
         }
     }
     unreachable()
@@ -4883,7 +4883,7 @@ fn lLexer_scan_escape(lexer: &mut LLexer) -> char {
                 hex_digit
             }
         },
-        Option::None => panic("unterminated LLLVM c-string"),
+        Option::None => panic("unterminated LLLVM string literal"),
     }
 }
 
@@ -5535,7 +5535,7 @@ fn lparse_string(parser: &mut LParser) {
             if string_len(&string_value) != len {
                 lparser_error(
                     parser,
-                    &string("c-string length does not match with declared length"),
+                    &string("LLLVM string literal length does not match with declared length"),
                 )
             }
             lparser_next_token(parser);
@@ -5548,7 +5548,7 @@ fn lparse_string(parser: &mut LParser) {
             }
         },
         _ => {
-            let message: String = lparser_expected_message(parser, &string("LLVM c-string literal"));
+            let message: String = lparser_expected_message(parser, &string("LLLVM string literal"));
             lparser_error(parser, &message)
         },
     }
@@ -6242,7 +6242,7 @@ fn emu_push_argv(emulator: &mut Emu, args: &Args) -> usize {
     new_sp // pointer to pointer array
 }
 
-/// Load LLLVM C-Strings into the data segment and return the next available address (= start of the
+/// Load LLLVM string literals into the data segment and return the next available address (= start of the
 /// heap). Assumes that the data segment starts at address 0 (since the AST serves as the code).
 fn emu_initialise_global_data(emulator: &mut Emu, ast: &LAst) -> usize {
     let mut data_top: usize = 0;
