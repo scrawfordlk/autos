@@ -2138,7 +2138,7 @@ fn castOperation_select_operation(left_type: &RType, right_type: &RType) -> Cast
             _ => CastOperation::Invalid,
         },
         RType::Bool => match right_type {
-            RType::U8 | RType::Usize => CastOperation::ZeroExtend,
+            RType::Usize => CastOperation::ZeroExtend,
             _ => CastOperation::Invalid,
         },
         RType::Char => match right_type {
