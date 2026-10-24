@@ -6038,7 +6038,7 @@ fn emu_new(memory_size: usize, ast: &LAst) -> Emu {
     let mut emulator: Emu = Emu::Emu(globals, memory, stack_pointer, 0, 0, 0, Option::<usize>::None);
     let heap_start: usize = emu_initialise_global_data(&mut emulator, ast);
     let Emu::Emu(_, _, _, _, bump_pointer, _, _): &mut Emu = &mut emulator;
-    *bump_pointer = heap_start;
+    *bump_pointer = if heap_start != 0 { heap_start } else { 8 }; // skip address 0 (null pointer) 
     emulator
 }
 
@@ -6138,11 +6138,7 @@ fn emu_malloc(emulator: &mut Emu, mut size: usize) -> Option<usize> {
     }
 
     // reusing free block failed => increase bump pointer to allocate new block
-    let mut bump_pointer: usize = emu_get_bump_pointer(emulator);
-    if bump_pointer == 0 {
-        bump_pointer = bump_pointer + size_of::<usize>();
-        emu_increase_bump_pointer(emulator, size_of::<usize>()); // do not use address 0
-    }
+    let bump_pointer: usize = emu_get_bump_pointer(emulator);
     if bump_pointer + aligned_size >= emu_get_sp(emulator) {
         return Option::<usize>::None; // OOM
     }
