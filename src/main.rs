@@ -6626,9 +6626,14 @@ fn max(n: usize, m: usize) -> usize {
     if n > m { n } else { m }
 }
 
-/// Return true if the number is negative (Two's Complement).
-fn is_negative(number: usize) -> bool {
-    number >= 9223372036854775808
+/// Return true if the number interpreted as `i32` is -1.
+fn is_i32_minus_one(number: usize) -> bool {
+    let byte0: usize = number % 256;
+    let byte1: usize = (number / 256) % 256;
+    let byte2: usize = (number / 256 / 256) % 256;
+    let byte3: usize = (number / 256 / 256 / 256) % 256;
+    // in two's complement, a negative `i32` value has all bits set to 1
+    and(byte0 == 255, and(byte1 == 255, and(byte2 == 255, byte3 == 255)))
 }
 
 /// Rounds `n` up to the next multiple of `multiple`
@@ -8533,7 +8538,7 @@ fn read_file(mut filename: String) -> String {
 
     unsafe {
         let fd: usize = open(*path_ptr, O_RDONLY, 0);
-        if is_negative(fd) {
+        if is_i32_minus_one(fd) {
             ioResult_check_error(&IOResult::OpenFailure, &filename);
         }
 
@@ -8543,7 +8548,7 @@ fn read_file(mut filename: String) -> String {
         let buffer_ptr: *mut u8 = vec_ptr::<u8>(&buffer);
         while true {
             let bytes_read: usize = read(fd, buffer_ptr, buffer_len);
-            if is_negative(bytes_read) {
+            if is_i32_minus_one(bytes_read) {
                 ioResult_check_error(&IOResult::ReadFailure, &filename);
             }
             if bytes_read == 0 {
@@ -8567,14 +8572,14 @@ unsafe fn io_write(path: *mut u8, buffer: *mut u8, len: usize) -> IOResult {
     let mode: usize = 420; // = 0o0644
     unsafe {
         let fd: usize = open(path, O_WRONLY_CREAT_TRUNC, mode);
-        if is_negative(fd) {
+        if is_i32_minus_one(fd) {
             return IOResult::OpenFailure;
         }
         let mut offset: usize = 0;
         while offset < len {
             let remaining: usize = len - offset;
             let written: usize = write(fd, ptr_add::<u8>(buffer, offset), remaining);
-            if or(is_negative(written), written == 0) {
+            if or(is_i32_minus_one(written), written == 0) {
                 return IOResult::WriteFailure;
             }
             offset = offset + written;
@@ -8591,7 +8596,7 @@ unsafe fn io_write_stdout(buffer: *mut u8, len: usize) -> IOResult {
     while offset < len {
         let remaining: usize = len - offset;
         let written: usize = unsafe { write(stdout_fd, ptr_add::<u8>(buffer, offset), remaining) };
-        if or(is_negative(written), written == 0) {
+        if or(is_i32_minus_one(written), written == 0) {
             return IOResult::WriteFailure;
         }
         offset = offset + written;
