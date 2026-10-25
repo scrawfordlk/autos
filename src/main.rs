@@ -2127,23 +2127,23 @@ fn castOperation_select_operation(left_type: &RType, right_type: &RType) -> Cast
     }
 
     match left_type {
+        RType::Bool => match right_type {
+            RType::Usize => CastOperation::ZeroExtend,
+            _ => CastOperation::Invalid,
+        },
         RType::U8 => match right_type {
             RType::Usize => CastOperation::ZeroExtend,
             RType::Char => CastOperation::None,
             _ => CastOperation::Invalid,
         },
-        RType::Usize => match right_type {
-            RType::U8 => CastOperation::Truncate,
-            RType::RawPointerMut(_) => CastOperation::IntToPtr,
-            _ => CastOperation::Invalid,
-        },
-        RType::Bool => match right_type {
-            RType::Usize => CastOperation::ZeroExtend,
-            _ => CastOperation::Invalid,
-        },
         RType::Char => match right_type {
             RType::Usize => CastOperation::ZeroExtend,
             RType::U8 => CastOperation::None,
+            _ => CastOperation::Invalid,
+        },
+        RType::Usize => match right_type {
+            RType::U8 => CastOperation::Truncate,
+            RType::RawPointerMut(_) => CastOperation::IntToPtr,
             _ => CastOperation::Invalid,
         },
         RType::Reference(left_inner, mutable) => match right_type {
