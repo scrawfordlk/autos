@@ -2497,7 +2497,13 @@ fn semantic_check_cast(
 ) -> RType {
     let from_type: RType = semantic_check_expression(semantic, value, globals);
     match castOperation_select_operation(&from_type, to_type) {
-        CastOperation::Invalid => semantic_error(&string("invalid cast")),
+        CastOperation::Invalid => {
+            let mut msg: String = string("cannot cast from ");
+            string_push_string(&mut msg, &rType_to_string(&from_type));
+            string_push_str(&mut msg, " to ");
+            string_push_string(&mut msg, &rType_to_string(to_type));
+            semantic_error(&msg);
+        },
         _ => rType_clone(to_type),
     }
 }
