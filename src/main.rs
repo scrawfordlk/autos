@@ -2113,6 +2113,8 @@ enum CastOperation {
     IntToPtr,
     /// Cast pointer to integer.
     PtrToInt,
+    /// Discard the MSB of a byte.
+    Wrap7Bits,
     /// Do not perform a cast.
     None,
     /// The cast is illegal.
@@ -2133,7 +2135,7 @@ fn castOperation_select_operation(left_type: &RType, right_type: &RType) -> Cast
         },
         RType::U8 => match right_type {
             RType::Usize => CastOperation::ZeroExtend,
-            RType::Char => CastOperation::None,
+            RType::Char => CastOperation::Wrap7Bits,
             _ => CastOperation::Invalid,
         },
         RType::Char => match right_type {
@@ -4299,6 +4301,9 @@ fn codegen_emit_cast(code: &mut Codegen, op: &CastOperation, from: &RType, to: &
         CastOperation::Truncate => "trunc",
         CastOperation::IntToPtr => "inttoptr",
         CastOperation::PtrToInt => "ptrtoint",
+        CastOperation::Wrap7Bits => {
+            return codegen_emit_binary(code, &RAstArithmeticOp::Rem, from, x, &string("128"));
+        },
         CastOperation::Invalid => "invalid", // assume this case never occurs
         CastOperation::None => return string_clone(x),
     };
